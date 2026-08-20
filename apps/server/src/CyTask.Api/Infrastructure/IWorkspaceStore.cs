@@ -145,6 +145,23 @@ public interface IWorkspaceStore
         Guid uploadId,
         CancellationToken cancellationToken);
 
+    Task<Attachment?> FindAttachmentAsync(
+        Guid organizationId,
+        Guid attachmentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<PendingAttachmentReview>> ClaimAttachmentsForReviewAsync(
+        int limit,
+        DateTimeOffset leasedUntil,
+        CancellationToken cancellationToken);
+
+    Task<Attachment?> ApplyAttachmentReviewAsync(
+        Guid organizationId,
+        Guid attachmentId,
+        AttachmentReview review,
+        DateTimeOffset reviewedAt,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<ExternalReference>?> ListExternalReferencesAsync(
         Guid organizationId,
         Guid taskId,

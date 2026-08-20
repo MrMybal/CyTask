@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using CyTask.Api.Configuration;
 using CyTask.Api.Endpoints;
 using CyTask.Api.Infrastructure;
+using CyTask.Api.Media;
 using CyTask.Api.Realtime;
 using CyTask.Api.Security;
 using Microsoft.AspNetCore.Http.Json;
@@ -59,6 +60,16 @@ builder.Services.AddOptions<CyTaskOptions>()
         "UploadHours must be between 1 and 72.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.MediaStoragePath),
         "MediaStoragePath is required.")
+    .Validate(options => options.MediaReviewSeconds is >= 1 and <= 3600,
+        "MediaReviewSeconds must be between 1 second and 1 hour.")
+    .Validate(options => options.MediaReviewBatch is >= 1 and <= 128,
+        "MediaReviewBatch must be between 1 and 128.")
+    .Validate(options => options.MediaReviewAttempts is >= 1 and <= 10,
+        "MediaReviewAttempts must be between 1 and 10.")
+    .Validate(options => options.MaxMediaDimension is >= 16 and <= 1_000_000,
+        "MaxMediaDimension must be between 16 and 1000000 pixels.")
+    .Validate(options => options.MaxMediaPixels is >= 65_536 and <= 100_000_000_000,
+        "MaxMediaPixels must be between 65536 and 100 billion pixels.")
     .ValidateOnStart();
 
 var cyTaskOptions = builder.Configuration
@@ -109,6 +120,8 @@ builder.Services.AddSingleton<RequireSessionFilter>();
 builder.Services.AddSingleton<RequireCookieSessionFilter>();
 builder.Services.AddSingleton<RequireBearerTokenFilter>();
 builder.Services.AddSingleton<CsrfFilter>();
+builder.Services.AddSingleton<AttachmentReviewService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<AttachmentReviewService>());
 
 if (cyTaskOptions.UseInMemoryStore)
 {

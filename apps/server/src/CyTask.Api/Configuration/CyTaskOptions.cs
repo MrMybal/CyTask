@@ -27,4 +27,14 @@ public sealed class CyTaskOptions
     public int UploadHours { get; init; } = 24;
 
     public string MediaStoragePath { get; init; } = ".data/media";
+
+    public int MediaReviewSeconds { get; init; } = 5;
+
+    public int MediaReviewBatch { get; init; } = 8;
+
+    public int MediaReviewAttempts { get; init; } = 3;
+
+    public int MaxMediaDimension { get; init; } = 20_000;
+
+    public long MaxMediaPixels { get; init; } = 80_000_000;
 }

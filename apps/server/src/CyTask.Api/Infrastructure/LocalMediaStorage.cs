@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using CyTask.Api.Domain;
+using CyTask.Api.Media;
 using Microsoft.Extensions.Options;
 
 namespace CyTask.Api.Infrastructure;
@@ -17,6 +18,7 @@ public sealed class LocalMediaStorage
 {
     private readonly string _uploadsPath;
     private readonly string _quarantinePath;
+    private readonly string _objectsPath;
 
     public LocalMediaStorage(IOptions<Configuration.CyTaskOptions> options, IHostEnvironment environment)
     {
@@ -33,8 +35,10 @@ public sealed class LocalMediaStorage
 
         _uploadsPath = Path.Combine(root, "uploads");
         _quarantinePath = Path.Combine(root, "quarantine");
+        _objectsPath = Path.Combine(root, "objects");
         Directory.CreateDirectory(_uploadsPath);
         Directory.CreateDirectory(_quarantinePath);
+        Directory.CreateDirectory(_objectsPath);
     }
 
     public async Task<StoredChunk> WriteChunkAsync(
@@ -156,7 +160,7 @@ public sealed class LocalMediaStorage
 
         long total = 0;
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var prefix = new byte[32];
+        var prefix = new byte[MediaInspector.PrefixBytes];
         var prefixLength = 0;
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
@@ -247,11 +251,56 @@ public sealed class LocalMediaStorage
         File.Delete(ChunkPath(directory, index));
     }
 
-    public void DeleteQuarantined(Guid organizationId, Guid attachmentId)
+    public void DeleteQuarantined(Guid organizationId, Guid attachmentId) =>
+        File.Delete(QuarantinePath(organizationId, attachmentId));
+
+    public void DeleteObject(Guid organizationId, Guid attachmentId) =>
+        File.Delete(ObjectPath(organizationId, attachmentId));
+
+    public Stream? OpenObject(Guid organizationId, Guid attachmentId) =>
+        OpenRead(ObjectPath(organizationId, attachmentId));
+
+    public Stream? OpenForReview(Guid organizationId, Guid attachmentId) =>
+        OpenRead(QuarantinePath(organizationId, attachmentId)) ??
+        OpenRead(ObjectPath(organizationId, attachmentId));
+
+    public void Promote(Guid organizationId, Guid attachmentId)
     {
-        var directory = Path.Combine(_quarantinePath, organizationId.ToString("N"));
-        File.Delete(Path.Combine(directory, $"{attachmentId:N}.blob"));
+        var source = QuarantinePath(organizationId, attachmentId);
+        var target = ObjectPath(organizationId, attachmentId);
+        if (!File.Exists(source) && File.Exists(target))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.Move(source, target, overwrite: true);
     }
+
+    private static FileStream? OpenRead(string path)
+    {
+        try
+        {
+            return new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                64 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private string QuarantinePath(Guid organizationId, Guid attachmentId) =>
+        Path.Combine(_quarantinePath, organizationId.ToString("N"), $"{attachmentId:N}.blob");
+
+    private string ObjectPath(Guid organizationId, Guid attachmentId) =>
+        Path.Combine(_objectsPath, organizationId.ToString("N"), $"{attachmentId:N}.blob");
 
     private string UploadDirectory(Guid organizationId, Guid uploadId) =>
         Path.Combine(_uploadsPath, organizationId.ToString("N"), uploadId.ToString("N"));
@@ -259,38 +308,6 @@ public sealed class LocalMediaStorage
     private static string ChunkPath(string directory, int index) =>
         Path.Combine(directory, $"{index:D8}.chunk");
 
-    private static string DetectContentType(ReadOnlySpan<byte> prefix)
-    {
-        if (prefix.StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }))
-        {
-            return "image/png";
-        }
-
-        if (prefix.StartsWith(new byte[] { 0xFF, 0xD8, 0xFF }))
-        {
-            return "image/jpeg";
-        }
-
-        if (prefix.StartsWith("GIF87a"u8) || prefix.StartsWith("GIF89a"u8))
-        {
-            return "image/gif";
-        }
-
-        if (prefix.Length >= 12 && prefix[..4].SequenceEqual("RIFF"u8) && prefix[8..12].SequenceEqual("WEBP"u8))
-        {
-            return "image/webp";
-        }
-
-        if (prefix.Length >= 12 && prefix[4..8].SequenceEqual("ftyp"u8))
-        {
-            return "video/mp4";
-        }
-
-        if (prefix.StartsWith(new byte[] { 0x1A, 0x45, 0xDF, 0xA3 }))
-        {
-            return "video/webm";
-        }
-
-        return "application/octet-stream";
-    }
+    private static string DetectContentType(ReadOnlySpan<byte> prefix) =>
+        MediaInspector.DetectContentType(prefix);
 }

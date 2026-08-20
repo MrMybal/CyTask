@@ -19,6 +19,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private readonly List<ActivityEntry> _activities = [];
     private readonly Dictionary<Guid, Attachment> _attachments = [];
     private readonly Dictionary<Guid, AttachmentUpload> _attachmentUploads = [];
+    private readonly Dictionary<Guid, (int Attempts, DateTimeOffset LeasedUntil)> _attachmentReviewLeases = [];
     private readonly Dictionary<Guid, ExternalReference> _externalReferences = [];
     private readonly Dictionary<(Guid TaskId, Guid DependsOnTaskId), TaskDependencyEntry> _taskDependencies = [];
 
@@ -685,6 +686,92 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             }
 
             return Task.CompletedTask;
+        }
+    }
+
+    public Task<Attachment?> FindAttachmentAsync(
+        Guid organizationId,
+        Guid attachmentId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult(
+                _attachments.TryGetValue(attachmentId, out var attachment) &&
+                attachment.OrganizationId == organizationId
+                    ? attachment
+                    : null);
+        }
+    }
+
+    public Task<IReadOnlyList<PendingAttachmentReview>> ClaimAttachmentsForReviewAsync(
+        int limit,
+        DateTimeOffset leasedUntil,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var claimed = new List<PendingAttachmentReview>();
+            foreach (var attachment in _attachments.Values
+                         .Where(candidate => candidate.Status == "quarantined")
+                         .OrderBy(candidate => candidate.CreatedAt)
+                         .ThenBy(candidate => candidate.Id)
+                         .Take(limit))
+            {
+                var lease = _attachmentReviewLeases.GetValueOrDefault(attachment.Id);
+                if (lease.LeasedUntil > now)
+                {
+                    continue;
+                }
+
+                _attachmentReviewLeases[attachment.Id] = (lease.Attempts + 1, leasedUntil);
+                claimed.Add(new PendingAttachmentReview(
+                    attachment.Id, attachment.OrganizationId, attachment.DeclaredContentType, lease.Attempts + 1));
+            }
+
+            return Task.FromResult<IReadOnlyList<PendingAttachmentReview>>(claimed);
+        }
+    }
+
+    public Task<Attachment?> ApplyAttachmentReviewAsync(
+        Guid organizationId,
+        Guid attachmentId,
+        AttachmentReview review,
+        DateTimeOffset reviewedAt,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_attachments.TryGetValue(attachmentId, out var attachment) ||
+                attachment.OrganizationId != organizationId || attachment.Status != "quarantined")
+            {
+                return Task.FromResult<Attachment?>(null);
+            }
+
+            var reviewed = attachment with
+            {
+                Status = review.Accepted ? "available" : "rejected",
+                DetectedContentType = review.ContentType,
+                Width = review.Width,
+                Height = review.Height,
+                RejectionReason = review.RejectionReason,
+                ReviewedAt = reviewedAt
+            };
+            _attachments[attachmentId] = reviewed;
+            _attachmentReviewLeases.Remove(attachmentId);
+            AddActivity(
+                organizationId,
+                review.Accepted ? "attachment.available" : "attachment.rejected",
+                "attachment",
+                attachmentId,
+                reviewed.CreatedBy,
+                _users[reviewed.CreatedBy].DisplayName,
+                review.Accepted
+                    ? $"{reviewed.FileName} validé et disponible"
+                    : $"{reviewed.FileName} refusé : {review.RejectionReason}",
+                reviewedAt);
+            return Task.FromResult<Attachment?>(reviewed);
         }
     }
 
