@@ -61,6 +61,32 @@ public interface IWorkspaceStore
 
     Task DeleteAccessTokenAsync(byte[] accessTokenHash, CancellationToken cancellationToken);
 
+    Task<CreatedApiToken?> CreateApiTokenAsync(
+        Guid organizationId,
+        Guid userId,
+        string name,
+        string scopes,
+        string secret,
+        byte[] tokenHash,
+        DateTimeOffset? expiresAt,
+        int maximumActiveTokens,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ApiToken>> ListApiTokensAsync(
+        Guid organizationId,
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<bool> RevokeApiTokenAsync(
+        Guid organizationId,
+        Guid userId,
+        Guid tokenId,
+        CancellationToken cancellationToken);
+
+    Task<ApiTokenPrincipal?> FindApiTokenAsync(
+        byte[] tokenHash,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<OrganizationMember>> ListMembersAsync(
         Guid organizationId,
         CancellationToken cancellationToken);

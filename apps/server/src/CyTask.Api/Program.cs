@@ -70,6 +70,8 @@ builder.Services.AddOptions<CyTaskOptions>()
         "MaxMediaDimension must be between 16 and 1000000 pixels.")
     .Validate(options => options.MaxMediaPixels is >= 65_536 and <= 100_000_000_000,
         "MaxMediaPixels must be between 65536 and 100 billion pixels.")
+    .Validate(options => options.MaxApiTokensPerUser is >= 1 and <= 100,
+        "MaxApiTokensPerUser must be between 1 and 100.")
     .ValidateOnStart();
 
 var cyTaskOptions = builder.Configuration

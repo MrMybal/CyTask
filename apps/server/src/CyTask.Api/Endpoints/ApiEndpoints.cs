@@ -25,7 +25,11 @@ public static class ApiEndpoints
         api.MapPost("/invitations/preview", PreviewInvitationAsync).RequireRateLimiting("authentication");
         api.MapPost("/invitations/accept", AcceptInvitationAsync).RequireRateLimiting("authentication");
 
-        var authenticated = api.MapGroup(string.Empty).AddEndpointFilter<RequireSessionFilter>();
+        api.MapGet("/openapi.json", GetOpenApiDocumentAsync);
+
+        var authenticated = api.MapGroup(string.Empty)
+            .AddEndpointFilter<RequireSessionFilter>()
+            .AddEndpointFilter<ApiScopeFilter>();
         authenticated.MapGet("/me", GetMe);
         authenticated.MapDelete("/session", LogoutAsync).AddEndpointFilter<CsrfFilter>();
         authenticated.MapPost("/oauth/native/authorizations", CreateNativeAuthorizationAsync)
@@ -33,6 +37,14 @@ public static class ApiEndpoints
             .AddEndpointFilter<CsrfFilter>();
         authenticated.MapDelete("/oauth/token", RevokeNativeTokenAsync)
             .AddEndpointFilter<RequireBearerTokenFilter>();
+        authenticated.MapGet("/tokens", ListApiTokensAsync)
+            .AddEndpointFilter<RequireCookieSessionFilter>();
+        authenticated.MapPost("/tokens", CreateApiTokenAsync)
+            .AddEndpointFilter<RequireCookieSessionFilter>()
+            .AddEndpointFilter<CsrfFilter>();
+        authenticated.MapDelete("/tokens/{tokenId:guid}", RevokeApiTokenAsync)
+            .AddEndpointFilter<RequireCookieSessionFilter>()
+            .AddEndpointFilter<CsrfFilter>();
         authenticated.MapGet("/events", EventsAsync);
         authenticated.MapGet("/activity", ListActivityAsync);
         authenticated.MapGet("/search", SearchAsync);
@@ -822,6 +834,107 @@ public static class ApiEndpoints
 
         events.Publish(user.OrganizationId, "external_reference.created", reference.Id);
         return Results.Created($"/api/v1/tasks/{taskId}/external-references/{reference.Id}", reference);
+    }
+
+    private static async Task<IResult> ListApiTokensAsync(
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var tokens = await store.ListApiTokensAsync(user.OrganizationId, user.UserId, cancellationToken);
+        return Results.Ok(tokens);
+    }
+
+    private static async Task<IResult> CreateApiTokenAsync(
+        CreateApiTokenRequest request,
+        HttpContext context,
+        IWorkspaceStore store,
+        IOptions<CyTaskOptions> options,
+        CancellationToken cancellationToken)
+    {
+        var name = request.Name.Trim();
+        var errors = new Dictionary<string, string[]>();
+        if (name.Length is < 1 or > 80 || name.Any(char.IsControl))
+        {
+            errors[nameof(request.Name)] =
+                ["Le nom doit contenir entre 1 et 80 caractères sans caractère de contrôle."];
+        }
+
+        var scopes = request.Scope switch
+        {
+            "read" => SessionSecurity.ReadScope,
+            "write" => SessionSecurity.WriteScope,
+            _ => null
+        };
+        if (scopes is null)
+        {
+            errors[nameof(request.Scope)] = ["La portée doit être « read » ou « write »."];
+        }
+
+        if (request.ExpiresInDays is < 1 or > 365)
+        {
+            errors[nameof(request.ExpiresInDays)] = ["L’expiration doit être comprise entre 1 et 365 jours."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var user = context.GetUser()!;
+        var secret = SessionSecurity.CreateApiTokenSecret();
+        var created = await store.CreateApiTokenAsync(
+            user.OrganizationId,
+            user.UserId,
+            name,
+            scopes!,
+            secret,
+            SessionSecurity.HashToken(secret),
+            request.ExpiresInDays is null
+                ? null
+                : DateTimeOffset.UtcNow.AddDays(request.ExpiresInDays.Value),
+            options.Value.MaxApiTokensPerUser,
+            cancellationToken);
+        if (created is null)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: $"Limite de {options.Value.MaxApiTokensPerUser} jetons actifs atteinte");
+        }
+
+        return Results.Created($"/api/v1/tokens/{created.Token.Id}", created);
+    }
+
+    private static async Task<IResult> RevokeApiTokenAsync(
+        Guid tokenId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var revoked = await store.RevokeApiTokenAsync(
+            user.OrganizationId, user.UserId, tokenId, cancellationToken);
+        return revoked ? Results.NoContent() : Results.NotFound();
+    }
+
+    private static async Task<IResult> GetOpenApiDocumentAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var assembly = typeof(ApiEndpoints).Assembly;
+        await using var stream = assembly.GetManifestResourceStream("CyTask.Api.Contracts.openapi.json");
+        if (stream is null)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status500InternalServerError,
+                title: "The OpenAPI document is missing from this build");
+        }
+
+        context.Response.Headers.CacheControl = "public, max-age=3600";
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await stream.CopyToAsync(context.Response.Body, cancellationToken);
+        return Results.Empty;
     }
 
     private static async Task<IResult> DownloadAttachmentAsync(

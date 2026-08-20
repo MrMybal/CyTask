@@ -37,4 +37,6 @@ public sealed class CyTaskOptions
     public int MaxMediaDimension { get; init; } = 20_000;
 
     public long MaxMediaPixels { get; init; } = 80_000_000;
+
+    public int MaxApiTokensPerUser { get; init; } = 20;
 }

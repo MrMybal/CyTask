@@ -17,6 +17,10 @@ public static partial class SessionSecurity
     public const string ContextItem = "CyTask.AuthenticatedUser";
     public const string AuthenticationSchemeItem = "CyTask.AuthenticationScheme";
     public const string AccessTokenHashItem = "CyTask.AccessTokenHash";
+    public const string TokenScopesItem = "CyTask.TokenScopes";
+    public const string ApiTokenPrefix = "cytask_pat_";
+    public const string ReadScope = "read";
+    public const string WriteScope = "read write";
     public const string CsrfHeader = "X-CSRF-Token";
     public const string CookieScheme = "CyTaskSession";
     public const string BearerScheme = "CyTaskBearer";
@@ -133,6 +137,15 @@ public static partial class SessionSecurity
     public static AuthenticatedUser? GetUser(this HttpContext context) =>
         context.Items.TryGetValue(ContextItem, out var value) ? value as AuthenticatedUser : null;
 
+    public static string CreateApiTokenSecret() => ApiTokenPrefix + CreateToken(32);
+
+    public static bool LooksLikeApiToken(string token) =>
+        token.StartsWith(ApiTokenPrefix, StringComparison.Ordinal) &&
+        ApiTokenSecretRegex().IsMatch(token);
+
+    public static string? GetTokenScopes(this HttpContext context) =>
+        context.Items.TryGetValue(TokenScopesItem, out var value) ? value as string : null;
+
     public static ClaimsPrincipal CreatePrincipal(AuthenticatedUser user, string authenticationType)
     {
         var identity = new ClaimsIdentity(
@@ -161,6 +174,9 @@ public static partial class SessionSecurity
 
     [GeneratedRegex("^[a-z][a-z0-9-]{0,39}$", RegexOptions.CultureInvariant)]
     private static partial Regex ProviderRegex();
+
+    [GeneratedRegex("^cytask_pat_[A-Za-z0-9_-]{43}$", RegexOptions.CultureInvariant)]
+    private static partial Regex ApiTokenSecretRegex();
 }
 
 public sealed class PasswordService
@@ -202,7 +218,18 @@ public sealed class SessionMiddleware(RequestDelegate next)
             if (authorization.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
                 var accessToken = authorization[prefix.Length..];
-                if (NativeAuthorizationSecurity.IsValidAccessToken(accessToken))
+                if (SessionSecurity.LooksLikeApiToken(accessToken))
+                {
+                    var principal = await store.FindApiTokenAsync(
+                        SessionSecurity.HashToken(accessToken), context.RequestAborted);
+                    if (principal is not null)
+                    {
+                        SetAuthenticatedContext(
+                            context, principal.User, SessionSecurity.BearerScheme, null);
+                        context.Items[SessionSecurity.TokenScopesItem] = principal.Scopes;
+                    }
+                }
+                else if (NativeAuthorizationSecurity.IsValidAccessToken(accessToken))
                 {
                     var tokenHash = SessionSecurity.HashToken(accessToken);
                     var user = await store.FindAccessTokenAsync(tokenHash, context.RequestAborted);
@@ -301,6 +328,26 @@ public sealed class RequireBearerTokenFilter : IEndpointFilter
         return !context.HttpContext.UsesAuthenticationScheme(SessionSecurity.BearerScheme)
             ? Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Bearer token required")
             : await next(context);
+    }
+}
+
+public sealed class ApiScopeFilter : IEndpointFilter
+{
+    private static readonly HashSet<string> SafeMethods =
+        new(StringComparer.OrdinalIgnoreCase) { "GET", "HEAD", "OPTIONS" };
+
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var scopes = context.HttpContext.GetTokenScopes();
+        if (scopes is null || SafeMethods.Contains(context.HttpContext.Request.Method) ||
+            scopes == SessionSecurity.WriteScope)
+        {
+            return await next(context);
+        }
+
+        return Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "This API token is read-only");
     }
 }
 

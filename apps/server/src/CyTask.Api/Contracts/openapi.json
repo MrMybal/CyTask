@@ -1,0 +1,811 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CyTask API",
+    "version": "1.0.0",
+    "description": "API HTTP de CyTask pour les clients, les plugins et les intégrations.\n\nDeux modes d'authentification :\n- **Session navigateur** : cookie `CyTask.Session` + en-tête `X-CSRF-Token` sur chaque mutation.\n- **Jeton d'API** : en-tête `Authorization: Bearer cytask_pat_…`. Aucun CSRF requis. Un jeton en portée `read` ne peut appeler que les méthodes GET/HEAD.\n\nLes jetons d'API se créent dans l'interface Web (section « API ») ou via `POST /tokens` depuis une session navigateur. Le secret n'est montré qu'une seule fois.\n\nToutes les données sont bornées à l'organisation du compte authentifié. Les identifiants sont des UUIDv7 et les dates sont au format ISO 8601 UTC."
+  },
+  "servers": [{ "url": "/", "description": "Serveur CyTask courant" }],
+  "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+  "tags": [
+    { "name": "santé", "description": "Sondes de disponibilité, sans authentification" },
+    { "name": "authentification", "description": "Amorçage, sessions, invitations et flux natif PKCE" },
+    { "name": "jetons", "description": "Jetons d'API personnels pour plugins et scripts" },
+    { "name": "espace", "description": "Membres, activité, recherche, export et temps réel" },
+    { "name": "projets" },
+    { "name": "tâches" },
+    { "name": "fichiers", "description": "Envoi par blocs, quarantaine, validation et téléchargement" },
+    { "name": "git", "description": "Références externes génériques vers commits, branches et demandes de fusion" }
+  ],
+  "paths": {
+    "/health/live": {
+      "get": {
+        "tags": ["santé"],
+        "summary": "Le processus répond",
+        "security": [],
+        "responses": { "200": { "description": "Vivant" } }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": ["santé"],
+        "summary": "Le stockage est joignable",
+        "security": [],
+        "responses": {
+          "200": { "description": "Prêt" },
+          "503": { "description": "Stockage indisponible" }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "tags": ["santé"],
+        "summary": "Ce document",
+        "security": [],
+        "responses": { "200": { "description": "Document OpenAPI 3.1" } }
+      }
+    },
+    "/api/v1/bootstrap/status": {
+      "get": {
+        "tags": ["authentification"],
+        "summary": "Le premier compte reste-t-il à créer ?",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "État d'amorçage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "required": { "type": "boolean" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bootstrap": {
+      "post": {
+        "tags": ["authentification"],
+        "summary": "Créer le premier compte et l'organisation",
+        "description": "Refusé (409) dès qu'un compte existe. Pose les cookies de session.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "displayName", "password", "organizationName"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "displayName": { "type": "string", "maxLength": 80 },
+                  "password": { "type": "string", "minLength": 12 },
+                  "organizationName": { "type": "string", "maxLength": 120 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Compte créé, session ouverte", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/sessions": {
+      "post": {
+        "tags": ["authentification"],
+        "summary": "Ouvrir une session navigateur",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Session ouverte, cookies posés", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "description": "Trop de tentatives" }
+        }
+      }
+    },
+    "/api/v1/session": {
+      "delete": {
+        "tags": ["authentification"],
+        "summary": "Fermer la session courante",
+        "responses": { "204": { "description": "Session close" } }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": ["authentification"],
+        "summary": "Identité du compte authentifié",
+        "responses": {
+          "200": { "description": "Identité", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/tokens": {
+      "get": {
+        "tags": ["jetons"],
+        "summary": "Lister ses jetons d'API",
+        "description": "Session navigateur uniquement : un jeton ne peut pas inventorier les jetons.",
+        "responses": {
+          "200": { "description": "Jetons, secrets exclus", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ApiToken" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["jetons"],
+        "summary": "Créer un jeton d'API",
+        "description": "Session navigateur + CSRF. Le champ `secret` de la réponse n'est jamais réaffiché.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "scope"],
+                "properties": {
+                  "name": { "type": "string", "maxLength": 80 },
+                  "scope": { "type": "string", "enum": ["read", "write"] },
+                  "expiresInDays": { "type": "integer", "minimum": 1, "maximum": 365 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Jeton créé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatedApiToken" } } } },
+          "409": { "description": "Limite de jetons actifs atteinte" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/tokens/{tokenId}": {
+      "delete": {
+        "tags": ["jetons"],
+        "summary": "Révoquer un jeton d'API",
+        "parameters": [{ "$ref": "#/components/parameters/tokenId" }],
+        "responses": {
+          "204": { "description": "Jeton révoqué immédiatement" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": ["espace"],
+        "summary": "Flux d'événements temps réel (SSE)",
+        "description": "`text/event-stream`. Types : `task.created`, `task.updated`, `comment.created`, `attachment.available`, `attachment.rejected`, `project.created`, etc. Chaque événement porte l'identifiant de l'entité ; recharger l'entité par l'API après réception.",
+        "responses": { "200": { "description": "Flux ouvert", "content": { "text/event-stream": {} } } }
+      }
+    },
+    "/api/v1/activity": {
+      "get": {
+        "tags": ["espace"],
+        "summary": "Journal d'activité de l'organisation",
+        "responses": {
+          "200": { "description": "Entrées, plus récentes d'abord", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ActivityEntry" } } } } }
+        }
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "tags": ["espace"],
+        "summary": "Recherche projets et tâches",
+        "parameters": [
+          { "name": "query", "in": "query", "required": true, "schema": { "type": "string", "minLength": 2, "maxLength": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "Au plus 50 résultats", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SearchHit" } } } } }
+        }
+      }
+    },
+    "/api/v1/export": {
+      "get": {
+        "tags": ["espace"],
+        "summary": "Export JSON complet de l'organisation",
+        "description": "Rôles `owner` et `admin` uniquement.",
+        "responses": {
+          "200": { "description": "Export versionné" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/members": {
+      "get": {
+        "tags": ["espace"],
+        "summary": "Membres de l'organisation",
+        "responses": {
+          "200": { "description": "Membres", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/OrganizationMember" } } } } }
+        }
+      }
+    },
+    "/api/v1/invitations": {
+      "post": {
+        "tags": ["authentification"],
+        "summary": "Créer une invitation à usage unique",
+        "description": "Rôles `owner` et `admin`. Le jeton n'est montré qu'une fois et se transmet dans le fragment d'URL.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "role"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "role": { "type": "string", "enum": ["admin", "member", "viewer"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Invitation créée" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "tags": ["projets"],
+        "summary": "Projets de l'organisation",
+        "responses": {
+          "200": { "description": "Projets", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["projets"],
+        "summary": "Créer un projet",
+        "description": "Rôles `owner` et `admin`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "key"],
+                "properties": {
+                  "name": { "type": "string", "maxLength": 120 },
+                  "key": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,9}$" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Projet créé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "Tâches d'un projet",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "responses": {
+          "200": { "description": "Tâches", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/WorkItem" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["tâches"],
+        "summary": "Créer une tâche",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string", "maxLength": 240 },
+                  "description": { "type": "string", "maxLength": 20000 },
+                  "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
+                  "dueAt": { "type": ["string", "null"], "format": "date-time" },
+                  "assigneeId": { "type": ["string", "null"], "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Tâche créée", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkItem" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "Détail d'une tâche et ses commentaires",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Détail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDetails" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "tags": ["tâches"],
+        "summary": "Mettre à jour une tâche avec contrôle de révision",
+        "description": "`expectedRevision` doit égaler la révision courante, sinon 409. Les champs `priority`, `dueAt` et `assigneeId` omis conservent leur valeur ; envoyés à `null`, ils sont effacés.",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "status", "expectedRevision"],
+                "properties": {
+                  "title": { "type": "string", "maxLength": 240 },
+                  "description": { "type": "string", "maxLength": 20000 },
+                  "status": { "type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"] },
+                  "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
+                  "dueAt": { "type": ["string", "null"], "format": "date-time" },
+                  "assigneeId": { "type": ["string", "null"], "format": "uuid" },
+                  "expectedRevision": { "type": "integer", "format": "int64" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Tâche mise à jour", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkItem" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "description": "Révision dépassée : recharger la tâche avant de réessayer" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/comments": {
+      "post": {
+        "tags": ["tâches"],
+        "summary": "Commenter une tâche",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["body"],
+                "properties": { "body": { "type": "string", "maxLength": 10000 } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Commentaire créé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Comment" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/dependencies": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "Dépendances et tâches bloquées",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Graphe local", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDependencyOverview" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["tâches"],
+        "summary": "Déclarer une dépendance",
+        "description": "Idempotent. Refuse les auto-dépendances et les cycles transitifs (409).",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["dependsOnTaskId"],
+                "properties": { "dependsOnTaskId": { "type": "string", "format": "uuid" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Dépendance créée", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskRelation" } } } },
+          "200": { "description": "Dépendance déjà présente" },
+          "409": { "description": "Auto-dépendance ou cycle" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/dependencies/{dependsOnTaskId}": {
+      "delete": {
+        "tags": ["tâches"],
+        "summary": "Retirer une dépendance",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "name": "dependsOnTaskId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Dépendance retirée" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/attachments": {
+      "get": {
+        "tags": ["fichiers"],
+        "summary": "Pièces jointes d'une tâche",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Pièces jointes et leur état", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Attachment" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/attachments/{attachmentId}/content": {
+      "get": {
+        "tags": ["fichiers"],
+        "summary": "Télécharger une pièce jointe validée",
+        "description": "Uniquement en état `available`. Servie en `Content-Disposition: attachment` avec le type détecté par le serveur. Supporte les requêtes de plage et l'ETag d'empreinte.",
+        "parameters": [{ "name": "attachmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": { "description": "Contenu du fichier" },
+          "206": { "description": "Plage partielle" },
+          "404": { "description": "Inexistante, hors organisation ou non validée" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/attachment-uploads": {
+      "post": {
+        "tags": ["fichiers"],
+        "summary": "Ouvrir une session d'envoi par blocs",
+        "description": "Déclarer nom, type, taille et SHA-256 du fichier complet. Envoyer ensuite chaque bloc dans l'ordre puis appeler `complete`. Le fichier passe en quarantaine, est analysé, puis devient `available` ou `rejected` (événements SSE).",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["fileName", "contentType", "sizeBytes", "sha256"],
+                "properties": {
+                  "fileName": { "type": "string", "maxLength": 240 },
+                  "contentType": { "type": "string" },
+                  "sizeBytes": { "type": "integer", "format": "int64", "minimum": 1 },
+                  "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "optimizedLocally": { "type": "boolean", "default": false }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Session ouverte", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AttachmentUpload" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/attachment-uploads/{uploadId}": {
+      "get": {
+        "tags": ["fichiers"],
+        "summary": "État d'une session d'envoi",
+        "parameters": [{ "$ref": "#/components/parameters/uploadId" }],
+        "responses": {
+          "200": { "description": "Session et blocs reçus", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AttachmentUpload" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/attachment-uploads/{uploadId}/chunks/{index}": {
+      "put": {
+        "tags": ["fichiers"],
+        "summary": "Envoyer un bloc",
+        "description": "Corps `application/octet-stream`, en-tête `X-Chunk-SHA256` avec l'empreinte du bloc. Les blocs sont séquentiels et de taille `chunkSizeBytes`, sauf le dernier. Rejouer un bloc identique répond 200.",
+        "parameters": [
+          { "$ref": "#/components/parameters/uploadId" },
+          { "name": "index", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 0 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+        },
+        "responses": {
+          "200": { "description": "Bloc enregistré", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadChunk" } } } },
+          "409": { "description": "Index inattendu, taille inattendue ou bloc en cours" },
+          "413": { "description": "Bloc trop grand" },
+          "422": { "description": "Empreinte du bloc invalide" }
+        }
+      }
+    },
+    "/api/v1/attachment-uploads/{uploadId}/complete": {
+      "post": {
+        "tags": ["fichiers"],
+        "summary": "Clore l'envoi et passer en quarantaine",
+        "parameters": [{ "$ref": "#/components/parameters/uploadId" }],
+        "responses": {
+          "200": { "description": "Fichier assemblé et en quarantaine", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Attachment" } } } },
+          "409": { "description": "Envoi incomplet ou déjà clos" },
+          "422": { "description": "L'empreinte du fichier assemblé ne correspond pas" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/external-references": {
+      "get": {
+        "tags": ["git"],
+        "summary": "Références Git d'une tâche",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Références", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ExternalReference" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["git"],
+        "summary": "Lier un commit, une branche, un tag ou une demande de fusion",
+        "description": "Référence déclarative : le serveur n'appelle jamais `webUrl`.",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["provider", "repository", "referenceType", "referenceValue", "label"],
+                "properties": {
+                  "provider": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$" },
+                  "repository": { "type": "string" },
+                  "referenceType": { "type": "string", "enum": ["commit", "branch", "tag", "merge_request"] },
+                  "referenceValue": { "type": "string" },
+                  "label": { "type": "string" },
+                  "webUrl": { "type": ["string", "null"], "format": "uri" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Référence créée", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExternalReference" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Jeton d'API `cytask_pat_…` ou jeton d'accès natif éphémère."
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "CyTask.Session",
+        "description": "Session navigateur. Chaque mutation exige aussi l'en-tête `X-CSRF-Token`."
+      }
+    },
+    "parameters": {
+      "projectId": { "name": "projectId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "taskId": { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "uploadId": { "name": "uploadId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "tokenId": { "name": "tokenId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "responses": {
+      "Unauthorized": { "description": "Authentification requise ou invalide" },
+      "Forbidden": { "description": "Rôle insuffisant, CSRF invalide ou jeton en lecture seule" },
+      "NotFound": { "description": "Inexistant ou hors de l'organisation authentifiée" },
+      "Conflict": { "description": "Conflit d'état" },
+      "Validation": { "description": "Corps invalide, détails par champ dans `errors`" }
+    },
+    "schemas": {
+      "Session": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "email": { "type": "string" },
+          "displayName": { "type": "string" },
+          "role": { "type": "string", "enum": ["owner", "admin", "member", "viewer"] },
+          "csrfToken": { "type": "string", "description": "Vide hors création de session" }
+        }
+      },
+      "ApiToken": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "scopes": { "type": "string", "enum": ["read", "read write"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastUsedAt": { "type": ["string", "null"], "format": "date-time" },
+          "revokedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "CreatedApiToken": {
+        "type": "object",
+        "properties": {
+          "token": { "$ref": "#/components/schemas/ApiToken" },
+          "secret": { "type": "string", "description": "Montré une seule fois. Format cytask_pat_…" }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "key": { "type": "string" },
+          "nextTaskNumber": { "type": "integer" },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "WorkItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "number": { "type": "integer" },
+          "key": { "type": "string", "examples": ["NEB-12"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"] },
+          "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
+          "dueAt": { "type": ["string", "null"], "format": "date-time" },
+          "assigneeId": { "type": ["string", "null"], "format": "uuid" },
+          "assigneeName": { "type": ["string", "null"] },
+          "revision": { "type": "integer", "format": "int64" },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "taskId": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "authorName": { "type": "string" },
+          "body": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TaskDetails": {
+        "type": "object",
+        "properties": {
+          "task": { "$ref": "#/components/schemas/WorkItem" },
+          "comments": { "type": "array", "items": { "$ref": "#/components/schemas/Comment" } }
+        }
+      },
+      "TaskRelation": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "key": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "string" },
+          "linkedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TaskDependencyOverview": {
+        "type": "object",
+        "properties": {
+          "dependsOn": { "type": "array", "items": { "$ref": "#/components/schemas/TaskRelation" } },
+          "blocking": { "type": "array", "items": { "$ref": "#/components/schemas/TaskRelation" } }
+        }
+      },
+      "OrganizationMember": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "format": "uuid" },
+          "email": { "type": "string" },
+          "displayName": { "type": "string" },
+          "role": { "type": "string", "enum": ["owner", "admin", "member", "viewer"] },
+          "joinedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ActivityEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "eventType": { "type": "string", "examples": ["task.updated"] },
+          "aggregateType": { "type": "string" },
+          "aggregateId": { "type": "string", "format": "uuid" },
+          "actorId": { "type": ["string", "null"], "format": "uuid" },
+          "actorName": { "type": "string" },
+          "summary": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SearchHit": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["project", "task"] },
+          "id": { "type": "string", "format": "uuid" },
+          "key": { "type": "string" },
+          "title": { "type": "string" },
+          "excerpt": { "type": "string" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Attachment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "taskId": { "type": "string", "format": "uuid" },
+          "fileName": { "type": "string" },
+          "declaredContentType": { "type": "string" },
+          "detectedContentType": { "type": ["string", "null"], "description": "Type observé par le serveur ; c'est lui qui est servi" },
+          "sizeBytes": { "type": "integer", "format": "int64" },
+          "sha256": { "type": "string" },
+          "status": { "type": "string", "enum": ["uploading", "quarantined", "available", "rejected"] },
+          "optimizedLocally": { "type": "boolean" },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "rejectionReason": { "type": ["string", "null"] },
+          "width": { "type": ["integer", "null"] },
+          "height": { "type": ["integer", "null"] },
+          "reviewedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "UploadChunk": {
+        "type": "object",
+        "properties": {
+          "index": { "type": "integer" },
+          "sizeBytes": { "type": "integer", "format": "int64" },
+          "sha256": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AttachmentUpload": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "attachment": { "$ref": "#/components/schemas/Attachment" },
+          "chunkSizeBytes": { "type": "integer" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "status": { "type": "string", "enum": ["active", "completed", "rejected", "expired"] },
+          "chunks": { "type": "array", "items": { "$ref": "#/components/schemas/UploadChunk" } }
+        }
+      },
+      "ExternalReference": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "taskId": { "type": "string", "format": "uuid" },
+          "provider": { "type": "string", "examples": ["github"] },
+          "repository": { "type": "string", "examples": ["studio/nebula"] },
+          "referenceType": { "type": "string", "enum": ["commit", "branch", "tag", "merge_request"] },
+          "referenceValue": { "type": "string" },
+          "label": { "type": "string" },
+          "webUrl": { "type": ["string", "null"], "format": "uri" },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}
