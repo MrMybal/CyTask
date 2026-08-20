@@ -25,6 +25,8 @@ public sealed record AcceptInvitationRequest(string Token, string DisplayName, s
 
 public sealed record CreateProjectRequest(string Name, string Key);
 
+public sealed record CreateApiTokenRequest(string Name, string Scope, int? ExpiresInDays);
+
 public sealed record CreateTaskRequest(
     string Title,
     string? Description,

@@ -683,6 +683,84 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task ApiTokensAuthenticatePluginsWithScopeEnforcement()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var browser = factory.CreateClient();
+        var csrf = await BootstrapAsync(browser);
+        browser.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(browser);
+
+        var readToken = await PostAndReadAsync(
+            browser, "/api/v1/tokens", new { name = "Lecture CI", scope = "read", expiresInDays = 30 });
+        var writeToken = await PostAndReadAsync(
+            browser, "/api/v1/tokens", new { name = "Robot Git", scope = "write" });
+        var readSecret = readToken.GetProperty("secret").GetString()!;
+        var writeSecret = writeToken.GetProperty("secret").GetString()!;
+        Assert.StartsWith("cytask_pat_", readSecret, StringComparison.Ordinal);
+
+        using var reader = factory.CreateClient();
+        reader.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", readSecret);
+        using var readProjects = await reader.GetAsync(
+            new Uri("/api/v1/projects", UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, readProjects.StatusCode);
+
+        using var readOnlyMutation = await reader.PostAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/comments", UriKind.Relative),
+            new { body = "refusé" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, readOnlyMutation.StatusCode);
+
+        using var readOnlyTokenListing = await reader.GetAsync(
+            new Uri("/api/v1/tokens", UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, readOnlyTokenListing.StatusCode);
+
+        using var writer = factory.CreateClient();
+        writer.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", writeSecret);
+        using var writeMutation = await writer.PostAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/comments", UriKind.Relative),
+            new { body = "Commentaire déposé par un plugin, sans CSRF." },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, writeMutation.StatusCode);
+
+        var tokens = await ReadJsonAsync(await browser.GetAsync(
+            new Uri("/api/v1/tokens", UriKind.Relative), TestContext.Current.CancellationToken));
+        Assert.Equal(2, tokens.GetArrayLength());
+        Assert.DoesNotContain(
+            "secret",
+            tokens.EnumerateArray().SelectMany(token => token.EnumerateObject()).Select(p => p.Name));
+        var lastUsed = tokens.EnumerateArray()
+            .Single(token => token.GetProperty("name").GetString() == "Robot Git")
+            .GetProperty("lastUsedAt");
+        Assert.NotEqual(JsonValueKind.Null, lastUsed.ValueKind);
+
+        var readTokenId = readToken.GetProperty("token").GetProperty("id").GetGuid();
+        using var revoke = await browser.DeleteAsync(
+            new Uri($"/api/v1/tokens/{readTokenId}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+
+        using var afterRevoke = await reader.GetAsync(
+            new Uri("/api/v1/projects", UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, afterRevoke.StatusCode);
+    }
+
+    [Fact]
+    public async Task OpenApiDocumentDescribesTheApiWithoutAuthentication()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            new Uri("/api/v1/openapi.json", UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var document = await ReadJsonAsync(response);
+        Assert.Equal("3.1.0", document.GetProperty("openapi").GetString());
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tokens", out _));
+    }
+
+    [Fact]
     public async Task ReviewedImageBecomesDownloadableWithItsRealContentType()
     {
         await using var factory = new CyTaskApiFactory();

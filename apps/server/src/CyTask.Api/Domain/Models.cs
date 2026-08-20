@@ -210,6 +210,19 @@ public enum UpdateTaskStatus
 
 public sealed record UpdateTaskResult(UpdateTaskStatus Status, WorkItem? Task);
 
+public sealed record ApiToken(
+    Guid Id,
+    string Name,
+    string Scopes,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? LastUsedAt,
+    DateTimeOffset? RevokedAt);
+
+public sealed record CreatedApiToken(ApiToken Token, string Secret);
+
+public sealed record ApiTokenPrincipal(AuthenticatedUser User, string Scopes);
+
 public sealed record BootstrapResult(
     AuthenticatedUser User,
     string SessionToken,

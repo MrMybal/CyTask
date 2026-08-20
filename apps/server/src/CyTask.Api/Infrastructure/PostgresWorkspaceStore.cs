@@ -349,6 +349,152 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             reader.GetString(4), [], reader.GetFieldValue<DateTimeOffset>(5));
     }
 
+    public async Task<CreatedApiToken?> CreateApiTokenAsync(
+        Guid organizationId,
+        Guid userId,
+        string name,
+        string scopes,
+        string secret,
+        byte[] tokenHash,
+        DateTimeOffset? expiresAt,
+        int maximumActiveTokens,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var tokenId = Guid.CreateVersion7();
+        var createdAt = DateTimeOffset.UtcNow;
+        await using (var command = new NpgsqlCommand("""
+                         INSERT INTO api_tokens(
+                             id, organization_id, user_id, name, token_hash, scopes, created_at, expires_at)
+                         SELECT @id, @organization_id, @user_id, @name, @token_hash, @scopes, @created_at, @expires_at
+                         WHERE (
+                             SELECT count(*) FROM api_tokens
+                             WHERE user_id = @user_id AND revoked_at IS NULL
+                               AND (expires_at IS NULL OR expires_at > now())
+                         ) < @maximum;
+                         """, connection, transaction))
+        {
+            command.Parameters.AddWithValue("id", tokenId);
+            command.Parameters.AddWithValue("organization_id", organizationId);
+            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("name", name);
+            command.Parameters.AddWithValue("token_hash", tokenHash);
+            command.Parameters.AddWithValue("scopes", scopes);
+            command.Parameters.AddWithValue("created_at", createdAt);
+            command.Parameters.AddWithValue("expires_at", (object?)expiresAt ?? DBNull.Value);
+            command.Parameters.AddWithValue("maximum", maximumActiveTokens);
+            if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+        }
+
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "api_token.created", "api-token", tokenId,
+            userId, await GetDisplayNameAsync(connection, transaction, userId, cancellationToken),
+            $"Jeton d’API « {name} » créé ({scopes})", createdAt, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new CreatedApiToken(
+            new ApiToken(tokenId, name, scopes, createdAt, expiresAt, null, null), secret);
+    }
+
+    public async Task<IReadOnlyList<ApiToken>> ListApiTokensAsync(
+        Guid organizationId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT id, name, scopes, created_at, expires_at, last_used_at, revoked_at
+            FROM api_tokens
+            WHERE organization_id = @organization_id AND user_id = @user_id
+            ORDER BY created_at DESC;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("user_id", userId);
+        var tokens = new List<ApiToken>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            tokens.Add(new ApiToken(
+                reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
+                reader.GetFieldValue<DateTimeOffset>(3),
+                reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
+                reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5),
+                reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6)));
+        }
+
+        return tokens;
+    }
+
+    public async Task<bool> RevokeApiTokenAsync(
+        Guid organizationId,
+        Guid userId,
+        Guid tokenId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        string? tokenName;
+        await using (var command = new NpgsqlCommand("""
+                         UPDATE api_tokens SET revoked_at = now()
+                         WHERE id = @id AND organization_id = @organization_id
+                           AND user_id = @user_id AND revoked_at IS NULL
+                         RETURNING name;
+                         """, connection, transaction))
+        {
+            command.Parameters.AddWithValue("id", tokenId);
+            command.Parameters.AddWithValue("organization_id", organizationId);
+            command.Parameters.AddWithValue("user_id", userId);
+            tokenName = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (tokenName is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "api_token.revoked", "api-token", tokenId,
+            userId, await GetDisplayNameAsync(connection, transaction, userId, cancellationToken),
+            $"Jeton d’API « {tokenName} » révoqué", DateTimeOffset.UtcNow, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<ApiTokenPrincipal?> FindApiTokenAsync(
+        byte[] tokenHash,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            UPDATE api_tokens t
+            SET last_used_at = CASE
+                WHEN t.last_used_at IS NULL OR t.last_used_at < now() - interval '1 minute'
+                THEN now() ELSE t.last_used_at END
+            FROM users u, organization_members m
+            WHERE t.token_hash = @token_hash AND t.revoked_at IS NULL
+              AND (t.expires_at IS NULL OR t.expires_at > now())
+              AND u.id = t.user_id
+              AND m.user_id = t.user_id AND m.organization_id = t.organization_id
+            RETURNING u.id, t.organization_id, u.normalized_email, u.display_name,
+                      m.role, COALESCE(t.expires_at, now() + interval '1 year'), t.scopes;
+            """);
+        command.Parameters.AddWithValue("token_hash", tokenHash);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ApiTokenPrincipal(
+            new AuthenticatedUser(
+                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
+                reader.GetString(4), [], reader.GetFieldValue<DateTimeOffset>(5)),
+            reader.GetString(6));
+    }
+
     public async Task DeleteAccessTokenAsync(byte[] accessTokenHash, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);

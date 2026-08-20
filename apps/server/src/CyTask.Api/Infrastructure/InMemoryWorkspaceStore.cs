@@ -12,6 +12,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private readonly Dictionary<string, NativeAuthorizationEntry> _nativeAuthorizations =
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, AccessTokenEntry> _accessTokens = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ApiTokenEntry> _apiTokens = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Project> _projects = [];
     private readonly Dictionary<Guid, WorkItem> _tasks = [];
     private readonly Dictionary<Guid, Comment> _comments = [];
@@ -308,6 +309,118 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                     $"Accès natif révoqué pour {accessToken.ClientId}", DateTimeOffset.UtcNow);
             }
             return Task.CompletedTask;
+        }
+    }
+
+    public Task<CreatedApiToken?> CreateApiTokenAsync(
+        Guid organizationId,
+        Guid userId,
+        string name,
+        string scopes,
+        string secret,
+        byte[] tokenHash,
+        DateTimeOffset? expiresAt,
+        int maximumActiveTokens,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var active = _apiTokens.Values.Count(entry =>
+                entry.UserId == userId && entry.Token.RevokedAt is null &&
+                (entry.Token.ExpiresAt is null || entry.Token.ExpiresAt > now));
+            if (active >= maximumActiveTokens)
+            {
+                return Task.FromResult<CreatedApiToken?>(null);
+            }
+
+            var token = new ApiToken(Guid.CreateVersion7(), name, scopes, now, expiresAt, null, null);
+            _apiTokens[Convert.ToHexString(tokenHash)] =
+                new ApiTokenEntry(token, organizationId, userId);
+            AddActivity(
+                organizationId, "api_token.created", "api-token", token.Id,
+                userId, _users[userId].DisplayName,
+                $"Jeton d’API « {name} » créé ({scopes})", now);
+            return Task.FromResult<CreatedApiToken?>(new CreatedApiToken(token, secret));
+        }
+    }
+
+    public Task<IReadOnlyList<ApiToken>> ListApiTokensAsync(
+        Guid organizationId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            IReadOnlyList<ApiToken> result = _apiTokens.Values
+                .Where(entry => entry.OrganizationId == organizationId && entry.UserId == userId)
+                .Select(entry => entry.Token)
+                .OrderByDescending(token => token.CreatedAt)
+                .ToArray();
+            return Task.FromResult(result);
+        }
+    }
+
+    public Task<bool> RevokeApiTokenAsync(
+        Guid organizationId,
+        Guid userId,
+        Guid tokenId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var match = _apiTokens.FirstOrDefault(pair =>
+                pair.Value.Token.Id == tokenId && pair.Value.OrganizationId == organizationId &&
+                pair.Value.UserId == userId && pair.Value.Token.RevokedAt is null);
+            if (match.Key is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            _apiTokens[match.Key] = match.Value with
+            {
+                Token = match.Value.Token with { RevokedAt = now }
+            };
+            AddActivity(
+                organizationId, "api_token.revoked", "api-token", tokenId,
+                userId, _users[userId].DisplayName,
+                $"Jeton d’API « {match.Value.Token.Name} » révoqué", now);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<ApiTokenPrincipal?> FindApiTokenAsync(
+        byte[] tokenHash,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var key = Convert.ToHexString(tokenHash);
+            var now = DateTimeOffset.UtcNow;
+            if (!_apiTokens.TryGetValue(key, out var entry) || entry.Token.RevokedAt is not null ||
+                (entry.Token.ExpiresAt is not null && entry.Token.ExpiresAt <= now) ||
+                !_users.TryGetValue(entry.UserId, out var user) ||
+                !_memberships.TryGetValue(entry.UserId, out var membership) ||
+                membership.OrganizationId != entry.OrganizationId)
+            {
+                return Task.FromResult<ApiTokenPrincipal?>(null);
+            }
+
+            if (entry.Token.LastUsedAt is null || now - entry.Token.LastUsedAt > TimeSpan.FromMinutes(1))
+            {
+                _apiTokens[key] = entry with { Token = entry.Token with { LastUsedAt = now } };
+            }
+
+            var authenticated = new AuthenticatedUser(
+                user.Id,
+                entry.OrganizationId,
+                user.Email,
+                user.DisplayName,
+                membership.Role,
+                [],
+                entry.Token.ExpiresAt ?? now.AddYears(1));
+            return Task.FromResult<ApiTokenPrincipal?>(new ApiTokenPrincipal(authenticated, entry.Token.Scopes));
         }
     }
 
@@ -1230,6 +1343,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         string ClientId,
         DateTimeOffset ExpiresAt,
         DateTimeOffset CreatedAt);
+
+    private sealed record ApiTokenEntry(ApiToken Token, Guid OrganizationId, Guid UserId);
 
     private sealed record InvitationEntry(
         Guid Id,
