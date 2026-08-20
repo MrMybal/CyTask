@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore server
+        run: dotnet restore CyTask.slnx --locked-mode
+
+      - name: Test server
+        run: dotnet test CyTask.slnx --configuration Release --no-restore
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install Web dependencies
+        working-directory: apps/web
+        run: npm ci --no-fund --no-audit
+
+      - name: Build Web client
+        working-directory: apps/web
+        run: npm run build
+
+      - name: Audit production Web dependencies
+        working-directory: apps/web
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build production image
+        run: docker build --file infra/docker/Dockerfile .

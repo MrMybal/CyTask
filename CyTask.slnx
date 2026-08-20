@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="apps/server/src/CyTask.Api/CyTask.Api.csproj" />
+  <Project Path="apps/server/tests/CyTask.Api.Tests/CyTask.Api.Tests.csproj" />
+</Solution>
+

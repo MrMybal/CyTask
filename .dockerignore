@@ -1,0 +1,13 @@
+.git
+.data
+.tools
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+Binaries
+DerivedDataCache
+Intermediate
+Saved

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "recipeId": "0198c8c5-8129-7d0e-9673-8dd3ba16ed4b",
+  "taskId": "0198c8c4-e1ff-7a63-b4e6-b8de8fdd293e",
+  "revision": 1,
+  "idempotencyKey": "0198c8c5-8129-7d0e-9673-8dd3ba16ed4b:1",
+  "title": "Préparer le dossier et l'instance de matériau",
+  "engine": {
+    "minimum": "4.27",
+    "maximum": "5.8"
+  },
+  "preconditions": [
+    {
+      "kind": "asset-exists",
+      "path": "/Game/Materials/M_Master"
+    },
+    {
+      "kind": "asset-missing",
+      "path": "/Game/Characters/Hero/Materials/MI_Hero"
+    }
+  ],
+  "steps": [
+    {
+      "kind": "create-folder",
+      "path": "/Game/Characters/Hero/Materials"
+    },
+    {
+      "kind": "duplicate-asset",
+      "source": "/Game/Materials/M_Master",
+      "destination": "/Game/Characters/Hero/Materials/MI_Hero"
+    },
+    {
+      "kind": "set-metadata",
+      "asset": "/Game/Characters/Hero/Materials/MI_Hero",
+      "key": "CyTask.TaskId",
+      "value": "0198c8c4-e1ff-7a63-b4e6-b8de8fdd293e"
+    }
+  ]
+}
+

@@ -1,0 +1,63 @@
+name: cytask
+
+services:
+  database:
+    image: postgres:18.4-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cytask
+      POSTGRES_USER: cytask
+      POSTGRES_PASSWORD: ${CYTASK_DB_PASSWORD:?Définissez CYTASK_DB_PASSWORD dans le fichier .env}
+    volumes:
+      - cytask-postgres:/var/lib/postgresql/18/docker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cytask -d cytask"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - backend
+
+  server:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      CYTASK__DATABASECONNECTION: Host=database;Port=5432;Database=cytask;Username=cytask;Password=${CYTASK_DB_PASSWORD};SSL Mode=Disable
+      CYTASK__APPLYMIGRATIONS: "true"
+      CYTASK__USEINMEMORYSTORE: "false"
+      CYTASK__MEDIASTORAGEPATH: /var/lib/cytask/media
+      ALLOWEDHOSTS: ${CYTASK_ALLOWED_HOSTS:-localhost;127.0.0.1}
+    volumes:
+      - cytask-media:/var/lib/cytask/media
+    ports:
+      - "127.0.0.1:${CYTASK_HTTP_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "dotnet", "CyTask.Api.dll", "--health-check"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - backend
+
+volumes:
+  cytask-postgres:
+  cytask-media:
+
+networks:
+  backend:
+    internal: true

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "dev.cytask.git",
+  "name": "CyTask Git",
+  "description": "Relie des références Git aux tâches CyTask.",
+  "version": "0.1.0",
+  "apiVersion": "v1",
+  "runtime": "service-connector",
+  "entrypoints": {
+    "service": "CyTask.Plugin.Git"
+  },
+  "permissions": [
+    "events:publish",
+    "external-links:write",
+    "tasks:read"
+  ],
+  "minimumCyTaskVersion": "0.1.0",
+  "homepage": "https://cytask.dev/plugins/git"
+}
+

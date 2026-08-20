@@ -1,0 +1,38 @@
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pfx
+*.pem
+*.key
+
+# JavaScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# .NET
+bin/
+obj/
+
+# Rust
+target/
+
+# Unreal Engine
+.build/
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.sln
+
+# Local object storage and databases
+.data/
+.tools/
