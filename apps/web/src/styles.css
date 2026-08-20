@@ -305,6 +305,10 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
 .attachment-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-copy small { color: var(--muted); font-size: 9px; }
 .attachment-state { border: 1px solid var(--line); border-radius: 999px; padding: 3px 6px; color: var(--muted); font-size: 8px; text-transform: capitalize; }
+.attachment-thumb { width: 29px; height: 29px; flex: 0 0 auto; border: 1px solid var(--line-soft); border-radius: 7px; background: var(--accent-dark); object-fit: cover; }
+.attachment-reason { color: var(--danger); font-size: 9px; }
+.attachment-download { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; color: var(--accent); font-size: 8px; text-decoration: none; }
+.attachment-download:hover { border-color: var(--accent); }
 .attachment-quarantined { border-color: #755f38; color: var(--warning); }
 .attachment-available { border-color: #376957; color: var(--accent); }
 .attachment-rejected { border-color: #713d42; color: var(--danger); }

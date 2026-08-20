@@ -62,7 +62,12 @@ Clés de la section `CyTask` :
 | `MaxAttachmentBytes` | `2147483648` | taille maximale déclarée d'une pièce jointe |
 | `UploadChunkBytes` | `4194304` | taille attendue d'un bloc, sauf le dernier |
 | `UploadHours` | `24` | expiration d'une session d'envoi |
-| `MediaStoragePath` | `.data/media` | stockage privé des blocs et de la quarantaine |
+| `MediaStoragePath` | `.data/media` | stockage privé des blocs, de la quarantaine et des objets validés |
+| `MediaReviewSeconds` | `5` | intervalle entre deux passes du worker d'analyse |
+| `MediaReviewBatch` | `8` | pièces jointes réservées par passe |
+| `MediaReviewAttempts` | `3` | tentatives avant refus définitif d'un fichier |
+| `MaxMediaDimension` | `20000` | côté maximal accepté pour une image |
+| `MaxMediaPixels` | `80000000` | surface maximale acceptée pour une image |
 
 Dans une variable d'environnement, `CyTask:DatabaseConnection` devient
 `CYTASK__DATABASECONNECTION`.
@@ -86,7 +91,11 @@ d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.ex
 - export JSON versionné réservé aux propriétaires et administrateurs ;
 - service worker de production qui exclut explicitement `/api` et `/health` du cache.
 - pièces jointes envoyées séquentiellement par blocs SHA-256 et placées en quarantaine ;
-- dix sessions d'envoi actives au maximum par utilisateur.
+- dix sessions d'envoi actives au maximum par utilisateur ;
+- sortie de quarantaine décidée par un worker qui parcourt réellement le conteneur du fichier ;
+- type servi déduit du contenu, jamais de la déclaration du client, et restreint à une liste connue ;
+- téléchargement borné à l'organisation, toujours en pièce jointe et avec `nosniff` ;
+- bail concurrent et nombre de tentatives bornés sur l'analyse, pour un fichier qui la ferait échouer.
 
 ## Limites connues avant une bêta
 
@@ -97,6 +106,7 @@ d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.ex
 - la recherche PostgreSQL utilise encore `ILIKE` avant l'ajout d'un index de recherche dédié ;
 - aucune migration de changement de schéma n'a encore été exercée en production ;
 - les connecteurs Git distants et la plateforme de plugins restent à construire ;
-- aucun fichier en quarantaine n'est encore promu ni téléchargeable : worker antivirus et réencodage restent à implémenter ;
+- l'analyse valide les conteneurs mais ne décode ni ne réencode : ni vignette, ni profil vidéo maîtrisé, ni analyse antivirale ;
+- le worker d'analyse tourne dans le processus serveur ; son isolement dans un processus dédié reste à faire ;
 - le calcul SHA-256 Web utilise actuellement `SubtleCrypto` en mémoire et limite donc l'interface à 256 Mio ;
 - le futur client installé devra fournir un hachage, une conversion et une reprise réellement streaming.

@@ -115,6 +115,10 @@ export interface Attachment {
   status: "uploading" | "quarantined" | "available" | "rejected";
   optimizedLocally: boolean;
   createdAt: string;
+  rejectionReason?: string;
+  width?: number;
+  height?: number;
+  reviewedAt?: string;
 }
 
 export interface UploadChunk {
@@ -271,6 +275,7 @@ export const api = {
       method: "DELETE"
     }),
   attachments: (taskId: string) => request<Attachment[]>(`/api/v1/tasks/${taskId}/attachments`),
+  attachmentContentUrl: (attachmentId: string) => `/api/v1/attachments/${attachmentId}/content`,
   externalReferences: (taskId: string) =>
     request<ExternalReference[]>(`/api/v1/tasks/${taskId}/external-references`),
   createExternalReference: (taskId: string, body: {
