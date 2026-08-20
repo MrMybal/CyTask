@@ -324,6 +324,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     };
     stream.addEventListener("attachment.upload_started", refreshAttachments);
     stream.addEventListener("attachment.quarantined", refreshAttachments);
+    stream.addEventListener("attachment.available", refreshAttachments);
     stream.addEventListener("attachment.rejected", refreshAttachments);
     stream.addEventListener("external_reference.created", refreshAttachments);
     stream.addEventListener("invitation.accepted", () => {
@@ -1525,18 +1526,39 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             {detailTab === "files" && (
             <section className="attachments detail-section">
               <h3>Fichiers <span>{attachments.length}</span></h3>
-              {attachments.map((attachment) => (
-                <article className="attachment-row" key={attachment.id}>
-                  <span className="attachment-icon" aria-hidden="true">{attachment.declaredContentType.startsWith("video/") ? "VI" : "FI"}</span>
-                  <span className="attachment-copy">
-                    <strong>{attachment.fileName}</strong>
-                    <small>{formatBytes(attachment.sizeBytes)} · {attachmentStatusLabel(attachment.status)}</small>
-                  </span>
-                  <span className={`attachment-state attachment-${attachment.status}`}>
-                    {attachment.status === "quarantined" ? "Quarantaine" : attachment.status}
-                  </span>
-                </article>
-              ))}
+              {attachments.map((attachment) => {
+                const served = attachment.detectedContentType ?? attachment.declaredContentType;
+                const isAvailable = attachment.status === "available";
+                const contentUrl = api.attachmentContentUrl(attachment.id);
+                return (
+                  <article className="attachment-row" key={attachment.id}>
+                    {isAvailable && served.startsWith("image/") ? (
+                      <img className="attachment-thumb" src={contentUrl} alt="" loading="lazy" />
+                    ) : (
+                      <span className="attachment-icon" aria-hidden="true">{served.startsWith("video/") ? "VI" : "FI"}</span>
+                    )}
+                    <span className="attachment-copy">
+                      <strong>{attachment.fileName}</strong>
+                      <small>
+                        {formatBytes(attachment.sizeBytes)} · {attachmentStatusLabel(attachment.status)}
+                        {attachment.width && attachment.height ? ` · ${attachment.width}×${attachment.height}` : ""}
+                      </small>
+                      {attachment.rejectionReason && (
+                        <small className="attachment-reason">{attachment.rejectionReason}</small>
+                      )}
+                    </span>
+                    {isAvailable ? (
+                      <a className="attachment-download" href={contentUrl} download={attachment.fileName}>
+                        Télécharger
+                      </a>
+                    ) : (
+                      <span className={`attachment-state attachment-${attachment.status}`}>
+                        {attachmentBadgeLabel(attachment.status)}
+                      </span>
+                    )}
+                  </article>
+                );
+              })}
               {attachments.length === 0 && <p className="empty-note">Aucun fichier lié à cette tâche.</p>}
               {canContribute && (
                 <form className="attachment-form" onSubmit={uploadAttachment}>
@@ -1557,7 +1579,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <button className="primary-button small" type="submit" disabled={Boolean(uploadProgress)}>
                     {uploadProgress ? "Envoi en cours…" : "Envoyer en quarantaine"}
                   </button>
-                  <small className="security-note">L’original reste inaccessible jusqu’à validation ou réencodage serveur.</small>
+                  <small className="security-note">L’original reste en quarantaine jusqu’à la validation de son format par le serveur.</small>
                 </form>
               )}
             </section>
@@ -1705,11 +1727,20 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} Gio`;
 }
 
+function attachmentBadgeLabel(status: Attachment["status"]): string {
+  return {
+    uploading: "Incomplet",
+    quarantined: "Analyse",
+    available: "Validé",
+    rejected: "Refusé"
+  }[status];
+}
+
 function attachmentStatusLabel(status: Attachment["status"]): string {
   return {
     uploading: "Envoi incomplet",
-    quarantined: "En quarantaine, non téléchargeable",
+    quarantined: "En quarantaine, analyse en cours",
     available: "Validé",
-    rejected: "Rejeté après vérification"
+    rejected: "Refusé à l’analyse"
   }[status];
 }

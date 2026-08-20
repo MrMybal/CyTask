@@ -25,8 +25,12 @@ La première tranche verticale est implémentée : amorçage sécurisé du premi
 compte, sessions, invitations à usage unique, rôles, organisation, projets,
 tâches éditables avec contrôle de révision, commentaires et événements temps réel.
 La recherche, le journal d’activité et l’export JSON sont également disponibles.
-Un premier pipeline de pièces jointes calcule les empreintes côté client, envoie
-les données par blocs vérifiés et conserve les originaux en quarantaine hors du Web.
+Le pipeline de pièces jointes calcule les empreintes côté client, envoie les données
+par blocs vérifiés et conserve les originaux en quarantaine hors du Web. Un worker
+d'analyse en sort chaque fichier : il parcourt réellement le conteneur PNG, JPEG,
+GIF, WebP, MP4 ou WebM, refuse les fichiers tronqués ou dont le contenu ne
+correspond pas au type annoncé, puis rend le fichier téléchargeable dans la seule
+organisation qui l'a déposé. Le réencodage et l'analyse antivirale restent à faire.
 Les tâches peuvent aussi recevoir des références Git manuelles génériques ; aucun
 dépôt ni secret n'est requis tant que le connecteur Git officiel n'est pas activé.
 Le premier plugin Unreal source est également présent : panneau Slate, connexion
@@ -39,6 +43,7 @@ du moteur complète.
 Le client Web responsive et installable consomme la même API que les futurs
 clients et le plugin Unreal. Son interface de tâches propose maintenant vues
 Liste et Kanban, priorités, échéances, assignation aux membres, filtres et tris mémorisés localement,
+vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
 déplacement optimiste avec contrôle de révision, détail en onglets et liens directs
 partageables. Les tâches peuvent aussi exprimer des dépendances acycliques et les
 tâches qu'elles bloquent. PostgreSQL est la persistance cible ; un stockage

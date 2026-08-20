@@ -50,6 +50,12 @@ les auto-dépendances et les cycles transitifs. PostgreSQL sérialise la vérifi
 du graphe par organisation afin que deux ajouts concurrents ne puissent pas créer
 un cycle entre eux.
 
+L'onglet **Fichiers** distingue trois moments de la vie d'une pièce jointe. Pendant
+l'analyse, le fichier est visible mais aucun lien ne permet de le lire. Une fois
+validé, il affiche ses dimensions, une vignette lorsque le serveur a reconnu une
+image, et un lien de téléchargement. Refusé, il conserve sa ligne et affiche le
+motif exact du refus plutôt que de disparaître sans explication.
+
 ## Performance et accessibilité
 
 - les réponses périmées après un changement de projet sont ignorées ;

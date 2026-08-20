@@ -70,10 +70,18 @@ de compatibilité annoncée.
 5. Images et vidéos sont décodées puis réencodées vers des profils maîtrisés.
 6. Les variantes validées deviennent visibles et un événement notifie les clients.
 
+Les étapes 1 à 4 et 6 sont implémentées. L'analyse actuelle parcourt réellement
+le conteneur PNG, JPEG, GIF, WebP, MP4 ou WebM, refuse les fichiers tronqués et
+borne les dimensions annoncées, sans dépendre d'un décodeur externe. Le type servi
+provient toujours du contenu observé : un fichier annoncé comme média sans en être
+un est refusé, et un format inconnu reste générique et téléchargeable seulement en
+pièce jointe. L'étape 5 reste à faire, avec l'analyse antivirale.
+
 L'application installée peut embarquer FFmpeg ; le Web utilise les capacités du
 navigateur quand elles existent. Le worker serveur reste nécessaire pour obtenir
 des sorties cohérentes. Les licences des codecs et de la distribution FFmpeg
-doivent être auditées avant publication des binaires.
+doivent être auditées avant publication des binaires ; c'est cette décision, et non
+le code, qui bloque aujourd'hui le réencodage.
 
 ## Modèle d'extensions
 
