@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cytask.dev/schemas/unreal-asset-recipe-v1.json",
+  "title": "CyTask Unreal Asset Recipe",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recipeId",
+    "taskId",
+    "revision",
+    "idempotencyKey",
+    "engine",
+    "steps"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recipeId": { "type": "string", "format": "uuid" },
+    "taskId": { "type": "string", "format": "uuid" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "idempotencyKey": { "type": "string", "minLength": 16, "maxLength": 128 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "maximum"],
+      "properties": {
+        "minimum": { "type": "string", "pattern": "^(4\\.27|5\\.[0-8])$" },
+        "maximum": { "type": "string", "pattern": "^(4\\.27|5\\.[0-8])$" }
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/precondition" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "contentPath": {
+      "type": "string",
+      "pattern": "^/(Game|Plugins/[A-Za-z0-9_-]+)/[A-Za-z0-9_./-]*$",
+      "maxLength": 512
+    },
+    "precondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["asset-exists", "asset-missing"] },
+        "path": { "$ref": "#/$defs/contentPath" }
+      }
+    },
+    "step": {
+      "oneOf": [
+        { "$ref": "#/$defs/createFolder" },
+        { "$ref": "#/$defs/duplicateAsset" },
+        { "$ref": "#/$defs/setMetadata" }
+      ]
+    },
+    "createFolder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "const": "create-folder" },
+        "path": { "$ref": "#/$defs/contentPath" }
+      }
+    },
+    "duplicateAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source", "destination"],
+      "properties": {
+        "kind": { "const": "duplicate-asset" },
+        "source": { "$ref": "#/$defs/contentPath" },
+        "destination": { "$ref": "#/$defs/contentPath" }
+      }
+    },
+    "setMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "asset", "key", "value"],
+      "properties": {
+        "kind": { "const": "set-metadata" },
+        "asset": { "$ref": "#/$defs/contentPath" },
+        "key": { "type": "string", "pattern": "^CyTask\\.[A-Za-z0-9_.-]+$", "maxLength": 128 },
+        "value": { "type": "string", "maxLength": 2048 }
+      }
+    }
+  }
+}
+

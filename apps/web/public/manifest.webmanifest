@@ -1,0 +1,19 @@
+{
+  "name": "CyTask",
+  "short_name": "CyTask",
+  "description": "Gestion de projets et de tâches pour les équipes de production.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b1017",
+  "theme_color": "#0b1017",
+  "icons": [
+    {
+      "src": "/icons/cytask.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cytask.dev/schemas/plugin-manifest-v1.json",
+  "title": "CyTask Plugin Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "version",
+    "apiVersion",
+    "runtime",
+    "entrypoints",
+    "permissions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$",
+      "maxLength": 128
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "description": { "type": "string", "maxLength": 500 },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "apiVersion": { "type": "string", "pattern": "^v[1-9][0-9]*$" },
+    "runtime": {
+      "type": "string",
+      "enum": ["sandbox", "service-connector", "ui-extension"]
+    },
+    "entrypoints": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "minProperties": 1
+    },
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)+$"
+      }
+    },
+    "networkAllowlist": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "hostname" }
+    },
+    "minimumCyTaskVersion": { "type": "string" },
+    "homepage": { "type": "string", "format": "uri" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "runtime": { "const": "service-connector" } },
+        "required": ["runtime"]
+      },
+      "then": {},
+      "else": {
+        "not": { "required": ["networkAllowlist"] }
+      }
+    }
+  ]
+}

@@ -1,0 +1,321 @@
+export interface Session {
+  userId: string;
+  organizationId: string;
+  email: string;
+  displayName: string;
+  role: string;
+  csrfToken: string;
+}
+
+export interface Project {
+  id: string;
+  organizationId: string;
+  name: string;
+  key: string;
+  createdAt: string;
+}
+
+export interface WorkItem {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  number: number;
+  key: string;
+  title: string;
+  description: string;
+  status: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+  priority: "low" | "normal" | "high" | "urgent";
+  dueAt: string | null;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Comment {
+  id: string;
+  taskId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface TaskDetails {
+  task: WorkItem;
+  comments: Comment[];
+}
+
+export interface TaskRelation {
+  id: string;
+  projectId: string;
+  key: string;
+  title: string;
+  status: WorkItem["status"];
+  linkedAt: string;
+}
+
+export interface TaskDependencyOverview {
+  dependsOn: TaskRelation[];
+  blocking: TaskRelation[];
+}
+
+export interface OrganizationMember {
+  userId: string;
+  email: string;
+  displayName: string;
+  role: "owner" | "admin" | "member" | "viewer";
+  joinedAt: string;
+}
+
+export interface InvitationPreview {
+  organizationName: string;
+  email: string;
+  role: "admin" | "member" | "viewer";
+  expiresAt: string;
+}
+
+export interface CreatedInvitation {
+  id: string;
+  email: string;
+  role: "admin" | "member" | "viewer";
+  token: string;
+  expiresAt: string;
+}
+
+export interface ActivityEntry {
+  id: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  actorId?: string;
+  actorName: string;
+  summary: string;
+  createdAt: string;
+}
+
+export interface SearchHit {
+  type: "project" | "task";
+  id: string;
+  key: string;
+  title: string;
+  excerpt: string;
+  updatedAt: string;
+}
+
+export interface Attachment {
+  id: string;
+  taskId: string;
+  fileName: string;
+  declaredContentType: string;
+  detectedContentType?: string;
+  sizeBytes: number;
+  sha256: string;
+  status: "uploading" | "quarantined" | "available" | "rejected";
+  optimizedLocally: boolean;
+  createdAt: string;
+}
+
+export interface UploadChunk {
+  index: number;
+  sizeBytes: number;
+  sha256: string;
+}
+
+export interface AttachmentUpload {
+  id: string;
+  attachment: Attachment;
+  chunkSizeBytes: number;
+  expiresAt: string;
+  status: "active" | "completed" | "rejected" | "expired";
+  chunks: UploadChunk[];
+}
+
+export interface ExternalReference {
+  id: string;
+  taskId: string;
+  provider: string;
+  repository: string;
+  referenceType: "commit" | "branch" | "tag" | "merge_request";
+  referenceValue: string;
+  label: string;
+  webUrl?: string;
+  createdAt: string;
+}
+
+export interface NativeAuthorizationRequest {
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
+  state: string;
+}
+
+export interface NativeAuthorizationResponse {
+  redirectUri: string;
+  expiresAt: string;
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly details?: unknown
+  ) {
+    super(message);
+  }
+}
+
+function readCookie(name: string): string | undefined {
+  const prefix = `${encodeURIComponent(name)}=`;
+  const value = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+  return value ? decodeURIComponent(value.slice(prefix.length)) : undefined;
+}
+
+function csrfToken(): string | undefined {
+  return readCookie("CyTask.Csrf") ?? readCookie("__Host-CyTask.Csrf");
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (typeof init?.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const method = init?.method?.toUpperCase() ?? "GET";
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const token = csrfToken();
+    if (token) headers.set("X-CSRF-Token", token);
+  }
+
+  const response = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  if (!response.ok) {
+    let details: unknown;
+    try {
+      details = await response.json();
+    } catch {
+      details = undefined;
+    }
+    throw new ApiError(`La requête a échoué (${response.status}).`, response.status, details);
+  }
+
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+export const api = {
+  bootstrapStatus: () => request<{ required: boolean }>("/api/v1/bootstrap/status"),
+  bootstrap: (body: {
+    email: string;
+    displayName: string;
+    password: string;
+    organizationName: string;
+  }) => request<Session>("/api/v1/bootstrap", { method: "POST", body: JSON.stringify(body) }),
+  login: (body: { email: string; password: string }) =>
+    request<Session>("/api/v1/sessions", { method: "POST", body: JSON.stringify(body) }),
+  invitationPreview: (token: string) =>
+    request<InvitationPreview>("/api/v1/invitations/preview", {
+      method: "POST",
+      body: JSON.stringify({ token })
+    }),
+  acceptInvitation: (body: { token: string; displayName: string; password: string }) =>
+    request<Session>("/api/v1/invitations/accept", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  me: () => request<Session>("/api/v1/me"),
+  logout: () => request<void>("/api/v1/session", { method: "DELETE" }),
+  createNativeAuthorization: (body: NativeAuthorizationRequest) =>
+    request<NativeAuthorizationResponse>("/api/v1/oauth/native/authorizations", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  activity: (limit = 50) => request<ActivityEntry[]>(`/api/v1/activity?limit=${limit}`),
+  search: (query: string, limit = 30) =>
+    request<SearchHit[]>(`/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+  members: () => request<OrganizationMember[]>("/api/v1/members"),
+  createInvitation: (body: { email: string; role: "admin" | "member" | "viewer" }) =>
+    request<CreatedInvitation>("/api/v1/invitations", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  projects: () => request<Project[]>("/api/v1/projects"),
+  createProject: (body: { name: string; key: string }) =>
+    request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),
+  tasks: (projectId: string) => request<WorkItem[]>(`/api/v1/projects/${projectId}/tasks`),
+  createTask: (projectId: string, body: {
+    title: string;
+    description: string;
+    priority: WorkItem["priority"];
+    dueAt: string | null;
+    assigneeId: string | null;
+  }) =>
+    request<WorkItem>(`/api/v1/projects/${projectId}/tasks`, {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  task: (taskId: string) => request<TaskDetails>(`/api/v1/tasks/${taskId}`),
+  taskDependencies: (taskId: string) =>
+    request<TaskDependencyOverview>(`/api/v1/tasks/${taskId}/dependencies`),
+  addTaskDependency: (taskId: string, dependsOnTaskId: string) =>
+    request<TaskRelation>(`/api/v1/tasks/${taskId}/dependencies`, {
+      method: "POST",
+      body: JSON.stringify({ dependsOnTaskId })
+    }),
+  removeTaskDependency: (taskId: string, dependsOnTaskId: string) =>
+    request<void>(`/api/v1/tasks/${taskId}/dependencies/${dependsOnTaskId}`, {
+      method: "DELETE"
+    }),
+  attachments: (taskId: string) => request<Attachment[]>(`/api/v1/tasks/${taskId}/attachments`),
+  externalReferences: (taskId: string) =>
+    request<ExternalReference[]>(`/api/v1/tasks/${taskId}/external-references`),
+  createExternalReference: (taskId: string, body: {
+    provider: string;
+    repository: string;
+    referenceType: ExternalReference["referenceType"];
+    referenceValue: string;
+    label: string;
+    webUrl?: string;
+  }) => request<ExternalReference>(`/api/v1/tasks/${taskId}/external-references`, {
+    method: "POST",
+    body: JSON.stringify(body)
+  }),
+  createAttachmentUpload: (taskId: string, body: {
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    sha256: string;
+    optimizedLocally: boolean;
+  }) => request<AttachmentUpload>(`/api/v1/tasks/${taskId}/attachment-uploads`, {
+    method: "POST",
+    body: JSON.stringify(body)
+  }),
+  uploadAttachmentChunk: (uploadId: string, index: number, chunk: Blob, sha256: string) =>
+    request<UploadChunk>(`/api/v1/attachment-uploads/${uploadId}/chunks/${index}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Chunk-SHA256": sha256
+      },
+      body: chunk
+    }),
+  completeAttachmentUpload: (uploadId: string) =>
+    request<Attachment>(`/api/v1/attachment-uploads/${uploadId}/complete`, { method: "POST" }),
+  updateTask: (
+    taskId: string,
+    body: Pick<WorkItem, "title" | "description" | "status" | "priority" | "dueAt" | "assigneeId">
+      & { expectedRevision: number }
+  ) => request<WorkItem>(`/api/v1/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  }),
+  addComment: (taskId: string, body: string) =>
+    request<Comment>(`/api/v1/tasks/${taskId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body })
+    })
+};

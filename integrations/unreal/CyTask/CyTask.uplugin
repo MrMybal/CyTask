@@ -1,0 +1,37 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "CyTask",
+  "Description": "Accès sécurisé aux tâches CyTask et recettes d'assets contrôlées.",
+  "Category": "Productivity",
+  "CreatedBy": "CyTask contributors",
+  "CreatedByURL": "https://cytask.dev",
+  "DocsURL": "https://cytask.dev/docs/unreal",
+  "EnabledByDefault": false,
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "CyTaskCompat",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "CyTaskCore",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "CyTaskAssetRecipes",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "CyTaskEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
