@@ -4,6 +4,7 @@ using CyTask.Api.Configuration;
 using CyTask.Api.Domain;
 using CyTask.Api.Infrastructure;
 using CyTask.Api.Realtime;
+using Microsoft.Net.Http.Headers;
 using CyTask.Api.Security;
 using Microsoft.Extensions.Options;
 
@@ -60,6 +61,7 @@ public static class ApiEndpoints
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapGet("/tasks/{taskId:guid}/attachments", ListAttachmentsAsync);
+        authenticated.MapGet("/attachments/{attachmentId:guid}/content", DownloadAttachmentAsync);
         authenticated.MapGet("/tasks/{taskId:guid}/external-references", ListExternalReferencesAsync);
         authenticated.MapPost("/tasks/{taskId:guid}/external-references", CreateExternalReferenceAsync)
             .AddEndpointFilter<CsrfFilter>()
@@ -821,6 +823,44 @@ public static class ApiEndpoints
         events.Publish(user.OrganizationId, "external_reference.created", reference.Id);
         return Results.Created($"/api/v1/tasks/{taskId}/external-references/{reference.Id}", reference);
     }
+
+    private static async Task<IResult> DownloadAttachmentAsync(
+        Guid attachmentId,
+        HttpContext context,
+        IWorkspaceStore store,
+        LocalMediaStorage storage,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var attachment = await store.FindAttachmentAsync(
+            user.OrganizationId, attachmentId, cancellationToken);
+        if (attachment is null || attachment.Status != "available")
+        {
+            return Results.NotFound();
+        }
+
+        var content = storage.OpenObject(user.OrganizationId, attachmentId);
+        if (content is null)
+        {
+            return Results.NotFound();
+        }
+
+        context.Response.Headers.CacheControl = "private, max-age=300, no-transform";
+        return Results.File(
+            content,
+            ServableContentType(attachment.DetectedContentType),
+            attachment.FileName,
+            attachment.ReviewedAt ?? attachment.CreatedAt,
+            new EntityTagHeaderValue($"\"{attachment.Sha256}\""),
+            enableRangeProcessing: true);
+    }
+
+    private static string ServableContentType(string? detectedContentType) => detectedContentType switch
+    {
+        "image/png" or "image/jpeg" or "image/gif" or "image/webp" or
+            "video/mp4" or "video/webm" => detectedContentType,
+        _ => "application/octet-stream"
+    };
 
     private static async Task<IResult> CreateAttachmentUploadAsync(
         Guid taskId,

@@ -122,7 +122,24 @@ public sealed record Attachment(
     string Status,
     bool OptimizedLocally,
     Guid CreatedBy,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? RejectionReason = null,
+    int? Width = null,
+    int? Height = null,
+    DateTimeOffset? ReviewedAt = null);
+
+public sealed record PendingAttachmentReview(
+    Guid Id,
+    Guid OrganizationId,
+    string DeclaredContentType,
+    int Attempts);
+
+public sealed record AttachmentReview(
+    bool Accepted,
+    string ContentType,
+    int? Width,
+    int? Height,
+    string? RejectionReason);
 
 public sealed record UploadChunk(
     int Index,

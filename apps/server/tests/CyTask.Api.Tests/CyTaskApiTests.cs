@@ -8,6 +8,8 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
+using CyTask.Api.Media;
 using Xunit;
 
 namespace CyTask.Api.Tests;
@@ -681,6 +683,134 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task ReviewedImageBecomesDownloadableWithItsRealContentType()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(client);
+        var bytes = SinglePixelPng();
+
+        var uploaded = await UploadAttachmentAsync(client, taskId, "pixel.png", "image/png", bytes);
+        var attachmentId = uploaded.GetProperty("id").GetGuid();
+        Assert.Equal("quarantined", uploaded.GetProperty("status").GetString());
+
+        using var beforeReview = await client.GetAsync(
+            new Uri($"/api/v1/attachments/{attachmentId}/content", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, beforeReview.StatusCode);
+
+        await factory.ReviewAttachmentsAsync();
+
+        var reviewed = await FindAttachmentAsync(client, taskId, attachmentId);
+        Assert.Equal("available", reviewed.GetProperty("status").GetString());
+        Assert.Equal("image/png", reviewed.GetProperty("detectedContentType").GetString());
+        Assert.Equal(1, reviewed.GetProperty("width").GetInt32());
+        Assert.Equal(1, reviewed.GetProperty("height").GetInt32());
+
+        using var download = await client.GetAsync(
+            new Uri($"/api/v1/attachments/{attachmentId}/content", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("image/png", download.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("nosniff", download.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal(
+            bytes,
+            await download.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReviewRejectsATruncatedImageAndKeepsItUndownloadable()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(client);
+        var bytes = SinglePixelPng()[..24];
+
+        var uploaded = await UploadAttachmentAsync(client, taskId, "coupe.png", "image/png", bytes);
+        var attachmentId = uploaded.GetProperty("id").GetGuid();
+        await factory.ReviewAttachmentsAsync();
+
+        var reviewed = await FindAttachmentAsync(client, taskId, attachmentId);
+        Assert.Equal("rejected", reviewed.GetProperty("status").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(reviewed.GetProperty("rejectionReason").GetString()));
+
+        using var download = await client.GetAsync(
+            new Uri($"/api/v1/attachments/{attachmentId}/content", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, download.StatusCode);
+    }
+
+    [Fact]
+    public async Task ReviewRejectsContentThatDoesNotMatchTheDeclaredType()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(client);
+
+        var uploaded = await UploadAttachmentAsync(
+            client, taskId, "capture.jpg", "image/jpeg", SinglePixelPng());
+        await factory.ReviewAttachmentsAsync();
+
+        var reviewed = await FindAttachmentAsync(client, taskId, uploaded.GetProperty("id").GetGuid());
+        Assert.Equal("rejected", reviewed.GetProperty("status").GetString());
+        Assert.Contains(
+            "image/png",
+            reviewed.GetProperty("rejectionReason").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReviewAcceptsAGenericFileButNeverServesItAsAMediaType()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(client);
+        var bytes = Encoding.UTF8.GetBytes("<html><script>alert(1)</script></html>");
+
+        var uploaded = await UploadAttachmentAsync(client, taskId, "note.html", "text/html", bytes);
+        var attachmentId = uploaded.GetProperty("id").GetGuid();
+        await factory.ReviewAttachmentsAsync();
+
+        var reviewed = await FindAttachmentAsync(client, taskId, attachmentId);
+        Assert.Equal("available", reviewed.GetProperty("status").GetString());
+
+        using var download = await client.GetAsync(
+            new Uri($"/api/v1/attachments/{attachmentId}/content", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("application/octet-stream", download.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
+    }
+
+    [Fact]
+    public async Task AttachmentContentStaysInsideItsOrganization()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var owner = factory.CreateClient();
+        var csrf = await BootstrapAsync(owner);
+        owner.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(owner);
+        var uploaded = await UploadAttachmentAsync(
+            owner, taskId, "pixel.png", "image/png", SinglePixelPng());
+        await factory.ReviewAttachmentsAsync();
+
+        using var stranger = factory.CreateClient();
+        using var download = await stranger.GetAsync(
+            new Uri($"/api/v1/attachments/{uploaded.GetProperty("id").GetGuid()}/content", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, download.StatusCode);
+    }
+
+    [Fact]
     public async Task AttachmentWithWrongFullFingerprintIsRejected()
     {
         await using var factory = new CyTaskApiFactory();
@@ -873,6 +1003,47 @@ public sealed class CyTaskApiTests
         return task.GetProperty("id").GetGuid();
     }
 
+    private static async Task<JsonElement> UploadAttachmentAsync(
+        HttpClient client, Guid taskId, string fileName, string contentType, byte[] bytes)
+    {
+        var sha256 = Sha256(bytes);
+        var upload = await PostAndReadAsync(
+            client,
+            $"/api/v1/tasks/{taskId}/attachment-uploads",
+            new { fileName, contentType, sizeBytes = bytes.Length, sha256, optimizedLocally = false });
+        var uploadId = upload.GetProperty("id").GetGuid();
+
+        using var chunkRequest = new HttpRequestMessage(
+            HttpMethod.Put, $"/api/v1/attachment-uploads/{uploadId}/chunks/0");
+        chunkRequest.Headers.Add("X-Chunk-SHA256", sha256);
+        chunkRequest.Content = new ByteArrayContent(bytes);
+        chunkRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        using var chunkResponse = await client.SendAsync(chunkRequest, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, chunkResponse.StatusCode);
+
+        using var completeResponse = await client.PostAsync(
+            new Uri($"/api/v1/attachment-uploads/{uploadId}/complete", UriKind.Relative),
+            null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        return await ReadJsonAsync(completeResponse);
+    }
+
+    private static async Task<JsonElement> FindAttachmentAsync(HttpClient client, Guid taskId, Guid attachmentId)
+    {
+        using var response = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/attachments", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var attachments = await ReadJsonAsync(response);
+        return attachments.EnumerateArray()
+            .Single(attachment => attachment.GetProperty("id").GetGuid() == attachmentId);
+    }
+
+    private static byte[] SinglePixelPng() => Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk" +
+        "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
     private static string Sha256(byte[] bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
@@ -893,7 +1064,12 @@ public sealed class CyTaskApiTests
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("CyTask:MediaStoragePath", _mediaPath);
+            builder.UseSetting("CyTask:MediaReviewSeconds", "3600");
         }
+
+        public Task<int> ReviewAttachmentsAsync() =>
+            Services.GetRequiredService<AttachmentReviewService>()
+                .ReviewBatchAsync(TestContext.Current.CancellationToken);
 
         protected override void Dispose(bool disposing)
         {

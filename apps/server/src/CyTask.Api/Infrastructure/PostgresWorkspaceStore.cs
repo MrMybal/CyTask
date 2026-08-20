@@ -767,7 +767,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await using (var attachmentCommand = new NpgsqlCommand("""
                          SELECT id, organization_id, task_id, file_name, declared_content_type,
                                 detected_content_type, size_bytes, sha256, status, optimized_locally,
-                                created_by, created_at
+                                created_by, created_at, rejection_reason, width, height, reviewed_at
                          FROM attachments
                          WHERE organization_id = @organization_id
                          ORDER BY created_at, id;
@@ -794,7 +794,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await using var command = dataSource.CreateCommand("""
             SELECT id, organization_id, task_id, file_name, declared_content_type,
                    detected_content_type, size_bytes, sha256, status, optimized_locally,
-                   created_by, created_at
+                   created_by, created_at, rejection_reason, width, height, reviewed_at
             FROM attachments
             WHERE organization_id = @organization_id AND task_id = @task_id
             ORDER BY created_at, id;
@@ -905,7 +905,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await using (var command = new NpgsqlCommand("""
                          SELECT a.id, a.organization_id, a.task_id, a.file_name, a.declared_content_type,
                                 a.detected_content_type, a.size_bytes, a.sha256, a.status, a.optimized_locally,
-                                a.created_by, a.created_at, u.chunk_size_bytes, u.expires_at, u.status
+                                a.created_by, a.created_at, a.rejection_reason, a.width, a.height, a.reviewed_at,
+                                u.chunk_size_bytes, u.expires_at, u.status
                          FROM attachment_uploads u
                          JOIN attachments a ON a.id = u.attachment_id AND a.organization_id = u.organization_id
                          WHERE u.id = @upload_id AND u.organization_id = @organization_id
@@ -921,9 +922,9 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             }
 
             attachment = ReadAttachment(reader);
-            chunkSize = reader.GetInt32(12);
-            expiresAt = reader.GetFieldValue<DateTimeOffset>(13);
-            uploadStatus = reader.GetString(14);
+            chunkSize = reader.GetInt32(16);
+            expiresAt = reader.GetFieldValue<DateTimeOffset>(17);
+            uploadStatus = reader.GetString(18);
         }
 
         var chunks = new List<UploadChunk>();
@@ -1053,7 +1054,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                                 FROM attachment_upload_chunks c WHERE c.upload_id = u.id) = a.size_bytes
                          RETURNING a.id, a.organization_id, a.task_id, a.file_name, a.declared_content_type,
                                    a.detected_content_type, a.size_bytes, a.sha256, a.status,
-                                   a.optimized_locally, a.created_by, a.created_at;
+                                   a.optimized_locally, a.created_by, a.created_at, a.rejection_reason,
+                                   a.width, a.height, a.reviewed_at;
                          """, connection, transaction))
         {
             command.Parameters.AddWithValue("detected_content_type", detectedContentType);
@@ -1099,6 +1101,112 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             WHERE id = @upload_id AND organization_id = @organization_id AND status = 'active';
             """, cancellationToken, ("upload_id", uploadId), ("organization_id", organizationId));
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<Attachment?> FindAttachmentAsync(
+        Guid organizationId,
+        Guid attachmentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT id, organization_id, task_id, file_name, declared_content_type,
+                   detected_content_type, size_bytes, sha256, status, optimized_locally,
+                   created_by, created_at, rejection_reason, width, height, reviewed_at
+            FROM attachments
+            WHERE id = @attachment_id AND organization_id = @organization_id;
+            """);
+        command.Parameters.AddWithValue("attachment_id", attachmentId);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadAttachment(reader) : null;
+    }
+
+    public async Task<IReadOnlyList<PendingAttachmentReview>> ClaimAttachmentsForReviewAsync(
+        int limit,
+        DateTimeOffset leasedUntil,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            UPDATE attachments a
+            SET review_attempts = a.review_attempts + 1, review_leased_until = @leased_until
+            FROM (
+                SELECT id FROM attachments
+                WHERE status = 'quarantined'
+                  AND (review_leased_until IS NULL OR review_leased_until < now())
+                ORDER BY created_at, id
+                LIMIT @limit
+                FOR UPDATE SKIP LOCKED
+            ) claimed
+            WHERE a.id = claimed.id
+            RETURNING a.id, a.organization_id, a.declared_content_type, a.review_attempts;
+            """);
+        command.Parameters.AddWithValue("leased_until", leasedUntil);
+        command.Parameters.AddWithValue("limit", limit);
+        var pending = new List<PendingAttachmentReview>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            pending.Add(new PendingAttachmentReview(
+                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetInt32(3)));
+        }
+
+        return pending;
+    }
+
+    public async Task<Attachment?> ApplyAttachmentReviewAsync(
+        Guid organizationId,
+        Guid attachmentId,
+        AttachmentReview review,
+        DateTimeOffset reviewedAt,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        Attachment? attachment;
+        await using (var command = new NpgsqlCommand("""
+                         UPDATE attachments
+                         SET status = @status, detected_content_type = @detected_content_type,
+                             width = @width, height = @height, rejection_reason = @rejection_reason,
+                             reviewed_at = @reviewed_at, review_leased_until = NULL
+                         WHERE id = @attachment_id AND organization_id = @organization_id
+                           AND status = 'quarantined'
+                         RETURNING id, organization_id, task_id, file_name, declared_content_type,
+                                   detected_content_type, size_bytes, sha256, status, optimized_locally,
+                                   created_by, created_at, rejection_reason, width, height, reviewed_at;
+                         """, connection, transaction))
+        {
+            command.Parameters.AddWithValue("status", review.Accepted ? "available" : "rejected");
+            command.Parameters.AddWithValue("detected_content_type", review.ContentType);
+            command.Parameters.AddWithValue("width", (object?)review.Width ?? DBNull.Value);
+            command.Parameters.AddWithValue("height", (object?)review.Height ?? DBNull.Value);
+            command.Parameters.AddWithValue("rejection_reason", (object?)review.RejectionReason ?? DBNull.Value);
+            command.Parameters.AddWithValue("reviewed_at", reviewedAt);
+            command.Parameters.AddWithValue("attachment_id", attachmentId);
+            command.Parameters.AddWithValue("organization_id", organizationId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            attachment = await reader.ReadAsync(cancellationToken) ? ReadAttachment(reader) : null;
+        }
+
+        if (attachment is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var eventType = review.Accepted ? "attachment.available" : "attachment.rejected";
+        await InsertAuditAsync(
+            connection, transaction, organizationId, eventType, "attachment", attachment.Id,
+            attachment.CreatedBy,
+            await GetDisplayNameAsync(connection, transaction, attachment.CreatedBy, cancellationToken),
+            review.Accepted
+                ? $"{attachment.FileName} validé et disponible"
+                : $"{attachment.FileName} refusé : {review.RejectionReason}",
+            reviewedAt,
+            cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, eventType, attachment.Id, attachment, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return attachment;
     }
 
     public async Task<IReadOnlyList<ExternalReference>?> ListExternalReferencesAsync(
@@ -1963,7 +2071,11 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
         reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6),
         reader.GetString(7), reader.GetString(8), reader.GetBoolean(9), reader.GetGuid(10),
-        reader.GetFieldValue<DateTimeOffset>(11));
+        reader.GetFieldValue<DateTimeOffset>(11),
+        reader.IsDBNull(12) ? null : reader.GetString(12),
+        reader.IsDBNull(13) ? null : reader.GetInt32(13),
+        reader.IsDBNull(14) ? null : reader.GetInt32(14),
+        reader.IsDBNull(15) ? null : reader.GetFieldValue<DateTimeOffset>(15));
 
     private static ExternalReference ReadExternalReference(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
