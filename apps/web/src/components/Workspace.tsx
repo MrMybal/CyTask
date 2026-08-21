@@ -22,6 +22,9 @@ import {
   type TaskDetails,
   type WorkItem
 } from "../api";
+import { CommandPalette, type PaletteAction } from "./CommandPalette";
+import { ApiTokensPane } from "./ApiTokensPane";
+import { ToastStack, useToasts } from "./Toasts";
 
 interface WorkspaceProps {
   session: Session;
@@ -53,6 +56,7 @@ type TaskAssigneeFilter = "all" | "unassigned" | string;
 type TaskDueFilter = "all" | "overdue" | "today" | "week" | "none";
 type DetailTab = "overview" | "dependencies" | "files" | "git" | "activity";
 type TaskSort = "updated" | "created" | "due" | "key" | "title";
+type DetailBundle = [TaskDetails, Attachment[], ExternalReference[], TaskDependencyOverview];
 
 export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -73,7 +77,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [copyLabel, setCopyLabel] = useState("Copier le lien");
   const [isEditing, setIsEditing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ label: string; percent: number }>();
-  const [error, setError] = useState("");
+  const { toasts, notify, dismiss } = useToasts();
+  const setError = useCallback((message: string) => {
+    if (message) notify("error", message);
+  }, [notify]);
   const [taskView, setTaskView] = useState<TaskView>(() =>
     window.localStorage.getItem("cytask.taskView") === "board" ? "board" : "list"
   );
@@ -98,9 +105,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     window.localStorage.getItem("cytask.sidebarCollapsed") === "true"
   );
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [showTokens, setShowTokens] = useState(false);
   const taskRequestSequence = useRef(0);
   const detailRequestSequence = useRef(0);
   const taskFilterInput = useRef<HTMLInputElement>(null);
+  const detailPrefetch = useRef(new Map<string, { at: number; load: Promise<DetailBundle> }>());
 
   const canAdminister = session.role === "owner" || session.role === "admin";
   const canContribute = session.role !== "viewer";
@@ -161,16 +171,34 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
   }, []);
 
+  const fetchDetailBundle = useCallback((taskId: string): Promise<DetailBundle> => Promise.all([
+    api.task(taskId),
+    api.attachments(taskId),
+    api.externalReferences(taskId),
+    api.taskDependencies(taskId)
+  ]), []);
+
+  const prefetchDetails = useCallback((taskId: string) => {
+    const cache = detailPrefetch.current;
+    const cached = cache.get(taskId);
+    if (cached && Date.now() - cached.at < 15000) return;
+    const load = fetchDetailBundle(taskId);
+    load.catch(() => cache.delete(taskId));
+    cache.set(taskId, { at: Date.now(), load });
+    if (cache.size > 20) {
+      const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (oldest) cache.delete(oldest[0]);
+    }
+  }, [fetchDetailBundle]);
+
   const loadDetails = useCallback(async (taskId: string) => {
     const request = ++detailRequestSequence.current;
     setDetailsLoading(true);
     try {
-      const [nextDetails, nextAttachments, nextReferences, nextDependencies] = await Promise.all([
-        api.task(taskId),
-        api.attachments(taskId),
-        api.externalReferences(taskId),
-        api.taskDependencies(taskId)
-      ]);
+      const cached = detailPrefetch.current.get(taskId);
+      const usable = cached && Date.now() - cached.at < 15000 ? cached.load : fetchDetailBundle(taskId);
+      detailPrefetch.current.delete(taskId);
+      const [nextDetails, nextAttachments, nextReferences, nextDependencies] = await usable;
       if (request !== detailRequestSequence.current) return;
       setDetails(nextDetails);
       setAttachments(nextAttachments);
@@ -184,7 +212,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     } finally {
       if (request === detailRequestSequence.current) setDetailsLoading(false);
     }
-  }, []);
+  }, [fetchDetailBundle, setError]);
 
   const loadMembers = useCallback(async () => {
     setMembers(await api.members());
@@ -237,6 +265,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLocaleLowerCase("fr") === "k") {
+        event.preventDefault();
+        setPaletteOpen((value) => !value);
+        return;
+      }
       if (event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target as HTMLElement | null;
       const editing = target?.matches("input, textarea, select, [contenteditable='true']") ?? false;
@@ -252,7 +285,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         event.preventDefault();
         setSidebarCollapsed((value) => !value);
       } else if (event.key === "Escape") {
-        if (details) {
+        if (paletteOpen) {
+          setPaletteOpen(false);
+        } else if (details) {
           closeTask();
         } else if (searchHits) {
           setSearchHits(undefined);
@@ -264,7 +299,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [canContribute, details, searchHits, selectedProjectId]);
+  }, [canContribute, details, paletteOpen, searchHits, selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId) return;
@@ -378,12 +413,38 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
       form.reset();
       setShowTaskForm(false);
+      notify("success", `${task.key} créée.`);
       await loadTasks(selectedProjectId);
       setDetailTab("overview");
       setDetails(undefined);
       await loadDetails(task.id);
     } catch (reason) {
       setError(messageFor(reason));
+    }
+  }
+
+  async function quickAddTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedProjectId) return;
+    const form = event.currentTarget;
+    const title = String(new FormData(form).get("title")).trim();
+    if (!title) return;
+    form.reset();
+    try {
+      const task = await api.createTask(selectedProjectId, {
+        title,
+        description: "",
+        priority: "normal",
+        dueAt: null,
+        assigneeId: null
+      });
+      setTasks((current) => current.some((item) => item.id === task.id)
+        ? current
+        : [task, ...current]);
+      notify("success", `${task.key} créée.`);
+    } catch (reason) {
+      setError(messageFor(reason));
+      if (selectedProjectId) await loadTasks(selectedProjectId).catch(() => undefined);
     }
   }
 
@@ -579,6 +640,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
       setUploadProgress({ label: "Vérification serveur…", percent: 100 });
       await api.completeAttachmentUpload(upload.id);
+      notify("success", `${file.name} envoyé, analyse en cours.`);
       await loadDetails(details.task.id);
       form.reset();
     } catch (reason) {
@@ -613,6 +675,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   async function openTeam() {
     closeTask();
     setShowActivity(false);
+    setShowTokens(false);
     setShowTeam(true);
     setError("");
     try {
@@ -625,6 +688,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   async function openActivity() {
     closeTask();
     setShowTeam(false);
+    setShowTokens(false);
     setShowActivity(true);
     setError("");
     try {
@@ -665,6 +729,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   function openTask(taskId: string) {
     setShowTeam(false);
     setShowActivity(false);
+    setShowTokens(false);
     setIsEditing(false);
     setDetailTab("overview");
     setTaskLinkLabel("Copier le lien");
@@ -693,6 +758,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     try {
       await navigator.clipboard.writeText(url);
       setTaskLinkLabel("Lien copié");
+      notify("success", "Lien de la tâche copié.");
     } catch {
       setTaskLinkLabel("Copie impossible");
     }
@@ -714,6 +780,67 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       onLogout();
     }
   }
+
+  const paletteActions = useMemo<PaletteAction[]>(() => {
+    const actions: PaletteAction[] = [];
+    if (selectedProjectId && canContribute) {
+      actions.push({
+        id: "new-task",
+        label: "Nouvelle tâche",
+        hint: "N",
+        keywords: "créer ajouter task",
+        run: () => setShowTaskForm(true)
+      });
+    }
+    actions.push(
+      {
+        id: "toggle-view",
+        label: taskView === "list" ? "Passer en vue Kanban" : "Passer en vue Liste",
+        keywords: "kanban liste board vue",
+        run: () => setTaskView((value) => value === "list" ? "board" : "list")
+      },
+      {
+        id: "team",
+        label: "Ouvrir l’équipe",
+        keywords: "membres inviter equipe",
+        run: () => void openTeam()
+      },
+      {
+        id: "activity",
+        label: "Ouvrir le journal d’activité",
+        keywords: "historique audit",
+        run: () => void openActivity()
+      },
+      {
+        id: "tokens",
+        label: "Gérer les jetons d’API",
+        keywords: "api token plugin integration",
+        run: () => {
+          closeTask();
+          setShowTeam(false);
+          setShowActivity(false);
+          setShowTokens(true);
+        }
+      },
+      {
+        id: "sidebar",
+        label: sidebarCollapsed ? "Afficher la barre latérale" : "Masquer la barre latérale",
+        hint: "B",
+        keywords: "sidebar navigation",
+        run: () => setSidebarCollapsed((value) => !value)
+      }
+    );
+    if (canAdminister) {
+      actions.push({
+        id: "new-project",
+        label: "Créer un projet",
+        keywords: "projet nouveau",
+        run: () => setShowProjectForm(true)
+      });
+    }
+    return actions;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAdminister, canContribute, selectedProjectId, sidebarCollapsed, taskView]);
 
   return (
     <div className={sidebarCollapsed ? "workspace-shell sidebar-collapsed" : "workspace-shell"}>
@@ -766,6 +893,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           <span className="project-avatar">AC</span>
           <span>Activité</span>
         </button>
+        <button className="team-link" title="API et jetons" onClick={() => {
+          closeTask();
+          setShowTeam(false);
+          setShowActivity(false);
+          setShowTokens(true);
+        }}>
+          <span className="project-avatar">AP</span>
+          <span>API</span>
+        </button>
 
         <div className="profile-block">
           <span className="profile-avatar">{initials(session.displayName)}</span>
@@ -799,6 +935,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               title={sidebarCollapsed ? "Afficher la navigation (B)" : "Agrandir l’espace de travail (B)"}
               onClick={() => setSidebarCollapsed((value) => !value)}
             >{sidebarCollapsed ? "›" : "‹"}</button>
+            <button
+              className="palette-trigger"
+              type="button"
+              title="Palette de commandes (Ctrl+K)"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <span aria-hidden="true">⌘</span> Commandes <kbd>Ctrl K</kbd>
+            </button>
             <form className="workspace-search" role="search" onSubmit={search}>
               <input name="query" aria-label="Rechercher" placeholder="Rechercher…" minLength={2} maxLength={100} required />
               <button type="submit" aria-label="Lancer la recherche">⌕</button>
@@ -812,13 +956,6 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             )}
           </div>
         </header>
-
-        {error && (
-          <div className="banner-error" role="alert">
-            <span>{error}</span>
-            <button type="button" aria-label="Fermer le message" onClick={() => setError("")}>×</button>
-          </div>
-        )}
 
         {showTaskForm && selectedProject && (
           <form className="task-form" onSubmit={createTask}>
@@ -1044,11 +1181,24 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               </section>
             ) : taskView === "list" ? (
               <section className="task-list" aria-label="Tâches en liste">
+                {canContribute && (
+                  <form className="quick-add" onSubmit={quickAddTask}>
+                    <input
+                      name="title"
+                      placeholder="Ajout rapide : titre puis Entrée"
+                      aria-label="Ajouter rapidement une tâche"
+                      maxLength={240}
+                      autoComplete="off"
+                    />
+                  </form>
+                )}
                 <div className="list-header"><span>Tâche</span><span>État</span><span>Mise à jour</span></div>
                 {filteredTasks.map((task) => (
                   <button
                     className={task.id === selectedTaskId ? "task-row active" : "task-row"}
                     key={task.id}
+                    onMouseEnter={() => prefetchDetails(task.id)}
+                    onFocus={() => prefetchDetails(task.id)}
                     onClick={() => openTask(task.id)}
                   >
                     <span className="task-main">
@@ -1103,6 +1253,17 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                           <span>{columnTasks.length}</span>
                         </header>
                         <div className="board-column-body">
+                          {status === "todo" && canContribute && (
+                            <form className="quick-add board-quick-add" onSubmit={quickAddTask}>
+                              <input
+                                name="title"
+                                placeholder="Ajout rapide…"
+                                aria-label="Ajouter rapidement une tâche à faire"
+                                maxLength={240}
+                                autoComplete="off"
+                              />
+                            </form>
+                          )}
                           {columnTasks.map((task) => (
                             <article
                               className={[
@@ -1115,7 +1276,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                               onDragStart={(event) => startTaskDrag(event, task.id)}
                               onDragEnd={() => { setDraggedTaskId(undefined); setDragOverStatus(undefined); }}
                             >
-                              <button className="board-card-open" type="button" onClick={() => openTask(task.id)}>
+                              <button
+                                className="board-card-open"
+                                type="button"
+                                onMouseEnter={() => prefetchDetails(task.id)}
+                                onFocus={() => prefetchDetails(task.id)}
+                                onClick={() => openTask(task.id)}
+                              >
                                 <span className="board-card-meta">
                                   <span className="board-card-key">{task.key}</span>
                                   <span className={`priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span>
@@ -1194,7 +1361,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         </aside>
       )}
 
-      {showTeam && !showActivity && (
+      {showTeam && !showActivity && !showTokens && (
         <aside className="detail-pane team-pane">
           <header className="detail-header">
             <span className="task-key">ÉQUIPE</span>
@@ -1248,7 +1415,27 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         </aside>
       )}
 
-      {details && !showTeam && !showActivity && (
+      {showTokens && !showTeam && !showActivity && (
+        <ApiTokensPane
+          onClose={() => setShowTokens(false)}
+          onError={setError}
+          onNotice={(message) => notify("success", message)}
+        />
+      )}
+
+      {!details && detailsLoading && !showTeam && !showActivity && !showTokens && (
+        <aside className="detail-pane" aria-busy="true">
+          <div className="detail-skeleton" aria-hidden="true">
+            <span className="skeleton-line wide" />
+            <span className="skeleton-line" />
+            <span className="skeleton-block" />
+            <span className="skeleton-line" />
+            <span className="skeleton-line narrow" />
+          </div>
+        </aside>
+      )}
+
+      {details && !showTeam && !showActivity && !showTokens && (
         <aside className="detail-pane" aria-busy={detailsLoading}>
           <header className="detail-header">
             <span className="task-key">{details.task.key}</span>
@@ -1620,6 +1807,24 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </div>
         </aside>
       )}
+
+      <CommandPalette
+        open={paletteOpen}
+        projects={projects}
+        tasks={tasks}
+        actions={paletteActions}
+        onOpenTask={openTask}
+        onOpenProject={(projectId) => {
+          closeTask();
+          setShowTeam(false);
+          setShowActivity(false);
+          setShowTokens(false);
+          setSearchHits(undefined);
+          setSelectedProjectId(projectId);
+        }}
+        onClose={() => setPaletteOpen(false)}
+      />
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

@@ -156,6 +156,21 @@ export interface NativeAuthorizationRequest {
   state: string;
 }
 
+export interface ApiToken {
+  id: string;
+  name: string;
+  scopes: "read" | "read write";
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface CreatedApiToken {
+  token: ApiToken;
+  secret: string;
+}
+
 export interface NativeAuthorizationResponse {
   redirectUri: string;
   expiresAt: string;
@@ -275,6 +290,11 @@ export const api = {
       method: "DELETE"
     }),
   attachments: (taskId: string) => request<Attachment[]>(`/api/v1/tasks/${taskId}/attachments`),
+  apiTokens: () => request<ApiToken[]>("/api/v1/tokens"),
+  createApiToken: (body: { name: string; scope: "read" | "write"; expiresInDays?: number }) =>
+    request<CreatedApiToken>("/api/v1/tokens", { method: "POST", body: JSON.stringify(body) }),
+  revokeApiToken: (tokenId: string) =>
+    request<void>(`/api/v1/tokens/${tokenId}`, { method: "DELETE" }),
   attachmentContentUrl: (attachmentId: string) => `/api/v1/attachments/${attachmentId}/content`,
   externalReferences: (taskId: string) =>
     request<ExternalReference[]>(`/api/v1/tasks/${taskId}/external-references`),
