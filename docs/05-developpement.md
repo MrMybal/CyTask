@@ -68,6 +68,7 @@ Clés de la section `CyTask` :
 | `MediaReviewAttempts` | `3` | tentatives avant refus définitif d'un fichier |
 | `MaxMediaDimension` | `20000` | côté maximal accepté pour une image |
 | `MaxMediaPixels` | `80000000` | surface maximale acceptée pour une image |
+| `MaxApiTokensPerUser` | `20` | jetons d'API actifs au maximum par compte |
 
 Dans une variable d'environnement, `CyTask:DatabaseConnection` devient
 `CYTASK__DATABASECONNECTION`.
@@ -95,7 +96,10 @@ d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.ex
 - sortie de quarantaine décidée par un worker qui parcourt réellement le conteneur du fichier ;
 - type servi déduit du contenu, jamais de la déclaration du client, et restreint à une liste connue ;
 - téléchargement borné à l'organisation, toujours en pièce jointe et avec `nosniff` ;
-- bail concurrent et nombre de tentatives bornés sur l'analyse, pour un fichier qui la ferait échouer.
+- bail concurrent et nombre de tentatives bornés sur l'analyse, pour un fichier qui la ferait échouer ;
+- jetons d'API stockés hachés, affichés une seule fois, portée et expiration vérifiées à chaque requête ;
+- un jeton en portée lecture est refusé sur toute méthode mutante, avant même le contrôle de rôle ;
+- la création et l'inventaire des jetons exigent la session navigateur : un jeton ne peut pas se propager.
 
 ## Limites connues avant une bêta
 

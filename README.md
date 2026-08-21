@@ -44,6 +44,8 @@ Le client Web responsive et installable consomme la même API que les futurs
 clients et le plugin Unreal. Son interface de tâches propose maintenant vues
 Liste et Kanban, priorités, échéances, assignation aux membres, filtres et tris mémorisés localement,
 vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
+palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
+au survol et notifications non bloquantes,
 déplacement optimiste avec contrôle de révision, détail en onglets et liens directs
 partageables. Les tâches peuvent aussi exprimer des dépendances acycliques et les
 tâches qu'elles bloquent. PostgreSQL est la persistance cible ; un stockage
@@ -71,6 +73,15 @@ Le script crée une équipe, treize tâches réalistes, des échéances, comment
 références Git et dépendances. Les identifiants de démonstration sont affichés à
 la fin de son exécution.
 
+L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :
+un jeton personnel `cytask_pat_…` se crée depuis la section **API** du client Web,
+avec une portée lecture ou lecture/écriture, une expiration optionnelle et une
+révocation immédiate. Le contrat complet est servi par `/api/v1/openapi.json`.
+
+```bash
+curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/projects
+```
+
 ## Documentation
 
 - [Vision et périmètre](docs/01-vision-produit.md)
@@ -79,6 +90,7 @@ la fin de son exécution.
 - [Feuille de route](docs/04-feuille-de-route.md)
 - [Guide de développement](docs/05-developpement.md)
 - [Interface des tâches](docs/06-interface-taches.md)
+- [API pour plugins et intégrations](docs/07-api-plugins.md)
 - [Décisions d'architecture](docs/decisions)
 - [Contrats de plugins](packages/contracts)
 - [Plugin Unreal](integrations/unreal/README.md)

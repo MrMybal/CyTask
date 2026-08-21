@@ -56,6 +56,20 @@ validé, il affiche ses dimensions, une vignette lorsque le serveur a reconnu un
 image, et un lien de téléchargement. Refusé, il conserve sa ligne et affiche le
 motif exact du refus plutôt que de disparaître sans explication.
 
+## Vitesse perçue
+
+La palette `Ctrl/⌘ + K` recherche tâches, projets et actions par correspondance
+approximative, se pilote entièrement au clavier et n'impose aucun aller-retour
+serveur. Survoler une tâche précharge son détail, ses fichiers, ses références et
+ses dépendances ; l'ouvrir consomme alors le résultat déjà en vol au lieu de
+relancer quatre requêtes. Le cache expire après quinze secondes pour ne jamais
+afficher un état périmé.
+
+Une ligne d'ajout rapide crée une tâche depuis la liste ou la colonne « À faire »
+sans ouvrir de formulaire, et l'insère immédiatement. Les erreurs et confirmations
+passent par des notifications empilées qui ne déplacent plus la mise en page, et le
+détail affiche un squelette pendant son chargement au lieu d'un panneau vide.
+
 ## Performance et accessibilité
 
 - les réponses périmées après un changement de projet sont ignorées ;
