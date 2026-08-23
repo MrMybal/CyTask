@@ -22,6 +22,7 @@ import {
   type TaskDetails,
   type WorkItem
 } from "../api";
+import { sha256 } from "../sha256";
 import { CommandPalette, type PaletteAction } from "./CommandPalette";
 import { ApiTokensPane } from "./ApiTokensPane";
 import { ToastStack, useToasts } from "./Toasts";
@@ -607,15 +608,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     const data = new FormData(form);
     const file = data.get("file");
     if (!(file instanceof File) || file.size === 0) return;
-    if (file.size > 256 * 1024 * 1024) {
-      setError("Le client Web limite actuellement les fichiers à 256 Mio pour calculer leur empreinte sans saturer la mémoire.");
-      return;
-    }
-
     setError("");
     try {
       setUploadProgress({ label: "Calcul de l’empreinte…", percent: 0 });
-      const fullSha256 = await sha256(file);
+      const fullSha256 = await sha256(file, (bytesRead) => {
+        setUploadProgress({
+          label: `Empreinte ${formatBytes(bytesRead)} / ${formatBytes(file.size)}`,
+          percent: Math.round((bytesRead / file.size) * 100)
+        });
+      });
       const upload = await api.createAttachmentUpload(details.task.id, {
         fileName: file.name,
         contentType: file.type || "application/octet-stream",
@@ -1717,31 +1718,44 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 const served = attachment.detectedContentType ?? attachment.declaredContentType;
                 const isAvailable = attachment.status === "available";
                 const contentUrl = api.attachmentContentUrl(attachment.id);
+                const isVideo = isAvailable && served.startsWith("video/");
                 return (
-                  <article className="attachment-row" key={attachment.id}>
-                    {isAvailable && served.startsWith("image/") ? (
-                      <img className="attachment-thumb" src={contentUrl} alt="" loading="lazy" />
-                    ) : (
-                      <span className="attachment-icon" aria-hidden="true">{served.startsWith("video/") ? "VI" : "FI"}</span>
-                    )}
-                    <span className="attachment-copy">
-                      <strong>{attachment.fileName}</strong>
-                      <small>
-                        {formatBytes(attachment.sizeBytes)} · {attachmentStatusLabel(attachment.status)}
-                        {attachment.width && attachment.height ? ` · ${attachment.width}×${attachment.height}` : ""}
-                      </small>
-                      {attachment.rejectionReason && (
-                        <small className="attachment-reason">{attachment.rejectionReason}</small>
+                  <article className={isVideo ? "attachment-row with-player" : "attachment-row"} key={attachment.id}>
+                    <span className="attachment-line">
+                      {isAvailable && served.startsWith("image/") ? (
+                        <img className="attachment-thumb" src={contentUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="attachment-icon" aria-hidden="true">{served.startsWith("video/") ? "VI" : "FI"}</span>
+                      )}
+                      <span className="attachment-copy">
+                        <strong>{attachment.fileName}</strong>
+                        <small>
+                          {formatBytes(attachment.sizeBytes)} · {attachmentStatusLabel(attachment.status)}
+                          {attachment.width && attachment.height ? ` · ${attachment.width}×${attachment.height}` : ""}
+                          {attachment.durationSeconds ? ` · ${formatDuration(attachment.durationSeconds)}` : ""}
+                        </small>
+                        {attachment.rejectionReason && (
+                          <small className="attachment-reason">{attachment.rejectionReason}</small>
+                        )}
+                      </span>
+                      {isAvailable ? (
+                        <a className="attachment-download" href={contentUrl} download={attachment.fileName}>
+                          Télécharger
+                        </a>
+                      ) : (
+                        <span className={`attachment-state attachment-${attachment.status}`}>
+                          {attachmentBadgeLabel(attachment.status)}
+                        </span>
                       )}
                     </span>
-                    {isAvailable ? (
-                      <a className="attachment-download" href={contentUrl} download={attachment.fileName}>
-                        Télécharger
-                      </a>
-                    ) : (
-                      <span className={`attachment-state attachment-${attachment.status}`}>
-                        {attachmentBadgeLabel(attachment.status)}
-                      </span>
+                    {isVideo && (
+                      <video
+                        className="attachment-player"
+                        src={contentUrl}
+                        controls
+                        preload="metadata"
+                        playsInline
+                      />
                     )}
                   </article>
                 );
@@ -1920,9 +1934,13 @@ function roleLabel(role: OrganizationMember["role"]): string {
   return { owner: "Propriétaire", admin: "Admin", member: "Membre", viewer: "Lecteur" }[role];
 }
 
-async function sha256(blob: Blob): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+function formatDuration(seconds: number): string {
+  const whole = Math.round(seconds);
+  if (whole < 60) return `${whole} s`;
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  if (minutes < 60) return `${minutes} min ${String(rest).padStart(2, "0")} s`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
 }
 
 function formatBytes(bytes: number): string {

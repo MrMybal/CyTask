@@ -759,6 +759,8 @@
           "fileName": { "type": "string" },
           "declaredContentType": { "type": "string" },
           "detectedContentType": { "type": ["string", "null"], "description": "Type observé par le serveur ; c'est lui qui est servi" },
+          "width": { "type": ["integer", "null"], "description": "Largeur en pixels des images et des vidéos" },
+          "height": { "type": ["integer", "null"] },
           "sizeBytes": { "type": "integer", "format": "int64" },
           "sha256": { "type": "string" },
           "status": { "type": "string", "enum": ["uploading", "quarantined", "available", "rejected"] },
@@ -766,9 +768,8 @@
           "createdBy": { "type": "string", "format": "uuid" },
           "createdAt": { "type": "string", "format": "date-time" },
           "rejectionReason": { "type": ["string", "null"] },
-          "width": { "type": ["integer", "null"] },
-          "height": { "type": ["integer", "null"] },
-          "reviewedAt": { "type": ["string", "null"], "format": "date-time" }
+          "reviewedAt": { "type": ["string", "null"], "format": "date-time" },
+          "durationSeconds": { "type": ["number", "null"], "description": "Durée en secondes, relevée dans l'en-tête des vidéos MP4 et WebM" }
         }
       },
       "UploadChunk": {

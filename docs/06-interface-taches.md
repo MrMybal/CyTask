@@ -53,8 +53,14 @@ un cycle entre eux.
 L'onglet **Fichiers** distingue trois moments de la vie d'une pièce jointe. Pendant
 l'analyse, le fichier est visible mais aucun lien ne permet de le lire. Une fois
 validé, il affiche ses dimensions, une vignette lorsque le serveur a reconnu une
-image, et un lien de téléchargement. Refusé, il conserve sa ligne et affiche le
-motif exact du refus plutôt que de disparaître sans explication.
+image, et un lien de téléchargement. Une vidéo MP4 ou WebM ajoute sa durée et un
+lecteur intégré : le téléchargement gère les requêtes de plage, le déplacement dans
+la timeline ne rapatrie donc pas le fichier entier. Refusé, le fichier conserve sa
+ligne et affiche le motif exact du refus plutôt que de disparaître sans explication.
+
+L'empreinte d'un fichier volumineux est calculée par tranches, sans jamais le charger
+entièrement en mémoire ; sa progression est affichée avant celle de l'envoi. Aucune
+limite de taille n'est imposée par le client : seule la configuration du serveur décide.
 
 ## Vitesse perçue
 

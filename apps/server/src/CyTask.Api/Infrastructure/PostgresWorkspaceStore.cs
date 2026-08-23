@@ -913,7 +913,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await using (var attachmentCommand = new NpgsqlCommand("""
                          SELECT id, organization_id, task_id, file_name, declared_content_type,
                                 detected_content_type, size_bytes, sha256, status, optimized_locally,
-                                created_by, created_at, rejection_reason, width, height, reviewed_at
+                                created_by, created_at, rejection_reason, width, height, reviewed_at,
+                                duration_seconds
                          FROM attachments
                          WHERE organization_id = @organization_id
                          ORDER BY created_at, id;
@@ -940,7 +941,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await using var command = dataSource.CreateCommand("""
             SELECT id, organization_id, task_id, file_name, declared_content_type,
                    detected_content_type, size_bytes, sha256, status, optimized_locally,
-                   created_by, created_at, rejection_reason, width, height, reviewed_at
+                   created_by, created_at, rejection_reason, width, height, reviewed_at,
+                   duration_seconds
             FROM attachments
             WHERE organization_id = @organization_id AND task_id = @task_id
             ORDER BY created_at, id;
@@ -1052,7 +1054,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                          SELECT a.id, a.organization_id, a.task_id, a.file_name, a.declared_content_type,
                                 a.detected_content_type, a.size_bytes, a.sha256, a.status, a.optimized_locally,
                                 a.created_by, a.created_at, a.rejection_reason, a.width, a.height, a.reviewed_at,
-                                u.chunk_size_bytes, u.expires_at, u.status
+                                a.duration_seconds, u.chunk_size_bytes, u.expires_at, u.status
                          FROM attachment_uploads u
                          JOIN attachments a ON a.id = u.attachment_id AND a.organization_id = u.organization_id
                          WHERE u.id = @upload_id AND u.organization_id = @organization_id
@@ -1068,9 +1070,9 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             }
 
             attachment = ReadAttachment(reader);
-            chunkSize = reader.GetInt32(16);
-            expiresAt = reader.GetFieldValue<DateTimeOffset>(17);
-            uploadStatus = reader.GetString(18);
+            chunkSize = reader.GetInt32(17);
+            expiresAt = reader.GetFieldValue<DateTimeOffset>(18);
+            uploadStatus = reader.GetString(19);
         }
 
         var chunks = new List<UploadChunk>();
@@ -1201,7 +1203,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                          RETURNING a.id, a.organization_id, a.task_id, a.file_name, a.declared_content_type,
                                    a.detected_content_type, a.size_bytes, a.sha256, a.status,
                                    a.optimized_locally, a.created_by, a.created_at, a.rejection_reason,
-                                   a.width, a.height, a.reviewed_at;
+                                   a.width, a.height, a.reviewed_at, a.duration_seconds;
                          """, connection, transaction))
         {
             command.Parameters.AddWithValue("detected_content_type", detectedContentType);
@@ -1257,7 +1259,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await using var command = dataSource.CreateCommand("""
             SELECT id, organization_id, task_id, file_name, declared_content_type,
                    detected_content_type, size_bytes, sha256, status, optimized_locally,
-                   created_by, created_at, rejection_reason, width, height, reviewed_at
+                   created_by, created_at, rejection_reason, width, height, reviewed_at,
+                   duration_seconds
             FROM attachments
             WHERE id = @attachment_id AND organization_id = @organization_id;
             """);
@@ -1313,12 +1316,14 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                          UPDATE attachments
                          SET status = @status, detected_content_type = @detected_content_type,
                              width = @width, height = @height, rejection_reason = @rejection_reason,
-                             reviewed_at = @reviewed_at, review_leased_until = NULL
+                             reviewed_at = @reviewed_at, duration_seconds = @duration_seconds,
+                             review_leased_until = NULL
                          WHERE id = @attachment_id AND organization_id = @organization_id
                            AND status = 'quarantined'
                          RETURNING id, organization_id, task_id, file_name, declared_content_type,
                                    detected_content_type, size_bytes, sha256, status, optimized_locally,
-                                   created_by, created_at, rejection_reason, width, height, reviewed_at;
+                                   created_by, created_at, rejection_reason, width, height, reviewed_at,
+                                   duration_seconds;
                          """, connection, transaction))
         {
             command.Parameters.AddWithValue("status", review.Accepted ? "available" : "rejected");
@@ -1327,6 +1332,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             command.Parameters.AddWithValue("height", (object?)review.Height ?? DBNull.Value);
             command.Parameters.AddWithValue("rejection_reason", (object?)review.RejectionReason ?? DBNull.Value);
             command.Parameters.AddWithValue("reviewed_at", reviewedAt);
+            command.Parameters.AddWithValue(
+                "duration_seconds", (object?)review.DurationSeconds ?? DBNull.Value);
             command.Parameters.AddWithValue("attachment_id", attachmentId);
             command.Parameters.AddWithValue("organization_id", organizationId);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2221,7 +2228,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         reader.IsDBNull(12) ? null : reader.GetString(12),
         reader.IsDBNull(13) ? null : reader.GetInt32(13),
         reader.IsDBNull(14) ? null : reader.GetInt32(14),
-        reader.IsDBNull(15) ? null : reader.GetFieldValue<DateTimeOffset>(15));
+        reader.IsDBNull(15) ? null : reader.GetFieldValue<DateTimeOffset>(15),
+        reader.IsDBNull(16) ? null : reader.GetDouble(16));
 
     private static ExternalReference ReadExternalReference(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),

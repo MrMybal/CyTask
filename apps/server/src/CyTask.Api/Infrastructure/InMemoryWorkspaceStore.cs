@@ -869,7 +869,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 Width = review.Width,
                 Height = review.Height,
                 RejectionReason = review.RejectionReason,
-                ReviewedAt = reviewedAt
+                ReviewedAt = reviewedAt,
+                DurationSeconds = review.DurationSeconds
             };
             _attachments[attachmentId] = reviewed;
             _attachmentReviewLeases.Remove(attachmentId);
