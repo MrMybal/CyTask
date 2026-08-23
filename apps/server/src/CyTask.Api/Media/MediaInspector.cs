@@ -375,6 +375,7 @@ public static class MediaInspector
         var boxHeader = new byte[8];
         long position = 0;
         var sawMovie = false;
+        var movie = MovieSummary.Empty;
         var boxes = 0;
         while (position < length)
         {
@@ -422,7 +423,13 @@ public static class MediaInspector
                 return MediaInspection.Rejected("Le fichier MP4 ne commence pas par un en-tête ftyp.");
             }
 
-            sawMovie |= type == "moov";
+            if (type == "moov")
+            {
+                sawMovie = true;
+                movie = await ReadMovieAsync(
+                    content, position + headerSize, position + size, 0, cancellationToken);
+            }
+
             position += size;
             if (++boxes > MaxParts)
             {
@@ -431,8 +438,116 @@ public static class MediaInspector
         }
 
         return sawMovie
-            ? MediaInspection.Accept("video/mp4")
+            ? MediaInspection.Accept("video/mp4", movie.Width, movie.Height, movie.DurationSeconds)
             : MediaInspection.Rejected("Le fichier MP4 ne contient pas d’index moov lisible.");
+    }
+
+    private sealed record MovieSummary(int? Width, int? Height, double? DurationSeconds)
+    {
+        public static readonly MovieSummary Empty = new(null, null, null);
+
+        public MovieSummary Merge(MovieSummary other) => new(
+            Width ?? other.Width,
+            Height ?? other.Height,
+            DurationSeconds ?? other.DurationSeconds);
+    }
+
+    /// <summary>
+    /// Descend dans moov pour relever la durée (mvhd) et les dimensions de la première
+    /// piste visuelle (tkhd). Une boîte illisible n'invalide pas le fichier : seules les
+    /// métadonnées manquent alors.
+    /// </summary>
+    private static async Task<MovieSummary> ReadMovieAsync(
+        Stream content, long start, long end, int depth, CancellationToken cancellationToken)
+    {
+        if (depth > 4)
+        {
+            return MovieSummary.Empty;
+        }
+
+        var summary = MovieSummary.Empty;
+        var boxHeader = new byte[8];
+        var position = start;
+        var boxes = 0;
+        while (position + 8 <= end && boxes++ < MaxParts)
+        {
+            if (!await TryReadAtAsync(content, position, boxHeader, cancellationToken))
+            {
+                return summary;
+            }
+
+            var size = (long)BinaryPrimitives.ReadUInt32BigEndian(boxHeader);
+            var type = Encoding.ASCII.GetString(boxHeader, 4, 4);
+            if (size < 8 || position + size > end)
+            {
+                return summary;
+            }
+
+            var data = position + 8;
+            summary = type switch
+            {
+                "mvhd" => summary.Merge(await ReadMovieHeaderAsync(content, data, cancellationToken)),
+                "tkhd" => summary.Merge(await ReadTrackHeaderAsync(content, data, cancellationToken)),
+                "trak" or "mdia" => summary.Merge(
+                    await ReadMovieAsync(content, data, position + size, depth + 1, cancellationToken)),
+                _ => summary
+            };
+
+            position += size;
+        }
+
+        return summary;
+    }
+
+    private static async Task<MovieSummary> ReadMovieHeaderAsync(
+        Stream content, long data, CancellationToken cancellationToken)
+    {
+        var header = new byte[32];
+        if (!await TryReadAtAsync(content, data, header.AsMemory(0, 1), cancellationToken))
+        {
+            return MovieSummary.Empty;
+        }
+
+        var isLongForm = header[0] == 1;
+        var fieldLength = isLongForm ? 32 : 20;
+        if (!await TryReadAtAsync(content, data, header.AsMemory(0, fieldLength), cancellationToken))
+        {
+            return MovieSummary.Empty;
+        }
+
+        var timescale = isLongForm
+            ? BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(20))
+            : BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(12));
+        var duration = isLongForm
+            ? BinaryPrimitives.ReadUInt64BigEndian(header.AsSpan(24))
+            : BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(16));
+        return timescale == 0 || duration == 0 || duration == uint.MaxValue
+            ? MovieSummary.Empty
+            : new MovieSummary(null, null, (double)duration / timescale);
+    }
+
+    private static async Task<MovieSummary> ReadTrackHeaderAsync(
+        Stream content, long data, CancellationToken cancellationToken)
+    {
+        var header = new byte[96];
+        if (!await TryReadAtAsync(content, data, header.AsMemory(0, 1), cancellationToken))
+        {
+            return MovieSummary.Empty;
+        }
+
+        // width et height suivent 16 octets réservés puis la matrice de 36 octets.
+        var widthOffset = header[0] == 1 ? 88 : 76;
+        if (!await TryReadAtAsync(content, data, header.AsMemory(0, widthOffset + 8), cancellationToken))
+        {
+            return MovieSummary.Empty;
+        }
+
+        // Valeurs en virgule fixe 16.16 : la partie entière suffit.
+        var width = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(widthOffset)) >> 16;
+        var height = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(widthOffset + 4)) >> 16;
+        return width == 0 || height == 0
+            ? MovieSummary.Empty
+            : new MovieSummary((int)width, (int)height, null);
     }
 
     private static async Task<MediaInspection> InspectMatroskaAsync(
@@ -451,12 +566,152 @@ public static class MediaInspector
             return MediaInspection.Rejected("Le fichier WebM ne contient pas de segment lisible.");
         }
 
-        return segment.Size >= 0 && segment.End > length
-            ? MediaInspection.Rejected("Le segment WebM est tronqué.")
-            : MediaInspection.Accept("video/webm");
+        if (segment.Size >= 0 && segment.End > length)
+        {
+            return MediaInspection.Rejected("Le segment WebM est tronqué.");
+        }
+
+        var body = await ReadMatroskaSegmentAsync(
+            content,
+            segment.DataStart,
+            segment.Size >= 0 ? Math.Min(segment.End, length) : length,
+            0,
+            cancellationToken);
+        return MediaInspection.Accept("video/webm", body.Width, body.Height, body.DurationSeconds);
     }
 
-    private sealed record EbmlElement(uint Id, long Size, long End);
+    private const uint MatroskaInfo = 0x1549A966;
+    private const uint MatroskaTimecodeScale = 0x2AD7B1;
+    private const uint MatroskaDuration = 0x4489;
+    private const uint MatroskaTracks = 0x1654AE6B;
+    private const uint MatroskaTrackEntry = 0xAE;
+    private const uint MatroskaVideo = 0xE0;
+    private const uint MatroskaPixelWidth = 0xB0;
+    private const uint MatroskaPixelHeight = 0xBA;
+
+    /// <summary>
+    /// Parcourt Info et Tracks pour relever durée et dimensions. Les clusters de données
+    /// ne sont pas visités : leur taille les rendrait coûteux et ils ne portent pas
+    /// de métadonnées.
+    /// </summary>
+    private static async Task<MovieSummary> ReadMatroskaSegmentAsync(
+        Stream content, long start, long end, int depth, CancellationToken cancellationToken)
+    {
+        if (depth > 4)
+        {
+            return MovieSummary.Empty;
+        }
+
+        var summary = MovieSummary.Empty;
+        double? rawDuration = null;
+        double timecodeScale = 1_000_000;
+        var position = start;
+        var elements = 0;
+        while (position < end && elements++ < MaxParts)
+        {
+            var element = await ReadEbmlElementAsync(content, position, end, cancellationToken);
+            if (element is null || element.Size < 0 || element.End > end)
+            {
+                break;
+            }
+
+            var data = element.DataStart;
+            switch (element.Id)
+            {
+                case MatroskaInfo or MatroskaTracks or MatroskaTrackEntry or MatroskaVideo:
+                    summary = summary.Merge(await ReadMatroskaSegmentAsync(
+                        content, data, data + element.Size, depth + 1, cancellationToken));
+                    break;
+                case MatroskaTimecodeScale:
+                    var scale = await ReadEbmlUnsignedAsync(content, data, element.Size, cancellationToken);
+                    if (scale is > 0) timecodeScale = scale.Value;
+                    break;
+                case MatroskaDuration:
+                    rawDuration = await ReadEbmlFloatAsync(content, data, element.Size, cancellationToken);
+                    break;
+                case MatroskaPixelWidth:
+                    var width = await ReadEbmlUnsignedAsync(content, data, element.Size, cancellationToken);
+                    if (width is > 0 and <= int.MaxValue && summary.Width is null)
+                    {
+                        summary = summary with { Width = (int)width.Value };
+                    }
+
+                    break;
+                case MatroskaPixelHeight:
+                    var height = await ReadEbmlUnsignedAsync(content, data, element.Size, cancellationToken);
+                    if (height is > 0 and <= int.MaxValue && summary.Height is null)
+                    {
+                        summary = summary with { Height = (int)height.Value };
+                    }
+
+                    break;
+                default:
+                    break;
+            }
+
+            position = data + element.Size;
+        }
+
+        if (rawDuration is > 0)
+        {
+            // Duration est exprimée en unités de TimecodeScale, elles-mêmes en nanosecondes.
+            summary = summary with { DurationSeconds = rawDuration.Value * timecodeScale / 1_000_000_000 };
+        }
+
+        return summary;
+    }
+
+    private static async Task<ulong?> ReadEbmlUnsignedAsync(
+        Stream content, long position, long size, CancellationToken cancellationToken)
+    {
+        if (size is < 1 or > 8)
+        {
+            return null;
+        }
+
+        var buffer = new byte[8];
+        if (!await TryReadAtAsync(content, position, buffer.AsMemory(0, (int)size), cancellationToken))
+        {
+            return null;
+        }
+
+        ulong value = 0;
+        for (var index = 0; index < size; index++)
+        {
+            value = (value << 8) | buffer[index];
+        }
+
+        return value;
+    }
+
+    private static async Task<double?> ReadEbmlFloatAsync(
+        Stream content, long position, long size, CancellationToken cancellationToken)
+    {
+        if (size is not (4 or 8))
+        {
+            return null;
+        }
+
+        var buffer = new byte[8];
+        if (!await TryReadAtAsync(content, position, buffer.AsMemory(0, (int)size), cancellationToken))
+        {
+            return null;
+        }
+
+        var value = size == 4
+            ? BinaryPrimitives.ReadSingleBigEndian(buffer)
+            : BinaryPrimitives.ReadDoubleBigEndian(buffer);
+        return double.IsFinite(value) ? value : null;
+    }
+
+    /// <summary>
+    /// <paramref name="Size"/> vaut -1 lorsque l'élément déclare une taille inconnue.
+    /// <paramref name="DataStart"/> est toujours le premier octet de contenu.
+    /// </summary>
+    private sealed record EbmlElement(uint Id, long Size, long DataStart)
+    {
+        public long End => Size < 0 ? -1 : DataStart + Size;
+    }
 
     private static async Task<EbmlElement?> ReadEbmlElementAsync(
         Stream content, long position, long length, CancellationToken cancellationToken)
@@ -501,10 +756,8 @@ public static class MediaInspector
             unknown &= buffer[index] == 0xFF;
         }
 
-        var headerEnd = sizePosition + sizeLength;
-        return unknown
-            ? new EbmlElement(id, -1, headerEnd)
-            : new EbmlElement(id, size, Math.Min(headerEnd + size, length + 1));
+        var dataStart = sizePosition + sizeLength;
+        return new EbmlElement(id, unknown ? -1 : size, dataStart);
     }
 
     private static int VintLength(byte first)

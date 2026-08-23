@@ -131,7 +131,8 @@ public sealed class AttachmentReviewService(
                 inspection.ContentType,
                 inspection.Width,
                 inspection.Height,
-                inspection.RejectionReason);
+                inspection.RejectionReason,
+                inspection.DurationSeconds);
         }
         catch (IOException)
         {

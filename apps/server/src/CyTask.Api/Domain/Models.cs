@@ -126,7 +126,8 @@ public sealed record Attachment(
     string? RejectionReason = null,
     int? Width = null,
     int? Height = null,
-    DateTimeOffset? ReviewedAt = null);
+    DateTimeOffset? ReviewedAt = null,
+    double? DurationSeconds = null);
 
 public sealed record PendingAttachmentReview(
     Guid Id,
@@ -139,7 +140,8 @@ public sealed record AttachmentReview(
     string ContentType,
     int? Width,
     int? Height,
-    string? RejectionReason);
+    string? RejectionReason,
+    double? DurationSeconds = null);
 
 public sealed record UploadChunk(
     int Index,

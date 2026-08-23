@@ -110,7 +110,11 @@ d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.ex
 - la recherche PostgreSQL utilise encore `ILIKE` avant l'ajout d'un index de recherche dédié ;
 - aucune migration de changement de schéma n'a encore été exercée en production ;
 - les connecteurs Git distants et la plateforme de plugins restent à construire ;
-- l'analyse valide les conteneurs mais ne décode ni ne réencode : ni vignette, ni profil vidéo maîtrisé, ni analyse antivirale ;
+- l'analyse valide les conteneurs et relève dimensions et durée dans leurs en-têtes, mais ne
+  décode aucune image : ni vignette de vidéo, ni profil réencodé, ni analyse antivirale ;
 - le worker d'analyse tourne dans le processus serveur ; son isolement dans un processus dédié reste à faire ;
-- le calcul SHA-256 Web utilise actuellement `SubtleCrypto` en mémoire et limite donc l'interface à 256 Mio ;
-- le futur client installé devra fournir un hachage, une conversion et une reprise réellement streaming.
+- le hachage Web est incrémental et lit le fichier par tranches de 8 Mio ; il plafonne à
+  environ 50 Mio/s, ce qui reste le poste le plus long d'un envoi volumineux ;
+- l'envoi ne reprend toujours pas après une fermeture d'onglet : la session d'envoi survit
+  côté serveur, mais le client ne sait pas encore la retrouver ;
+- le futur client installé devra fournir une conversion locale et une reprise réelle.

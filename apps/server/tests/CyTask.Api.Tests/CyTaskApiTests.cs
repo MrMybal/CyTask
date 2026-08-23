@@ -800,6 +800,61 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task ReviewExtractsVideoDimensionsAndDurationForBothContainers()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(client);
+
+        var mp4 = await UploadAttachmentAsync(
+            client, taskId, "sequence.mp4", "video/mp4", Mp4WithMetadata(1920, 1080, 600, 4200));
+        var webm = await UploadAttachmentAsync(
+            client, taskId, "rush.webm", "video/webm", WebMWithMetadata(512, 768, 4.04));
+        await factory.ReviewAttachmentsAsync();
+
+        var reviewedMp4 = await FindAttachmentAsync(client, taskId, mp4.GetProperty("id").GetGuid());
+        Assert.Equal("available", reviewedMp4.GetProperty("status").GetString());
+        Assert.Equal("video/mp4", reviewedMp4.GetProperty("detectedContentType").GetString());
+        Assert.Equal(1920, reviewedMp4.GetProperty("width").GetInt32());
+        Assert.Equal(1080, reviewedMp4.GetProperty("height").GetInt32());
+        Assert.Equal(7.0, reviewedMp4.GetProperty("durationSeconds").GetDouble(), 3);
+
+        var reviewedWebm = await FindAttachmentAsync(client, taskId, webm.GetProperty("id").GetGuid());
+        Assert.Equal("available", reviewedWebm.GetProperty("status").GetString());
+        Assert.Equal("video/webm", reviewedWebm.GetProperty("detectedContentType").GetString());
+        Assert.Equal(512, reviewedWebm.GetProperty("width").GetInt32());
+        Assert.Equal(768, reviewedWebm.GetProperty("height").GetInt32());
+        Assert.Equal(4.04, reviewedWebm.GetProperty("durationSeconds").GetDouble(), 3);
+    }
+
+    [Fact]
+    public async Task VideoDownloadSupportsRangeRequestsForSeeking()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var taskId = await CreateTaskForAttachmentAsync(client);
+        var bytes = Mp4WithMetadata(640, 360, 1000, 5000);
+
+        var uploaded = await UploadAttachmentAsync(client, taskId, "clip.mp4", "video/mp4", bytes);
+        await factory.ReviewAttachmentsAsync();
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"/api/v1/attachments/{uploaded.GetProperty("id").GetGuid()}/content");
+        request.Headers.Range = new RangeHeaderValue(16, 47);
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.PartialContent, response.StatusCode);
+        Assert.Equal("video/mp4", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(
+            bytes[16..48],
+            await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task ReviewRejectsATruncatedImageAndKeepsItUndownloadable()
     {
         await using var factory = new CyTaskApiFactory();
@@ -1116,6 +1171,95 @@ public sealed class CyTaskApiTests
         var attachments = await ReadJsonAsync(response);
         return attachments.EnumerateArray()
             .Single(attachment => attachment.GetProperty("id").GetGuid() == attachmentId);
+    }
+
+    private static byte[] Mp4Box(string type, params byte[][] payload)
+    {
+        var body = payload.SelectMany(part => part).ToArray();
+        return
+        [
+            .. BitConverter.GetBytes(System.Net.IPAddress.HostToNetworkOrder(body.Length + 8)),
+            .. Encoding.ASCII.GetBytes(type),
+            .. body
+        ];
+    }
+
+    private static byte[] BigEndian(uint value) =>
+        [(byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value];
+
+    /// <summary>Conteneur MP4 minimal mais structurellement valide, sans données encodées.</summary>
+    private static byte[] Mp4WithMetadata(uint width, uint height, uint timescale, uint duration)
+    {
+        var movieHeader = Mp4Box(
+            "mvhd",
+            [0, 0, 0, 0],
+            BigEndian(0),
+            BigEndian(0),
+            BigEndian(timescale),
+            BigEndian(duration),
+            new byte[80]);
+        var trackHeader = Mp4Box(
+            "tkhd",
+            [0, 0, 0, 0],
+            BigEndian(0),
+            BigEndian(0),
+            BigEndian(1),
+            BigEndian(0),
+            BigEndian(0),
+            new byte[16],
+            new byte[36],
+            BigEndian(width << 16),
+            BigEndian(height << 16));
+        return
+        [
+            .. Mp4Box("ftyp", Encoding.ASCII.GetBytes("isom"), BigEndian(512), Encoding.ASCII.GetBytes("isom")),
+            .. Mp4Box("moov", movieHeader, Mp4Box("trak", trackHeader))
+        ];
+    }
+
+    private static byte[] EbmlElement(byte[] id, params byte[][] payload)
+    {
+        var body = payload.SelectMany(part => part).ToArray();
+        // Taille sur quatre octets : marqueur 0x10 puis vingt-huit bits de longueur.
+        byte[] size =
+        [
+            (byte)(0x10 | ((body.Length >> 24) & 0x0F)),
+            (byte)(body.Length >> 16),
+            (byte)(body.Length >> 8),
+            (byte)body.Length
+        ];
+        return [.. id, .. size, .. body];
+    }
+
+    private static byte[] EbmlUnsigned(byte[] id, uint value)
+    {
+        byte[] encoded = value <= 0xFF ? [(byte)value] : [.. BigEndian(value)];
+        return [.. id, (byte)(0x80 | encoded.Length), .. encoded];
+    }
+
+    /// <summary>Segment WebM portant seulement Info et Tracks, sans cluster de données.</summary>
+    private static byte[] WebMWithMetadata(uint width, uint height, double seconds)
+    {
+        var durationBytes = BitConverter.GetBytes(seconds * 1000.0);
+        if (BitConverter.IsLittleEndian)
+        {
+            Array.Reverse(durationBytes);
+        }
+
+        var info = EbmlElement(
+            [0x15, 0x49, 0xA9, 0x66],
+            EbmlUnsigned([0x2A, 0xD7, 0xB1], 1_000_000),
+            [0x44, 0x89, 0x88, .. durationBytes]);
+        var video = EbmlElement(
+            [0xE0],
+            EbmlUnsigned([0xB0], width),
+            EbmlUnsigned([0xBA], height));
+        var tracks = EbmlElement([0x16, 0x54, 0xAE, 0x6B], EbmlElement([0xAE], video));
+        return
+        [
+            .. EbmlElement([0x1A, 0x45, 0xDF, 0xA3], EbmlUnsigned([0x42, 0x86], 1)),
+            .. EbmlElement([0x18, 0x53, 0x80, 0x67], info, tracks)
+        ];
     }
 
     private static byte[] SinglePixelPng() => Convert.FromBase64String(

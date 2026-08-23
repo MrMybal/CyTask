@@ -119,6 +119,7 @@ export interface Attachment {
   width?: number;
   height?: number;
   reviewedAt?: string;
+  durationSeconds?: number;
 }
 
 export interface UploadChunk {

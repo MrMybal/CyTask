@@ -99,6 +99,20 @@ Chaque événement porte un type et l'identifiant de l'entité concernée ; le c
 recharge ensuite l'entité par l'API. Le flux ne transporte pas les données, ce qui
 évite qu'un client obtienne par le flux ce qu'une route lui refuserait.
 
+## Médias
+
+Les formats reconnus sont PNG, JPEG, GIF et WebP pour les images, MP4 et WebM pour les
+vidéos. Le serveur relève les dimensions dans tous les cas, et la durée pour les vidéos.
+Un plugin peut donc filtrer ou trier sans télécharger les fichiers.
+
+`GET /api/v1/attachments/{id}/content` accepte l'en-tête `Range` : un lecteur peut se
+déplacer dans une vidéo sans rapatrier le fichier entier. La réponse porte un `ETag`
+égal à l'empreinte SHA-256 du contenu, qui ne change jamais pour une pièce jointe
+donnée.
+
+Tout autre format est accepté mais servi en `application/octet-stream`, sans
+dimensions ni durée.
+
 ## Limites connues
 
 - pas encore de pagination à curseur : les listes sont bornées par projet ou par
@@ -107,4 +121,6 @@ recharge ensuite l'entité par l'API. Le flux ne transporte pas les données, ce
 - pas encore de clé d'idempotence sur la création, seule la mise à jour de tâche
   est protégée par sa révision ;
 - les jetons sont personnels : un jeton de service détaché d'un compte humain
-  reste à concevoir avec la plateforme de plugins.
+  reste à concevoir avec la plateforme de plugins ;
+- aucun réencodage ni vignette de vidéo : le serveur lit les en-têtes des conteneurs
+  mais ne décode aucune image, en attendant la décision de licence sur FFmpeg.

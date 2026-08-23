@@ -491,3 +491,8 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
 .token-copy small { color: var(--muted); font-size: 9px; }
 .text-button.danger { color: var(--danger); }
 .token-revoked { margin-top: 14px; color: var(--muted); font-size: 11px; }
+
+/* Lecteur vidéo intégré */
+.attachment-row.with-player { flex-direction: column; align-items: stretch; gap: 8px; }
+.attachment-line { display: flex; align-items: center; gap: 10px; }
+.attachment-player { width: 100%; max-height: 260px; border: 1px solid var(--line-soft); border-radius: 8px; background: #000; }

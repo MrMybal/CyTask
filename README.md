@@ -30,7 +30,9 @@ par blocs vérifiés et conserve les originaux en quarantaine hors du Web. Un wo
 d'analyse en sort chaque fichier : il parcourt réellement le conteneur PNG, JPEG,
 GIF, WebP, MP4 ou WebM, refuse les fichiers tronqués ou dont le contenu ne
 correspond pas au type annoncé, puis rend le fichier téléchargeable dans la seule
-organisation qui l'a déposé. Le réencodage et l'analyse antivirale restent à faire.
+organisation qui l'a déposé. Les vidéos MP4 et WebM exposent leurs dimensions et leur
+durée, se lisent directement dans la tâche et se déplacent dans la timeline grâce aux
+requêtes de plage. Le réencodage et l'analyse antivirale restent à faire.
 Les tâches peuvent aussi recevoir des références Git manuelles génériques ; aucun
 dépôt ni secret n'est requis tant que le connecteur Git officiel n'est pas activé.
 Le premier plugin Unreal source est également présent : panneau Slate, connexion
