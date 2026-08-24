@@ -36,3 +36,16 @@ Saved/
 # Local object storage and databases
 .data/
 .tools/
+
+# Local AI assistant workspaces
+.claude/
+.codex/
+.agents/
+.cursor/
+.windsurf/
+.continue/
+.aider*
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.github/copilot-instructions.md
