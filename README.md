@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/cytask-logo.svg" alt="Logo CyTask" width="360" />
+  <img src="assets/branding/cytask-logo.png" alt="Logo CyTask" width="360" />
 </p>
 
 # CyTask

@@ -848,7 +848,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       <aside className="sidebar">
         <div className="sidebar-top">
           <a className="brand compact" href="/" aria-label="CyTask, accueil">
-            <span className="brand-mark"><img src="/icons/cytask.svg" alt="" /></span>
+            <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
             <span>CyTask</span>
           </a>
           {canAdminister && (
