@@ -10,10 +10,10 @@
   "theme_color": "#0b1017",
   "icons": [
     {
-      "src": "/icons/cytask.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/icons/cytask.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

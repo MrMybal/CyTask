@@ -100,13 +100,13 @@ export default function App() {
   }, []);
 
   if (state.mode === "loading") {
-    return <div className="loading-screen"><span className="brand-mark pulse"><img src="/icons/cytask.svg" alt="" /></span></div>;
+    return <div className="loading-screen"><span className="brand-mark pulse"><img src="/icons/cytask.png" alt="" /></span></div>;
   }
 
   if (state.mode === "error") {
     return (
       <main className="fatal-screen">
-        <span className="brand-mark"><img src="/icons/cytask.svg" alt="" /></span>
+        <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
         <h1>Connexion interrompue</h1>
         <p>{state.message}</p>
         <button className="primary-button" onClick={() => window.location.reload()}>Réessayer</button>

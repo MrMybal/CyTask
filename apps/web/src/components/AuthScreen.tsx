@@ -40,7 +40,7 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
     <main className="auth-shell">
       <section className="auth-story">
         <a className="brand" href="/" aria-label="CyTask, accueil">
-          <span className="brand-mark"><img src="/icons/cytask.svg" alt="" /></span>
+          <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
           <span>CyTask</span>
         </a>
         <div>

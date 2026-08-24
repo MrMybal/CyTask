@@ -1,5 +1,5 @@
 const cacheName = "cytask-shell-v1";
-const shell = ["/", "/manifest.webmanifest", "/icons/cytask.svg"];
+const shell = ["/", "/manifest.webmanifest", "/icons/cytask.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll(shell)));
