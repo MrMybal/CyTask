@@ -57,7 +57,7 @@ export function NativeAuthorizationScreen({
     <main className="native-auth-shell">
       <section className="native-auth-card">
         <a className="brand" href="/" aria-label="CyTask, accueil">
-          <span className="brand-mark">CY</span>
+          <span className="brand-mark"><img src="/icons/cytask.svg" alt="" /></span>
           <span>CyTask</span>
         </a>
 

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/branding/cytask-logo.svg" alt="Logo CyTask" width="360" />
+</p>
+
 # CyTask
 
 CyTask est un gestionnaire de projets et de tâches open source, auto-hébergeable,
@@ -120,6 +124,7 @@ Les commandes de construction et de tests Unreal sont documentées dans
 
 ## Licence
 
-CyTask a vocation à être open source. La licence doit être choisie explicitement
-avant d'accepter des contributions : AGPL-3.0 si les dérivés hébergés doivent
-rester ouverts, ou Apache-2.0 si l'adoption la plus large est prioritaire.
+CyTask est distribué sous la licence
+[GNU Affero General Public License v3.0](LICENSE), comme CyRevision. Les versions
+modifiées proposées à travers un réseau doivent conserver les mêmes libertés et
+mettre leur code source correspondant à disposition de leurs utilisateurs.

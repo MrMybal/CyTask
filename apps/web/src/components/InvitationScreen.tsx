@@ -59,7 +59,7 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
     <main className="auth-shell invitation-shell">
       <section className="auth-story">
         <a className="brand" href="/" aria-label="CyTask, accueil">
-          <span className="brand-mark">CY</span>
+          <span className="brand-mark"><img src="/icons/cytask.svg" alt="" /></span>
           <span>CyTask</span>
         </a>
         <div>
