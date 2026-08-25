@@ -1080,6 +1080,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         Guid userId,
         string name,
         string color,
+        Guid? parentLabelId,
         CancellationToken cancellationToken)
     {
         lock (_gate)
@@ -1094,7 +1095,11 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 || _projectLabels.Values.Any(label =>
                     label.OrganizationId == organizationId
                     && label.ProjectId == projectId
-                    && string.Equals(label.Name, name, StringComparison.OrdinalIgnoreCase)))
+                    && string.Equals(label.Name, name, StringComparison.OrdinalIgnoreCase))
+                || (parentLabelId is Guid parentId
+                    && (!_projectLabels.TryGetValue(parentId, out var parentLabel)
+                        || parentLabel.OrganizationId != organizationId
+                        || parentLabel.ProjectId != projectId)))
             {
                 return Task.FromResult<ProjectLabel?>(null);
             }
@@ -1106,7 +1111,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 name,
                 color,
                 userId,
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow,
+                parentLabelId);
             _projectLabels.Add(label.Id, label);
             AddActivity(
                 organizationId, "project.label_created", "project", projectId,
@@ -1150,6 +1156,12 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 }
             }
 
+            foreach (var child in _projectLabels.Values
+                         .Where(candidate => candidate.ParentLabelId == labelId)
+                         .ToArray())
+            {
+                _projectLabels[child.Id] = child with { ParentLabelId = null };
+            }
             _projectLabels.Remove(labelId);
             AddActivity(
                 organizationId, "project.label_deleted", "project", projectId,
@@ -1356,6 +1368,24 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 return Task.FromResult<TaskPageSlice?>(null);
             }
 
+            HashSet<Guid>? selectedLabelIds = null;
+            if (request.LabelId is Guid selectedLabelId)
+            {
+                selectedLabelIds = [selectedLabelId];
+                var pendingLabels = new Queue<Guid>();
+                pendingLabels.Enqueue(selectedLabelId);
+                while (pendingLabels.TryDequeue(out var parentLabelId))
+                {
+                    foreach (var child in _projectLabels.Values.Where(label =>
+                                 label.OrganizationId == organizationId
+                                 && label.ProjectId == projectId
+                                 && label.ParentLabelId == parentLabelId))
+                    {
+                        if (selectedLabelIds.Add(child.Id)) pendingLabels.Enqueue(child.Id);
+                    }
+                }
+            }
+
             var matching = _tasks.Values
                 .Where(task => task.OrganizationId == organizationId && task.ProjectId == projectId)
                 .Where(task => MatchesTaskPageRequest(task, request))
@@ -1369,7 +1399,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                         return !labels.Any();
                     }
 
-                    return request.LabelId is not Guid labelId || labels.Contains(labelId);
+                    return selectedLabelIds is null || labels.Any(selectedLabelIds.Contains);
                 })
                 .ToArray();
             var totalCount = matching.Length;

@@ -9,7 +9,7 @@ export type TaskFilterSnapshot = {
   due: "all" | "overdue" | "today" | "week" | "none";
   label: "all" | "none" | string;
   sort: "updated" | "created" | "due" | "key" | "title";
-  view: "list" | "board";
+  view: "list" | "board" | "compact" | "miro" | "graph";
 };
 
 export interface TaskViewDefinition {
@@ -41,7 +41,7 @@ const statuses = new Set(["all", "todo", "in_progress", "blocked", "done", "canc
 const priorities = new Set(["all", "low", "normal", "high", "urgent"]);
 const dueFilters = new Set(["all", "overdue", "today", "week", "none"]);
 const sorts = new Set(["updated", "created", "due", "key", "title"]);
-const views = new Set(["list", "board"]);
+const views = new Set(["list", "board", "compact", "miro", "graph"]);
 
 export function savedTaskViewsStorageKey(
   organizationId: string,

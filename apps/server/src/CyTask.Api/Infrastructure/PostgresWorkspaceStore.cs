@@ -908,7 +908,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
         var projectLabels = new List<ProjectLabel>();
         await using (var labelCommand = new NpgsqlCommand("""
-                         SELECT id, organization_id, project_id, name, color, created_by, created_at
+                         SELECT id, organization_id, project_id, name, color, created_by, created_at, parent_label_id
                          FROM project_labels
                          WHERE organization_id = @organization_id
                          ORDER BY project_id, lower(name), id;
@@ -1664,7 +1664,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var labels = new List<ProjectLabel>();
         await using (var labelCommand = new NpgsqlCommand("""
-                         SELECT id, organization_id, project_id, name, color, created_by, created_at
+                         SELECT id, organization_id, project_id, name, color, created_by, created_at, parent_label_id
                          FROM project_labels
                          WHERE organization_id = @organization_id AND project_id = @project_id
                          ORDER BY lower(name), id;
@@ -1710,6 +1710,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         Guid userId,
         string name,
         string color,
+        Guid? parentLabelId,
         CancellationToken cancellationToken)
     {
         var label = new ProjectLabel(
@@ -1719,7 +1720,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             name,
             color,
             userId,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            parentLabelId);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
@@ -1749,8 +1751,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
             await using var command = new NpgsqlCommand("""
                 INSERT INTO project_labels(
-                    id, organization_id, project_id, name, color, created_by, created_at)
-                SELECT @id, @organization_id, @project_id, @name, @color, @created_by, @created_at
+                    id, organization_id, project_id, name, color, created_by, created_at, parent_label_id)
+                SELECT @id, @organization_id, @project_id, @name, @color, @created_by, @created_at, @parent_label_id
                 FROM projects project
                 WHERE project.id = @project_id
                   AND project.organization_id = @organization_id
@@ -1763,6 +1765,14 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                       SELECT count(*) FROM project_labels
                       WHERE organization_id = @organization_id AND project_id = @project_id
                   ) < 64
+                  AND (
+                      @parent_label_id IS NULL OR EXISTS (
+                          SELECT 1 FROM project_labels parent_label
+                          WHERE parent_label.id = @parent_label_id
+                            AND parent_label.organization_id = @organization_id
+                            AND parent_label.project_id = @project_id
+                      )
+                  )
                 ON CONFLICT DO NOTHING
                 RETURNING id;
                 """, connection, transaction);
@@ -1773,6 +1783,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             command.Parameters.AddWithValue("color", color);
             command.Parameters.AddWithValue("created_by", userId);
             command.Parameters.AddWithValue("created_at", label.CreatedAt);
+            command.Parameters.Add("parent_label_id", NpgsqlTypes.NpgsqlDbType.Uuid).Value = parentLabelId is Guid parentId ? parentId : DBNull.Value;
             if (await command.ExecuteScalarAsync(cancellationToken) is null)
             {
                 await transaction.RollbackAsync(cancellationToken);
@@ -2392,7 +2403,22 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                     SELECT 1 FROM task_labels tl
                     WHERE tl.organization_id = t.organization_id
                       AND tl.task_id = t.id
-                      AND tl.label_id = @label_id
+                      AND tl.label_id IN (
+                          WITH RECURSIVE label_tree(id) AS (
+                              SELECT label.id
+                              FROM project_labels label
+                              WHERE label.organization_id = @organization_id
+                                AND label.project_id = @project_id
+                                AND label.id = @label_id
+                              UNION ALL
+                              SELECT child.id
+                              FROM project_labels child
+                              JOIN label_tree parent ON child.parent_label_id = parent.id
+                              WHERE child.organization_id = @organization_id
+                                AND child.project_id = @project_id
+                          )
+                          SELECT id FROM label_tree
+                      )
                 )
                 """);
         }
@@ -3458,7 +3484,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
     private static ProjectLabel ReadProjectLabel(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
-        reader.GetString(4), reader.GetGuid(5), reader.GetFieldValue<DateTimeOffset>(6));
+        reader.GetString(4), reader.GetGuid(5), reader.GetFieldValue<DateTimeOffset>(6),
+        reader.IsDBNull(7) ? null : reader.GetGuid(7));
 
     private static TaskLabelAssignment ReadTaskLabelAssignment(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2),

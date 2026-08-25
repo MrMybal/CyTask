@@ -87,6 +87,7 @@ export interface ProjectLabel {
   color: string;
   createdBy: string;
   createdAt: string;
+  parentLabelId: string | null;
 }
 
 export interface TaskLabelAssignment {
@@ -339,7 +340,7 @@ export const api = {
     request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),
   projectLabels: (projectId: string) =>
     request<ProjectLabelOverview>(`/api/v1/projects/${projectId}/labels`),
-  createProjectLabel: (projectId: string, body: { name: string; color: string }) =>
+  createProjectLabel: (projectId: string, body: { name: string; color: string; parentLabelId?: string | null }) =>
     request<ProjectLabel>(`/api/v1/projects/${projectId}/labels`, {
       method: "POST",
       body: JSON.stringify(body)

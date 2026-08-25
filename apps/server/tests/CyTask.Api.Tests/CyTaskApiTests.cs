@@ -821,6 +821,19 @@ public sealed class CyTaskApiTests
             new { name = "Gameplay", color = "#34aadc" });
         var labelId = label.GetProperty("id").GetGuid();
         Assert.Equal("#34AADC", label.GetProperty("color").GetString());
+        var childLabel = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/labels",
+            new { name = "NPC Physics", color = "#F97316", parentLabelId = labelId });
+        var childLabelId = childLabel.GetProperty("id").GetGuid();
+        Assert.Equal(labelId, childLabel.GetProperty("parentLabelId").GetGuid());
+
+        using var invalidParent = await client.PostAsJsonAsync(
+            new Uri($"/api/v1/projects/{projectId}/labels", UriKind.Relative),
+            new { name = "Orphelin", color = "#112233", parentLabelId = Guid.NewGuid() },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidParent.StatusCode);
+
 
         using var duplicate = await client.PostAsJsonAsync(
             new Uri($"/api/v1/projects/{projectId}/labels", UriKind.Relative),
@@ -847,7 +860,7 @@ public sealed class CyTaskApiTests
             new Uri($"/api/v1/projects/{projectId}/labels", UriKind.Relative),
             TestContext.Current.CancellationToken);
         var overview = await ReadJsonAsync(overviewResponse);
-        Assert.Single(overview.GetProperty("labels").EnumerateArray());
+        Assert.Equal(2, overview.GetProperty("labels").GetArrayLength());
         Assert.Single(overview.GetProperty("assignments").EnumerateArray());
 
         var otherProject = await PostAndReadAsync(
@@ -871,7 +884,7 @@ public sealed class CyTaskApiTests
             TestContext.Current.CancellationToken);
         var export = await ReadJsonAsync(exportResponse);
         Assert.Equal(4, export.GetProperty("formatVersion").GetInt32());
-        Assert.Equal(2, export.GetProperty("projectLabels").GetArrayLength());
+        Assert.Equal(3, export.GetProperty("projectLabels").GetArrayLength());
         Assert.Single(export.GetProperty("taskLabels").EnumerateArray());
 
         using var remove = await client.DeleteAsync(
@@ -893,12 +906,24 @@ public sealed class CyTaskApiTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, deleteLabel.StatusCode);
 
+        using var promotedOverviewResponse = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/labels", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var promotedOverview = await ReadJsonAsync(promotedOverviewResponse);
+        var promotedChild = Assert.Single(promotedOverview.GetProperty("labels").EnumerateArray());
+        Assert.Equal(childLabelId, promotedChild.GetProperty("id").GetGuid());
+        Assert.Equal(JsonValueKind.Null, promotedChild.GetProperty("parentLabelId").ValueKind);
+        Assert.Empty(promotedOverview.GetProperty("assignments").EnumerateArray());
+
+        using var deleteChild = await client.DeleteAsync(
+            new Uri($"/api/v1/projects/{projectId}/labels/{childLabelId}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, deleteChild.StatusCode);
         using var finalOverviewResponse = await client.GetAsync(
             new Uri($"/api/v1/projects/{projectId}/labels", UriKind.Relative),
             TestContext.Current.CancellationToken);
         var finalOverview = await ReadJsonAsync(finalOverviewResponse);
         Assert.Empty(finalOverview.GetProperty("labels").EnumerateArray());
-        Assert.Empty(finalOverview.GetProperty("assignments").EnumerateArray());
     }
 
     [Fact]
