@@ -2,6 +2,7 @@
 
 param(
     [string]$ApiBaseUrl = "http://127.0.0.1:5080",
+    [string]$WebBaseUrl = "http://127.0.0.1:5173",
     [string]$OwnerEmail = "demo@cytask.local",
     [string]$Password = "cytask-demo-local-2026!"
 )
@@ -331,10 +332,15 @@ function Add-DemoCollaborationContent {
     }
 
     $channelDefinitions = @(
-        @{ Name = "général"; Topic = "Coordination quotidienne de l’équipe" },
-        @{ Name = "art-et-design"; Topic = "Références, captures et validations artistiques" },
-        @{ Name = "build-et-qa"; Topic = "Builds, tests, blocages et comptes rendus" },
-        @{ Name = "revue-hebdo"; Topic = "Préparation et suivi de la revue du vendredi" }
+        @{ Name = "général"; Topic = "Coordination quotidienne de l’équipe"; ChannelType = "channel"; MemberIds = @() },
+        @{ Name = "art-et-design"; Topic = "Références, captures et validations artistiques"; ChannelType = "channel"; MemberIds = @() },
+        @{ Name = "build-et-qa"; Topic = "Builds, tests, blocages et comptes rendus"; ChannelType = "channel"; MemberIds = @() },
+        @{ Name = "revue-hebdo"; Topic = "Préparation et suivi de la revue du vendredi"; ChannelType = "channel"; MemberIds = @() },
+        @{
+            Name = "direction-production"; Topic = "Décisions confidentielles de production"
+            ChannelType = "group"
+            MemberIds = @($memberIds["alice@cytask.local"], $memberIds["chloe@cytask.local"])
+        }
     )
     $channelResponse = Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($Project.id)/chat/channels"
     $channels = @($channelResponse)
@@ -389,6 +395,21 @@ function Add-DemoCollaborationContent {
             Invoke-DemoApi -Method Post -Path "/api/v1/chat/channels/$($general.id)/messages" -Headers $csrfHeaders -Body @{
                 body = "Le logo de l’espace est maintenant disponible dans la bibliothèque partagée."
                 resourceIds = @($spacePreview.id); mentionedUserIds = @()
+            } | Out-Null
+        }
+    }
+
+    $productionGroup = $channelsByName["direction-production"]
+    $groupMessageResponse = Invoke-DemoApi -Method Get -Path "/api/v1/chat/channels/$($productionGroup.id)/messages?limit=10"
+    if (@($groupMessageResponse).Count -eq 0) {
+        $taskOptions = Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($Project.id)/task-options"
+        $linkedTask = @($taskOptions)[0]
+        if ($null -ne $linkedTask) {
+            $taskUrl = "$WebBaseUrl/#/tasks/$($linkedTask.id)"
+            Invoke-DemoApi -Method Post -Path "/api/v1/chat/channels/$($productionGroup.id)/messages" -Headers $csrfHeaders -Body @{
+                body = "Décision à suivre dans $($linkedTask.key) · $taskUrl"
+                resourceIds = @()
+                mentionedUserIds = @($memberIds["alice@cytask.local"])
             } | Out-Null
         }
     }
@@ -661,6 +682,6 @@ foreach ($reference in $references) {
 Add-DemoMediaPreview -TaskId $createdTasks["art-direction"].id
 Add-DemoCollaborationContent -Project $project -LabelIds $labelIdsByName
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "220 tâches, 10 dossiers, 6 contenus d’espace, 4 salons, 4 membres, 9 dépendances et 3 références Git."
+Write-Host "220 tâches, 10 dossiers, 6 contenus d’espace, 4 salons, 1 groupe privé, 4 membres, 9 dépendances et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

@@ -55,10 +55,12 @@ public interface ICollaborationStore
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ChatChannel>?> ListChannelsAsync(
-        Guid organizationId, Guid projectId, CancellationToken cancellationToken);
+        Guid organizationId, Guid projectId, Guid userId,
+        CancellationToken cancellationToken);
 
     Task<ChatChannel?> GetChannelAsync(
-        Guid organizationId, Guid channelId, CancellationToken cancellationToken);
+        Guid organizationId, Guid channelId, Guid userId,
+        CancellationToken cancellationToken);
 
     Task<ChatChannel?> CreateChannelAsync(
         Guid organizationId,
@@ -66,6 +68,8 @@ public interface ICollaborationStore
         string name,
         string slug,
         string topic,
+        string channelType,
+        IReadOnlyList<Guid> memberIds,
         Guid createdBy,
         CancellationToken cancellationToken);
 
@@ -73,6 +77,7 @@ public interface ICollaborationStore
         Guid organizationId,
         Guid channelId,
         int limit,
+        Guid userId,
         DateTimeOffset? before,
         CancellationToken cancellationToken);
 

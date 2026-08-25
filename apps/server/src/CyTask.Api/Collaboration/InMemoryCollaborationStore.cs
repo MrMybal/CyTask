@@ -215,25 +215,27 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
     }
 
     public async Task<IReadOnlyList<ChatChannel>?> ListChannelsAsync(
-        Guid organizationId, Guid projectId, CancellationToken cancellationToken)
+        Guid organizationId, Guid projectId, Guid userId, CancellationToken cancellationToken)
     {
         if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken)) return null;
         lock (_gate)
         {
             return _channels.Values
-                .Where(item => item.OrganizationId == organizationId && item.ProjectId == projectId)
+                .Where(item => item.OrganizationId == organizationId && item.ProjectId == projectId
+                    && CanAccess(item, userId))
                 .OrderBy(item => item.CreatedAt).ToArray();
         }
     }
 
     public Task<ChatChannel?> GetChannelAsync(
-        Guid organizationId, Guid channelId, CancellationToken cancellationToken)
+        Guid organizationId, Guid channelId, Guid userId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
             var channel = _channels.GetValueOrDefault(channelId);
-            return Task.FromResult(channel?.OrganizationId == organizationId ? channel : null);
+            return Task.FromResult(channel?.OrganizationId == organizationId
+                && CanAccess(channel, userId) ? channel : null);
         }
     }
 
@@ -243,18 +245,27 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
         string name,
         string slug,
         string topic,
+        string channelType,
+        IReadOnlyList<Guid> memberIds,
         Guid createdBy,
         CancellationToken cancellationToken)
     {
         if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken)) return null;
+        var organizationMembers = await workspace.ListMembersAsync(organizationId, cancellationToken);
+        var validMemberIds = organizationMembers.Select(item => item.UserId).ToHashSet();
+        var groupMembers = channelType == "group"
+            ? memberIds.Append(createdBy).Distinct().ToArray()
+            : [];
+        if (!validMemberIds.Contains(createdBy) || groupMembers.Any(id => !validMemberIds.Contains(id)))
+            return null;
         lock (_gate)
         {
             var existing = _channels.Values.FirstOrDefault(item =>
                 item.ProjectId == projectId && item.Slug == slug);
-            if (existing is not null) return existing;
+            if (existing is not null) return CanAccess(existing, createdBy) ? existing : null;
             var channel = new ChatChannel(
                 Guid.CreateVersion7(), organizationId, projectId, name, slug, topic,
-                createdBy, DateTimeOffset.UtcNow);
+                channelType, groupMembers, createdBy, DateTimeOffset.UtcNow);
             _channels.Add(channel.Id, channel);
             return channel;
         }
@@ -264,6 +275,7 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
         Guid organizationId,
         Guid channelId,
         int limit,
+        Guid userId,
         DateTimeOffset? before,
         CancellationToken cancellationToken)
     {
@@ -271,7 +283,7 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
         lock (_gate)
         {
             var channel = _channels.GetValueOrDefault(channelId);
-            if (channel?.OrganizationId != organizationId)
+            if (channel?.OrganizationId != organizationId || !CanAccess(channel, userId))
                 return Task.FromResult<IReadOnlyList<ChatMessage>?>(null);
             IReadOnlyList<ChatMessage> result = _messages.Values
                 .Where(item => item.ChannelId == channelId && (before is null || item.CreatedAt < before))
@@ -294,12 +306,15 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
         lock (_gate)
         {
             var channel = _channels.GetValueOrDefault(channelId);
-            if (channel?.OrganizationId != organizationId || authorName is null) return null;
+            if (channel?.OrganizationId != organizationId || authorName is null
+                || !CanAccess(channel, authorId)) return null;
             var resources = resourceIds.Distinct().Select(id => _resources.GetValueOrDefault(id)).ToArray();
             if (resources.Any(item => item is null || item.OrganizationId != organizationId
                 || item.ProjectId != channel.ProjectId)) return null;
             var validMemberIds = members.Select(item => item.UserId).ToHashSet();
-            var mentions = mentionedUserIds.Distinct().Where(validMemberIds.Contains).ToArray();
+            var mentions = mentionedUserIds.Distinct().Where(validMemberIds.Contains)
+                .Where(id => channel.ChannelType == "channel" || channel.MemberIds.Contains(id))
+                .ToArray();
             var message = new ChatMessage(
                 Guid.CreateVersion7(), organizationId, channelId, authorId, authorName, body,
                 DateTimeOffset.UtcNow, null, resources.Select(item => item!).ToArray(), mentions);
@@ -308,6 +323,9 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
         }
     }
 
+
+    private static bool CanAccess(ChatChannel channel, Guid userId) =>
+        channel.ChannelType == "channel" || channel.MemberIds.Contains(userId);
     private async Task<bool> ProjectExistsAsync(
         Guid organizationId, Guid projectId, CancellationToken cancellationToken) =>
         (await workspace.ListProjectsAsync(organizationId, cancellationToken))

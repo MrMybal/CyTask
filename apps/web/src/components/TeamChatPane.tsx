@@ -4,7 +4,8 @@ import {
   type ChatChannel,
   type ChatMessage,
   type OrganizationMember,
-  type ProjectResource
+  type ProjectResource,
+  type TaskOption
 } from "../api";
 import { uploadProjectFile } from "../resourceUpload";
 import { ChatMessageList } from "./ChatMessageList";
@@ -17,6 +18,8 @@ interface Props {
   canContribute: boolean;
   onError: (message: string) => void;
   onNotice: (message: string) => void;
+  tasks: TaskOption[];
+  onOpenTask: (taskId: string) => void;
 }
 
 export function TeamChatPane({
@@ -25,7 +28,9 @@ export function TeamChatPane({
   members,
   canContribute,
   onError,
-  onNotice
+  onNotice,
+  tasks,
+  onOpenTask
 }: Props) {
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string>();
@@ -34,6 +39,7 @@ export function TeamChatPane({
   const [pendingResources, setPendingResources] = useState<ProjectResource[]>([]);
   const [creatingChannel, setCreatingChannel] = useState(false);
   const [progress, setProgress] = useState<{ label: string; percent: number }>();
+  const [newChannelType, setNewChannelType] = useState<"channel" | "group">("channel");
   const fileInput = useRef<HTMLInputElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const selectedChannel = channels.find((channel) => channel.id === selectedChannelId);
@@ -83,13 +89,16 @@ export function TeamChatPane({
     try {
       const channel = await api.createChatChannel(projectId, {
         name: String(data.get("name")),
-        topic: String(data.get("topic"))
+        topic: String(data.get("topic")),
+        channelType: String(data.get("channelType")) as "channel" | "group",
+        memberIds: data.getAll("memberIds").map(String)
       });
       setChannels((current) => [...current.filter((item) => item.id !== channel.id), channel]);
       setSelectedChannelId(channel.id);
       setCreatingChannel(false);
+      setNewChannelType("channel");
       form.reset();
-      onNotice("Salon créé.");
+      onNotice(channel.channelType === "group" ? "Groupe privé créé." : "Salon créé.");
     } catch {
       onError("Impossible de créer ce salon.");
     }
@@ -146,14 +155,41 @@ export function TeamChatPane({
     textarea.focus();
   }
 
+  function linkTask(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    const textarea = composer.current;
+    if (!task || !textarea) return;
+    const separator = textarea.value && !textarea.value.endsWith(" ") ? " " : "";
+    const url = `${window.location.origin}${window.location.pathname}${window.location.search}#/tasks/${task.id}`;
+    textarea.value += `${separator}${task.key} · ${url} `;
+    textarea.focus();
+  }
+
   return (
     <section className="team-chat-pane">
+
       <aside className="chat-channels">
         <header><div><small>DISCUSSIONS</small><strong>Salons d’équipe</strong></div>
           {canContribute && <button type="button" onClick={() => setCreatingChannel(true)}>+</button>}</header>
         {creatingChannel && (
           <form onSubmit={createChannel}>
             <input name="name" placeholder="Nom du salon" maxLength={80} required autoFocus />
+            <select name="channelType" value={newChannelType}
+              onChange={(event) => setNewChannelType(event.currentTarget.value as "channel" | "group")}>
+              <option value="channel">Salon public</option>
+              <option value="group">Groupe privé</option>
+            </select>
+            {newChannelType === "group" && (
+              <fieldset className="chat-group-members">
+                <legend>Membres du groupe</legend>
+                {members.filter((member) => member.userId !== currentUserId).map((member) => (
+                  <label key={member.userId}>
+                    <input type="checkbox" name="memberIds" value={member.userId} />
+                    <span>{member.displayName}</span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
             <input name="topic" placeholder="Sujet (optionnel)" maxLength={500} />
             <button type="submit">Créer</button>
             <button type="button" onClick={() => setCreatingChannel(false)}>Annuler</button>
@@ -163,7 +199,11 @@ export function TeamChatPane({
           {channels.map((channel) => (
             <button className={channel.id === selectedChannelId ? "active" : ""} type="button"
               key={channel.id} onClick={() => setSelectedChannelId(channel.id)}>
-              <span>#</span><span><strong>{channel.name}</strong><small>{channel.topic || "Salon texte et vocal"}</small></span>
+              <span>{channel.channelType === "group" ? "◉" : "#"}</span>
+              <span><strong>{channel.name}</strong><small>
+                {channel.topic || (channel.channelType === "group"
+                  ? "Groupe privé" : "Salon texte et vocal")}
+              </small></span>
             </button>
           ))}
         </nav>
@@ -177,7 +217,12 @@ export function TeamChatPane({
         {selectedChannel ? (
           <>
             <header className="chat-room-header">
-              <div><h2># {selectedChannel.name}</h2><p>{selectedChannel.topic || "Discussion du projet"}</p></div>
+              <div>
+                <h2>{selectedChannel.channelType === "group" ? "◉" : "#"} {selectedChannel.name}</h2>
+                <p>{selectedChannel.topic || (selectedChannel.channelType === "group"
+                  ? "Groupe privé · membres invités uniquement"
+                  : "Discussion du projet")}</p>
+              </div>
               <div className="voice-actions">
                 {!voice.active ? (
                   <button type="button" onClick={() => void voice.join()}>◉ Rejoindre le vocal</button>
@@ -194,7 +239,9 @@ export function TeamChatPane({
             </header>
             {voice.screenStream && <ScreenPreview stream={voice.screenStream} />}
             {voice.remoteStreams.map(([peerId, stream]) => <RemoteMedia key={peerId} stream={stream} />)}
-            <ChatMessageList messages={messages} members={members} currentUserId={currentUserId} />
+            <ChatMessageList messages={messages} members={members}
+              currentUserId={currentUserId} tasks={tasks}
+              onOpenTask={onOpenTask} />
             {canContribute && (
               <form className="chat-composer" onSubmit={sendMessage}>
                 {pendingResources.length > 0 && (
@@ -220,6 +267,16 @@ export function TeamChatPane({
                       }}>
                       <option value="">Joindre depuis l’espace…</option>
                       {library.filter((item) => item.status === "available").map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+                    </select>
+                    <select aria-label="Lier une tâche" defaultValue=""
+                      onChange={(event) => {
+                        linkTask(event.currentTarget.value);
+                        event.currentTarget.value = "";
+                      }}>
+                      <option value="">Lier une tâche…</option>
+                      {tasks.map((task) => (
+                        <option value={task.id} key={task.id}>{task.key} · {task.title}</option>
+                      ))}
                     </select>
                     <input ref={fileInput} hidden multiple type="file"
                       onChange={(event) => void upload(Array.from(event.currentTarget.files ?? []))} />

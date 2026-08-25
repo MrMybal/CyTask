@@ -12,13 +12,16 @@ public sealed partial class PostgresCollaborationStore
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var channel = await GetChannelCoreAsync(
-            connection, transaction, organizationId, channelId, cancellationToken);
+            connection, transaction, organizationId, channelId, authorId, cancellationToken);
         if (channel is null) return null;
         var attachments = resourceIds.Distinct().ToArray();
         if (!await ResourcesValidAsync(connection, transaction, organizationId,
                 channel.ProjectId, attachments, cancellationToken)) return null;
-        var mentions = await ValidMentionsAsync(connection, transaction, organizationId,
+        var validMentions = await ValidMentionsAsync(connection, transaction, organizationId,
             mentionedUserIds.Distinct().ToArray(), cancellationToken);
+        var mentions = channel.ChannelType == "group"
+            ? validMentions.Where(channel.MemberIds.Contains).ToArray()
+            : validMentions;
         var id = Guid.CreateVersion7();
         var now = DateTimeOffset.UtcNow;
         string? authorName;

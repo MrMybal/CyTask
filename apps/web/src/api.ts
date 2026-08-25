@@ -253,6 +253,8 @@ export interface ChatChannel {
   name: string;
   slug: string;
   topic: string;
+  channelType: "channel" | "group";
+  memberIds: string[];
   createdBy: string;
   createdAt: string;
 }
@@ -485,7 +487,8 @@ export const api = {
     request<ProjectResource>(`/api/v1/resource-uploads/${uploadId}/complete`, { method: "POST" }),
   chatChannels: (projectId: string) =>
     request<ChatChannel[]>(`/api/v1/projects/${projectId}/chat/channels`),
-  createChatChannel: (projectId: string, body: { name: string; topic: string }) =>
+  createChatChannel: (projectId: string, body: {
+    name: string; topic: string; channelType: "channel" | "group"; memberIds: string[] }) =>
     request<ChatChannel>(`/api/v1/projects/${projectId}/chat/channels`, {
       method: "POST", body: JSON.stringify(body)
     }),

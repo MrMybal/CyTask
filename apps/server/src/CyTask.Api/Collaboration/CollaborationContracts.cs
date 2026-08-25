@@ -21,7 +21,9 @@ public sealed record CreateProjectResourceUploadRequest(
 
 public sealed record CreateChatChannelRequest(
     string Name,
-    string? Topic);
+    string? Topic,
+    string? ChannelType,
+    IReadOnlyList<Guid>? MemberIds);
 
 public sealed record CreateChatMessageRequest(
     string Body,

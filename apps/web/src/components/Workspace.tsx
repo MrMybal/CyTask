@@ -1898,6 +1898,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             members={members}
             canContribute={canContribute}
             onError={setError}
+            tasks={taskOptions}
+            onOpenTask={openTask}
             onNotice={(message) => notify("success", message)}
           />
         ) : searchHits ? (

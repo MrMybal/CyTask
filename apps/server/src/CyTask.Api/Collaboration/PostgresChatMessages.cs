@@ -6,12 +6,12 @@ namespace CyTask.Api.Collaboration;
 public sealed partial class PostgresCollaborationStore
 {
     public async Task<IReadOnlyList<ChatMessage>?> ListMessagesAsync(
-        Guid organizationId, Guid channelId, int limit, DateTimeOffset? before,
+        Guid organizationId, Guid channelId, int limit, Guid userId, DateTimeOffset? before,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         if (await GetChannelCoreAsync(connection, null, organizationId, channelId,
-                cancellationToken) is null) return null;
+                userId, cancellationToken) is null) return null;
         await using var command = new NpgsqlCommand(
             """
             SELECT m.id,m.organization_id,m.channel_id,m.author_id,u.display_name,
