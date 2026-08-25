@@ -58,7 +58,22 @@ public sealed record Comment(
     string Body,
     DateTimeOffset CreatedAt);
 
-public sealed record TaskDetails(WorkItem Task, IReadOnlyList<Comment> Comments);
+public sealed record TaskChecklistItem(
+    Guid Id,
+    Guid OrganizationId,
+    Guid TaskId,
+    string Title,
+    bool IsCompleted,
+    int Position,
+    long Revision,
+    Guid CreatedBy,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record TaskDetails(
+    WorkItem Task,
+    IReadOnlyList<Comment> Comments,
+    IReadOnlyList<TaskChecklistItem> Checklist);
 
 public sealed record OrganizationMember(
     Guid UserId,
@@ -107,6 +122,7 @@ public sealed record WorkspaceExport(
     IReadOnlyList<Project> Projects,
     IReadOnlyList<WorkItem> Tasks,
     IReadOnlyList<Comment> Comments,
+    IReadOnlyList<TaskChecklistItem> Checklist,
     IReadOnlyList<ActivityEntry> Activity,
     IReadOnlyList<Attachment> Attachments);
 
@@ -211,6 +227,17 @@ public enum UpdateTaskStatus
 }
 
 public sealed record UpdateTaskResult(UpdateTaskStatus Status, WorkItem? Task);
+
+public enum UpdateChecklistItemStatus
+{
+    Updated,
+    NotFound,
+    RevisionConflict
+}
+
+public sealed record UpdateChecklistItemResult(
+    UpdateChecklistItemStatus Status,
+    TaskChecklistItem? Item);
 
 public sealed record ApiToken(
     Guid Id,

@@ -252,6 +252,26 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
 .task-facts div { min-width: 0; border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px; background: #0c131b; }
 .task-facts dt { margin-bottom: 5px; color: #687888; font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .task-facts dd { overflow: hidden; margin: 0; color: #b9c5d0; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.task-checklist { margin: 0 0 30px; border-top: 1px solid var(--line); padding-top: 22px; }
+.checklist-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.checklist-heading h3 { margin: 0 0 4px; font-size: 13px; }
+.checklist-heading p { margin: 0; color: var(--muted); font-size: 9px; }
+.checklist-heading strong { color: var(--accent); font-size: 11px; }
+.checklist-progress { display: block; width: 100%; height: 5px; margin: 10px 0 14px; overflow: hidden; border: 0; border-radius: 999px; accent-color: var(--accent); background: #16212b; }
+.checklist-progress::-webkit-progress-bar { border-radius: 999px; background: #16212b; }
+.checklist-progress::-webkit-progress-value { border-radius: 999px; background: linear-gradient(90deg, var(--accent), #55d9b2); }
+.checklist-progress::-moz-progress-bar { border-radius: 999px; background: linear-gradient(90deg, var(--accent), #55d9b2); }
+.checklist-items { display: grid; gap: 5px; }
+.checklist-item { display: flex; align-items: center; min-width: 0; border: 1px solid var(--line-soft); border-radius: 8px; background: #0d141c; }
+.checklist-item label { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; padding: 9px 10px; color: #c3cdd6; font-size: 11px; cursor: pointer; }
+.checklist-item label span { overflow-wrap: anywhere; }
+.checklist-item input { width: 15px; height: 15px; flex: 0 0 auto; accent-color: var(--accent); }
+.checklist-item.completed label span { color: #657585; text-decoration: line-through; }
+.checklist-remove { flex: 0 0 auto; margin-right: 5px; }
+.checklist-form { display: flex; gap: 7px; margin-top: 10px; }
+.checklist-form input { min-width: 0; flex: 1; font-size: 10px; }
+.checklist-form button { flex: 0 0 auto; }
+
 .quick-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .quick-status-badges { display: flex; align-items: center; gap: 6px; }
 .quick-status label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }

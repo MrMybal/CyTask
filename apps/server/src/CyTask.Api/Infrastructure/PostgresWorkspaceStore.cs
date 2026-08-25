@@ -889,6 +889,24 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             }
         }
 
+        var checklist = new List<TaskChecklistItem>();
+        await using (var checklistCommand = new NpgsqlCommand("""
+                         SELECT id, organization_id, task_id, title, is_completed, position,
+                                revision, created_by, created_at, updated_at
+                         FROM task_checklist_items
+                         WHERE organization_id = @organization_id
+                         ORDER BY task_id, position, id;
+                         """, connection, transaction))
+        {
+            checklistCommand.Parameters.AddWithValue("organization_id", organizationId);
+            await using var reader = await checklistCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                checklist.Add(ReadChecklistItem(reader));
+            }
+        }
+
+
         var activity = new List<ActivityEntry>();
         await using (var activityCommand = new NpgsqlCommand("""
                          SELECT id, organization_id, event_type, aggregate_type, aggregate_id,
@@ -930,7 +948,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
         await transaction.CommitAsync(cancellationToken);
         return new WorkspaceExport(
-            1, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, activity, attachments);
+            2, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, activity, attachments);
     }
 
     public async Task<IReadOnlyList<Attachment>?> ListAttachmentsAsync(
@@ -1666,7 +1684,245 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             comments.Add(ReadComment(commentReader));
         }
 
-        return new TaskDetails(task, comments);
+        await commentReader.DisposeAsync();
+
+        await using var checklistCommand = new NpgsqlCommand("""
+            SELECT id, organization_id, task_id, title, is_completed, position,
+                   revision, created_by, created_at, updated_at
+            FROM task_checklist_items
+            WHERE task_id = @task_id AND organization_id = @organization_id
+            ORDER BY position, id;
+            """, connection);
+        checklistCommand.Parameters.AddWithValue("task_id", taskId);
+        checklistCommand.Parameters.AddWithValue("organization_id", organizationId);
+        await using var checklistReader = await checklistCommand.ExecuteReaderAsync(cancellationToken);
+        var checklist = new List<TaskChecklistItem>();
+        while (await checklistReader.ReadAsync(cancellationToken))
+        {
+            checklist.Add(ReadChecklistItem(checklistReader));
+        }
+
+        return new TaskDetails(task, comments, checklist);
+    }
+
+
+    public async Task<TaskChecklistItem?> CreateChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        string title,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using var lockCommand = new NpgsqlCommand("""
+            SELECT t.id
+            FROM tasks t
+            WHERE t.id = @task_id AND t.organization_id = @organization_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin', 'member')
+              )
+            FOR UPDATE OF t;
+            """, connection, transaction);
+        lockCommand.Parameters.AddWithValue("task_id", taskId);
+        lockCommand.Parameters.AddWithValue("organization_id", organizationId);
+        lockCommand.Parameters.AddWithValue("user_id", userId);
+        if (await lockCommand.ExecuteScalarAsync(cancellationToken) is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await using var positionCommand = new NpgsqlCommand("""
+            SELECT CASE
+                WHEN count(*) < 200 THEN COALESCE(MAX(position), -1) + 1
+                ELSE NULL
+            END
+            FROM task_checklist_items
+            WHERE organization_id = @organization_id AND task_id = @task_id;
+            """, connection, transaction);
+        positionCommand.Parameters.AddWithValue("organization_id", organizationId);
+        positionCommand.Parameters.AddWithValue("task_id", taskId);
+        var positionValue = await positionCommand.ExecuteScalarAsync(cancellationToken);
+        if (positionValue is not int position)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var item = new TaskChecklistItem(
+            Guid.CreateVersion7(),
+            organizationId,
+            taskId,
+            title,
+            false,
+            position,
+            1,
+            userId,
+            now,
+            now);
+        await ExecuteAsync(connection, transaction, """
+            INSERT INTO task_checklist_items(
+                id, organization_id, task_id, title, is_completed, position,
+                revision, created_by, created_at, updated_at)
+            VALUES (
+                @id, @organization_id, @task_id, @title, @is_completed, @position,
+                @revision, @created_by, @created_at, @updated_at);
+            """, cancellationToken,
+            ("id", item.Id), ("organization_id", item.OrganizationId), ("task_id", item.TaskId),
+            ("title", item.Title), ("is_completed", item.IsCompleted), ("position", item.Position),
+            ("revision", item.Revision), ("created_by", item.CreatedBy),
+            ("created_at", item.CreatedAt), ("updated_at", item.UpdatedAt));
+        await ExecuteAsync(connection, transaction, """
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @updated_at
+            WHERE id = @task_id AND organization_id = @organization_id;
+            """, cancellationToken,
+            ("updated_at", now), ("task_id", taskId), ("organization_id", organizationId));
+
+        var actorName = await GetDisplayNameAsync(connection, transaction, userId, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "task.checklist_item_created",
+            taskId, item, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "task.checklist_item_created", "task", taskId,
+            userId, actorName, "Élément ajouté à la checklist", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return item;
+    }
+
+    public async Task<UpdateChecklistItemResult> UpdateChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid itemId,
+        Guid userId,
+        string title,
+        bool isCompleted,
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        await using var updateCommand = new NpgsqlCommand("""
+            UPDATE task_checklist_items
+            SET title = @title,
+                is_completed = @is_completed,
+                revision = revision + 1,
+                updated_at = @updated_at
+            WHERE id = @item_id
+              AND task_id = @task_id
+              AND organization_id = @organization_id
+              AND revision = @expected_revision
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin', 'member')
+              )
+            RETURNING id, organization_id, task_id, title, is_completed, position,
+                      revision, created_by, created_at, updated_at;
+            """, connection, transaction);
+        updateCommand.Parameters.AddWithValue("title", title);
+        updateCommand.Parameters.AddWithValue("is_completed", isCompleted);
+        updateCommand.Parameters.AddWithValue("updated_at", now);
+        updateCommand.Parameters.AddWithValue("item_id", itemId);
+        updateCommand.Parameters.AddWithValue("task_id", taskId);
+        updateCommand.Parameters.AddWithValue("organization_id", organizationId);
+        updateCommand.Parameters.AddWithValue("expected_revision", expectedRevision);
+        updateCommand.Parameters.AddWithValue("user_id", userId);
+
+        TaskChecklistItem? updated;
+        await using (var reader = await updateCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            updated = await reader.ReadAsync(cancellationToken) ? ReadChecklistItem(reader) : null;
+        }
+
+        if (updated is null)
+        {
+            var current = await ReadChecklistItemAsync(
+                connection, transaction, organizationId, taskId, itemId, userId, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
+            return current is null
+                ? new UpdateChecklistItemResult(UpdateChecklistItemStatus.NotFound, null)
+                : new UpdateChecklistItemResult(UpdateChecklistItemStatus.RevisionConflict, current);
+        }
+
+        await ExecuteAsync(connection, transaction, """
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @updated_at
+            WHERE id = @task_id AND organization_id = @organization_id;
+            """, cancellationToken,
+            ("updated_at", now), ("task_id", taskId), ("organization_id", organizationId));
+        var actorName = await GetDisplayNameAsync(connection, transaction, userId, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "task.checklist_item_updated",
+            taskId, updated, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "task.checklist_item_updated", "task", taskId,
+            userId, actorName, "Checklist de la tâche mise à jour", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new UpdateChecklistItemResult(UpdateChecklistItemStatus.Updated, updated);
+    }
+
+    public async Task<UpdateChecklistItemStatus> DeleteChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid itemId,
+        Guid userId,
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var deleteCommand = new NpgsqlCommand("""
+            DELETE FROM task_checklist_items
+            WHERE id = @item_id
+              AND task_id = @task_id
+              AND organization_id = @organization_id
+              AND revision = @expected_revision
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin', 'member')
+              )
+            RETURNING id;
+            """, connection, transaction);
+        deleteCommand.Parameters.AddWithValue("item_id", itemId);
+        deleteCommand.Parameters.AddWithValue("task_id", taskId);
+        deleteCommand.Parameters.AddWithValue("organization_id", organizationId);
+        deleteCommand.Parameters.AddWithValue("expected_revision", expectedRevision);
+        deleteCommand.Parameters.AddWithValue("user_id", userId);
+        var deleted = await deleteCommand.ExecuteScalarAsync(cancellationToken) is not null;
+        if (!deleted)
+        {
+            var current = await ReadChecklistItemAsync(
+                connection, transaction, organizationId, taskId, itemId, userId, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
+            return current is null
+                ? UpdateChecklistItemStatus.NotFound
+                : UpdateChecklistItemStatus.RevisionConflict;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await ExecuteAsync(connection, transaction, """
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @updated_at
+            WHERE id = @task_id AND organization_id = @organization_id;
+            """, cancellationToken,
+            ("updated_at", now), ("task_id", taskId), ("organization_id", organizationId));
+        var actorName = await GetDisplayNameAsync(connection, transaction, userId, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "task.checklist_item_deleted",
+            taskId, new { checklistItemId = itemId }, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "task.checklist_item_deleted", "task", taskId,
+            userId, actorName, "Élément supprimé de la checklist", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return UpdateChecklistItemStatus.Updated;
     }
 
     public async Task<TaskDependencyOverview?> GetTaskDependenciesAsync(
@@ -2020,6 +2276,38 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         return comment;
     }
 
+
+
+    private static async Task<TaskChecklistItem?> ReadChecklistItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid organizationId,
+        Guid taskId,
+        Guid itemId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT item.id, item.organization_id, item.task_id, item.title,
+                   item.is_completed, item.position, item.revision, item.created_by,
+                   item.created_at, item.updated_at
+            FROM task_checklist_items item
+            WHERE item.organization_id = @organization_id
+              AND item.task_id = @task_id
+              AND item.id = @item_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin', 'member')
+              );
+            """, connection, transaction);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("task_id", taskId);
+        command.Parameters.AddWithValue("item_id", itemId);
+        command.Parameters.AddWithValue("user_id", userId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadChecklistItem(reader) : null;
+    }
     private async Task<bool> ProjectExistsAsync(
         Guid organizationId,
         Guid projectId,
@@ -2219,6 +2507,12 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
     private static Comment ReadComment(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3),
         reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6));
+
+
+    private static TaskChecklistItem ReadChecklistItem(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
+        reader.GetBoolean(4), reader.GetInt32(5), reader.GetInt64(6), reader.GetGuid(7),
+        reader.GetFieldValue<DateTimeOffset>(8), reader.GetFieldValue<DateTimeOffset>(9));
 
     private static Attachment ReadAttachment(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),

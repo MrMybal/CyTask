@@ -63,6 +63,19 @@ public static class ApiEndpoints
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapGet("/tasks/{taskId:guid}", GetTaskAsync);
+        authenticated.MapPost("/tasks/{taskId:guid}/checklist", CreateChecklistItemAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapPatch(
+                "/tasks/{taskId:guid}/checklist/{itemId:guid}",
+                UpdateChecklistItemAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapDelete(
+                "/tasks/{taskId:guid}/checklist/{itemId:guid}",
+                DeleteChecklistItemAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapGet("/tasks/{taskId:guid}/dependencies", GetTaskDependenciesAsync);
         authenticated.MapPost("/tasks/{taskId:guid}/dependencies", AddTaskDependencyAsync)
             .AddEndpointFilter<CsrfFilter>()
@@ -670,6 +683,148 @@ public static class ApiEndpoints
         var user = context.GetUser()!;
         var task = await store.GetTaskAsync(user.OrganizationId, taskId, cancellationToken);
         return task is null ? Results.NotFound() : Results.Ok(task);
+    }
+
+
+    private static async Task<IResult> CreateChecklistItemAsync(
+        Guid taskId,
+        CreateChecklistItemRequest request,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var title = request.Title.Trim();
+        if (title.Length is < 1 or > 500)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(request.Title)] = ["Le titre doit contenir entre 1 et 500 caractères."]
+            });
+        }
+
+        var user = context.GetUser()!;
+        var current = await store.GetTaskAsync(user.OrganizationId, taskId, cancellationToken);
+        if (current is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (current.Checklist.Count >= 200)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Une checklist ne peut pas dépasser 200 éléments.");
+        }
+
+        var item = await store.CreateChecklistItemAsync(
+            user.OrganizationId, taskId, user.UserId, title, cancellationToken);
+        if (item is null)
+        {
+            var taskStillExists = await store.GetTaskAsync(
+                user.OrganizationId, taskId, cancellationToken) is not null;
+            return taskStillExists
+                ? Results.Problem(
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "La checklist a atteint sa limite.")
+                : Results.NotFound();
+        }
+
+        events.Publish(user.OrganizationId, "task.checklist_item_created", taskId);
+        return Results.Created($"/api/v1/tasks/{taskId}/checklist/{item.Id}", item);
+    }
+
+    private static async Task<IResult> UpdateChecklistItemAsync(
+        Guid taskId,
+        Guid itemId,
+        UpdateChecklistItemRequest request,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var title = request.Title.Trim();
+        var errors = new Dictionary<string, string[]>();
+        if (title.Length is < 1 or > 500)
+        {
+            errors[nameof(request.Title)] = ["Le titre doit contenir entre 1 et 500 caractères."];
+        }
+
+        if (request.ExpectedRevision < 1)
+        {
+            errors[nameof(request.ExpectedRevision)] = ["La révision attendue doit être positive."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var user = context.GetUser()!;
+        var result = await store.UpdateChecklistItemAsync(
+            user.OrganizationId,
+            taskId,
+            itemId,
+            user.UserId,
+            title,
+            request.IsCompleted,
+            request.ExpectedRevision,
+            cancellationToken);
+        if (result.Status == UpdateChecklistItemStatus.NotFound)
+        {
+            return Results.NotFound();
+        }
+
+        if (result.Status == UpdateChecklistItemStatus.RevisionConflict)
+        {
+            return Results.Json(
+                new { title = "La checklist a changé depuis son ouverture.", item = result.Item },
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        events.Publish(user.OrganizationId, "task.checklist_item_updated", taskId);
+        return Results.Ok(result.Item);
+    }
+
+    private static async Task<IResult> DeleteChecklistItemAsync(
+        Guid taskId,
+        Guid itemId,
+        long expectedRevision,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        if (expectedRevision < 1)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(expectedRevision)] = ["La révision attendue doit être positive."]
+            });
+        }
+
+        var user = context.GetUser()!;
+        var result = await store.DeleteChecklistItemAsync(
+            user.OrganizationId,
+            taskId,
+            itemId,
+            user.UserId,
+            expectedRevision,
+            cancellationToken);
+        if (result == UpdateChecklistItemStatus.NotFound)
+        {
+            return Results.NotFound();
+        }
+
+        if (result == UpdateChecklistItemStatus.RevisionConflict)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "La checklist a changé depuis son ouverture.");
+        }
+
+        events.Publish(user.OrganizationId, "task.checklist_item_deleted", taskId);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> GetTaskDependenciesAsync(

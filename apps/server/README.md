@@ -19,5 +19,5 @@ PostgreSQL. Les migrations ne sont appliquées automatiquement que lorsque
 - `GET /health/live` et `GET /health/ready` ;
 - `POST /api/v1/bootstrap`, utilisable une seule fois ;
 - `POST /api/v1/sessions` et `DELETE /api/v1/session` ;
-- projets, tâches et commentaires sous `/api/v1` ;
+- projets, tâches, checklists et commentaires sous `/api/v1` ;
 - flux SSE authentifié sur `GET /api/v1/events`.
