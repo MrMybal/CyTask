@@ -34,6 +34,8 @@ import { ApiTokensPane } from "./ApiTokensPane";
 import { ToastStack, useToasts } from "./Toasts";
 import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
 import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
+import { ProjectFolderTree } from "./ProjectFolderTree";
+import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
 import {
   parseSavedTaskViews,
   savedTaskViewsStorageKey,
@@ -113,9 +115,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const setError = useCallback((message: string) => {
     if (message) notify("error", message);
   }, [notify]);
-  const [taskView, setTaskView] = useState<TaskView>(() =>
-    window.localStorage.getItem("cytask.taskView") === "board" ? "board" : "list"
-  );
+  const [taskView, setTaskView] = useState<TaskView>(() => {
+    const saved = window.localStorage.getItem("cytask.taskView");
+    return saved === "board" || saved === "compact" || saved === "miro" || saved === "graph"
+      ? saved
+      : "list";
+  });
   const [taskQuery, setTaskQuery] = useState("");
   const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>("all");
   const [taskPriorityFilter, setTaskPriorityFilter] = useState<TaskPriorityFilter>("all");
@@ -149,6 +154,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [showTokens, setShowTokens] = useState(false);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("project");
+  const [themeMode, setThemeMode] = useState<"dark" | "light">(() =>
+    window.localStorage.getItem("cytask.theme") === "light" ? "light" : "dark"
+  );
+  const [folderEditorParentId, setFolderEditorParentId] =
+    useState<string | null | undefined>();
   const taskRequestSequence = useRef(0);
   const taskSupportRequestSequence = useRef(0);
   const detailRequestSequence = useRef(0);
@@ -164,11 +174,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   );
   const labelCounts = useMemo(() => {
     const counts = new Map<string, number>();
+    const labelsById = new Map(projectLabels.labels.map((label) => [label.id, label]));
     for (const assignment of projectLabels.assignments) {
-      counts.set(assignment.labelId, (counts.get(assignment.labelId) ?? 0) + 1);
+      let label = labelsById.get(assignment.labelId);
+      const visited = new Set<string>();
+      while (label && !visited.has(label.id)) {
+        visited.add(label.id);
+        counts.set(label.id, (counts.get(label.id) ?? 0) + 1);
+        label = label.parentLabelId ? labelsById.get(label.parentLabelId) : undefined;
+      }
     }
     return counts;
-  }, [projectLabels.assignments]);
+  }, [projectLabels.assignments, projectLabels.labels]);
   const selectedFolder = taskLabelFilter === "all" || taskLabelFilter === "none"
     ? undefined
     : projectLabels.labels.find((label) => label.id === taskLabelFilter);
@@ -504,6 +521,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   useEffect(() => {
     window.localStorage.setItem("cytask.taskView", taskView);
   }, [taskView]);
+  useEffect(() => {
+    window.localStorage.setItem("cytask.theme", themeMode);
+  }, [themeMode]);
+
 
   useEffect(() => {
     window.localStorage.setItem("cytask.taskSort", taskSort);
@@ -681,7 +702,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setSidebarSection(section);
     setActiveTaskViewId(undefined);
 
-    const filters = createTaskFilterSnapshot({ view: "list", sort: "updated" });
+    const filters = createTaskFilterSnapshot({ view: taskView, sort: "updated" });
     if (section === "inbox") filters.status = "todo";
     if (section === "mine") {
       filters.assignee = session.userId;
@@ -1010,6 +1031,37 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       setError(messageFor(reason));
       await loadTasks(projectId).catch(() => undefined);
       return false;
+    }
+  }
+
+  async function createProjectFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedProjectId || !canContribute) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const name = String(data.get("name")).trim();
+    const color = String(data.get("color")).trim();
+    const parentLabelId = String(data.get("parentLabelId")).trim() || null;
+    if (!name) return;
+
+    setError("");
+    try {
+      const folder = await api.createProjectLabel(selectedProjectId, {
+        name,
+        color,
+        parentLabelId
+      });
+      form.reset();
+      setFolderEditorParentId(undefined);
+      await loadTaskSupport(selectedProjectId);
+      notify(
+        "success",
+        parentLabelId
+          ? `Sous-dossier « ${folder.name} » créé.`
+          : `Dossier « ${folder.name} » créé.`
+      );
+    } catch (reason) {
+      setError(messageFor(reason));
     }
   }
 
@@ -1525,7 +1577,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   }, [canAdminister, canContribute, selectedProjectId, sidebarCollapsed, taskView]);
 
   return (
-    <div className={sidebarCollapsed ? "workspace-shell sidebar-collapsed" : "workspace-shell"}>
+    <div className={`workspace-shell theme-${themeMode}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-top">
           <a className="brand compact" href="/" aria-label="CyTask, accueil">
@@ -1614,23 +1666,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <span className="project-avatar">{project.key.slice(0, 2)}</span>
                   <span>{project.name}</span>
                 </button>
-                {project.id === selectedProjectId && projectLabels.labels.length > 0 && (
-                  <div className="space-tree" aria-label={"Dossiers de " + project.name}>
-                    <span className="space-tree-label">Dossiers</span>
-                    {projectLabels.labels.map((label) => (
-                      <button
-                        className={taskLabelFilter === label.id ? "folder-link active" : "folder-link"}
-                        type="button"
-                        key={label.id}
-                        title={label.name + " · " + (labelCounts.get(label.id) ?? 0) + " tâches"}
-                        onClick={() => selectSidebarSection("project", label.id)}
-                      >
-                        <span className="folder-icon" style={{ color: label.color }}>▰</span>
-                        <span>{label.name}</span>
-                        <small>{labelCounts.get(label.id) ?? 0}</small>
-                      </button>
-                    ))}
-                  </div>
+                {project.id === selectedProjectId && (
+                  <ProjectFolderTree
+                    labels={projectLabels.labels}
+                    counts={labelCounts}
+                    selectedLabelId={selectedFolder?.id}
+                    editorParentId={folderEditorParentId}
+                    canCreate={canContribute}
+                    onSelect={(labelId) => selectSidebarSection("project", labelId)}
+                    onStartCreate={setFolderEditorParentId}
+                    onCancelCreate={() => setFolderEditorParentId(undefined)}
+                    onCreate={(event) => void createProjectFolder(event)}
+                  />
                 )}
               </div>
             ))}
@@ -1654,6 +1701,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         }}>
           <span className="project-avatar">AP</span>
           <span>API</span>
+        </button>
+
+        <button
+          className="team-link theme-link"
+          type="button"
+          title={themeMode === "dark" ? "Passer au mode clair" : "Passer au mode sombre"}
+          onClick={() => setThemeMode((current) => current === "dark" ? "light" : "dark")}
+        >
+          <span className="project-avatar">{themeMode === "dark" ? "☀" : "☾"}</span>
+          <span>{themeMode === "dark" ? "Mode clair" : "Mode sombre"}</span>
         </button>
 
         <div className="profile-block">
@@ -1921,11 +1978,29 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     onClick={() => setTaskView("list")}
                   >Liste</button>
                   <button
+                    className={taskView === "compact" ? "active" : ""}
+                    type="button"
+                    aria-pressed={taskView === "compact"}
+                    onClick={() => setTaskView("compact")}
+                  >Compact</button>
+                  <button
                     className={taskView === "board" ? "active" : ""}
                     type="button"
                     aria-pressed={taskView === "board"}
                     onClick={() => setTaskView("board")}
                   >Kanban</button>
+                  <button
+                    className={taskView === "miro" ? "active" : ""}
+                    type="button"
+                    aria-pressed={taskView === "miro"}
+                    onClick={() => setTaskView("miro")}
+                  >Miro</button>
+                  <button
+                    className={taskView === "graph" ? "active" : ""}
+                    type="button"
+                    aria-pressed={taskView === "graph"}
+                    onClick={() => setTaskView("graph")}
+                  >Graphe</button>
                 </div>
               </div>
             </section>
@@ -1945,6 +2020,23 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 <p>Modifiez la recherche ou réinitialisez les filtres de ce projet.</p>
                 <button className="text-button" type="button" onClick={resetTaskFilters}>Réinitialiser les filtres</button>
               </section>
+            ) : taskView === "compact" ? (
+              <CompactTaskTable
+                tasks={filteredTasks}
+                labelsByTask={labelsByTask}
+                selectedTaskId={selectedTaskId}
+                onOpenTask={openTask}
+              />
+            ) : taskView === "miro" || taskView === "graph" ? (
+              <TaskCanvas
+                key={taskView}
+                mode={taskView}
+                tasks={taskOptions}
+                labels={projectLabels.labels}
+                assignments={projectLabels.assignments}
+                hierarchy={taskHierarchy.relations}
+                onOpenTask={openTask}
+              />
             ) : taskView === "list" ? (
               <section className="task-list" aria-label="Tâches en liste">
                 {canContribute && (
@@ -2108,7 +2200,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   })}
               </section>
             )}
-            {taskNextCursor && (
+            {taskNextCursor && taskView !== "miro" && taskView !== "graph" && (
               <div className="task-pagination">
                 <button
                   className="primary-button small"

@@ -328,7 +328,8 @@
                 "required": ["name", "color"],
                 "properties": {
                   "name": { "type": "string", "minLength": 1, "maxLength": 80 },
-                  "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "examples": ["#3B82F6"] }
+                  "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "examples": ["#3B82F6"] },
+                  "parentLabelId": { "type": ["string", "null"], "format": "uuid", "description": "Dossier parent optionnel, limité à cinq niveaux." }
                 }
               }
             }
@@ -933,6 +934,7 @@
           "projectId": { "type": "string", "format": "uuid" },
           "name": { "type": "string" },
           "color": { "type": "string", "pattern": "^#[0-9A-F]{6}$" },
+          "parentLabelId": { "type": ["string", "null"], "format": "uuid" },
           "createdBy": { "type": "string", "format": "uuid" },
           "createdAt": { "type": "string", "format": "date-time" }
         }

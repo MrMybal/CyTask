@@ -123,7 +123,8 @@ public sealed record ProjectLabel(
     string Name,
     string Color,
     Guid CreatedBy,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Guid? ParentLabelId = null);
 
 public sealed record TaskLabelAssignment(
     Guid TaskId,

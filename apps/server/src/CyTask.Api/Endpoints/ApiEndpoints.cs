@@ -687,6 +687,33 @@ public static class ApiEndpoints
                 title: "Un projet ne peut pas dépasser 64 labels.");
         }
 
+        if (request.ParentLabelId is Guid parentLabelId)
+        {
+            var labelsById = overview.Labels.ToDictionary(label => label.Id);
+            if (!labelsById.TryGetValue(parentLabelId, out var parentLabel))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.ParentLabelId)] = ["Le dossier parent n’existe pas dans ce projet."]
+                });
+            }
+
+            var parentDepth = 1;
+            while (parentLabel.ParentLabelId is Guid ancestorId
+                   && labelsById.TryGetValue(ancestorId, out var ancestor))
+            {
+                parentDepth += 1;
+                parentLabel = ancestor;
+            }
+
+            if (parentDepth >= 5)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "La profondeur maximale est de cinq niveaux de dossiers.");
+            }
+        }
+
         if (overview.Labels.Any(label =>
             string.Equals(label.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
@@ -696,7 +723,8 @@ public static class ApiEndpoints
         }
 
         var label = await store.CreateProjectLabelAsync(
-            user.OrganizationId, projectId, user.UserId, name, color, cancellationToken);
+            user.OrganizationId, projectId, user.UserId, name, color,
+            request.ParentLabelId, cancellationToken);
         if (label is null)
         {
             return Results.Problem(

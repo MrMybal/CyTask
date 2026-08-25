@@ -46,7 +46,7 @@ public sealed record UpdateChecklistItemRequest(
     long ExpectedRevision);
 
 
-public sealed record CreateProjectLabelRequest(string Name, string Color);
+public sealed record CreateProjectLabelRequest(string Name, string Color, Guid? ParentLabelId = null);
 public sealed class UpdateTaskRequest
 {
     private string? priority;

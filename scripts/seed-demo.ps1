@@ -95,11 +95,11 @@ function Add-PerformanceTasks {
     }
 
     $catalogs = @(
-        @{ Prefix = "[ART]"; Label = "Art"; Titles = @("Kit modulaire de maintenance", "Passe matériaux du hangar", "Déclinaison des props de coursive", "Optimisation des LOD de décor") },
-        @{ Prefix = "[GAMEPLAY]"; Label = "Gameplay"; Titles = @("Interaction du sas secondaire", "Réglage de la gravité locale", "Feedback du terminal de contrôle", "Parcours joueur de la baie orbitale") },
+        @{ Prefix = "[ART]"; Label = "Environment"; Titles = @("Kit modulaire de maintenance", "Passe matériaux du hangar", "Déclinaison des props de coursive", "Optimisation des LOD de décor") },
+        @{ Prefix = "[GAMEPLAY]"; Label = "Interactions"; Titles = @("Interaction du sas secondaire", "Réglage de la gravité locale", "Feedback du terminal de contrôle", "Parcours joueur de la baie orbitale") },
         @{ Prefix = "[AUDIO]"; Label = "Audio"; Titles = @("Ambiance de ventilation", "Variation de l’alarme de secteur", "Mix du terminal diégétique", "Occlusion des coursives techniques") },
-        @{ Prefix = "[BUILD]"; Label = "Build"; Titles = @("Validation de la build Windows", "Analyse du rapport de crash", "Préparation du paquet de revue", "Contrôle des symboles de diagnostic") },
-        @{ Prefix = "[QA]"; Label = "Gameplay"; Titles = @("Vérification des collisions", "Test de régression multijoueur", "Contrôle du navmesh du hangar", "Reproduction du défaut d’interaction") },
+        @{ Prefix = "[BUILD]"; Label = "QA & Validation"; Titles = @("Validation de la build Windows", "Analyse du rapport de crash", "Préparation du paquet de revue", "Contrôle des symboles de diagnostic") },
+        @{ Prefix = "[QA]"; Label = "NPC Physics"; Titles = @("Vérification des collisions", "Test de régression multijoueur", "Contrôle du navmesh du hangar", "Reproduction du défaut d’interaction") },
         @{ Prefix = "[R&D]"; Label = "R&D"; Titles = @("Prototype Niagara volumétrique", "Mesure du budget GPU", "Essai de streaming des assets", "Comparatif du pipeline de conversion") }
     )
     $assigneePool = @($memberIds.Values)
@@ -186,6 +186,33 @@ function Add-PerformanceTasks {
     Write-Progress -Activity "Création du projet de charge CyTask" -Completed
     return $added
 }
+function Add-DemoSubfolders {
+    param(
+        [Parameter(Mandatory = $true)][object]$Project,
+        [Parameter(Mandatory = $true)][hashtable]$LabelIds
+    )
+
+    $definitions = @(
+        @{ Name = "Environment"; Parent = "Art"; Color = "#C026D3" },
+        @{ Name = "NPC Physics"; Parent = "Gameplay"; Color = "#F97316" },
+        @{ Name = "Interactions"; Parent = "Gameplay"; Color = "#2563EB" },
+        @{ Name = "QA & Validation"; Parent = "Build"; Color = "#16A34A" }
+    )
+
+    foreach ($definition in $definitions) {
+        if ($LabelIds.ContainsKey($definition.Name) -or !$LabelIds.ContainsKey($definition.Parent)) {
+            continue
+        }
+
+        $folder = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($Project.id)/labels" -Headers $csrfHeaders -Body @{
+            name = $definition.Name
+            color = $definition.Color
+            parentLabelId = $LabelIds[$definition.Parent]
+        }
+        $LabelIds[$definition.Name] = $folder.id
+    }
+}
+
 $projects = Invoke-DemoApi -Method Get -Path "/api/v1/projects"
 $project = $projects | Where-Object { $_.key -eq "NEB" } | Select-Object -First 1
 if ($null -ne $project) {
@@ -196,6 +223,7 @@ if ($null -ne $project) {
     foreach ($label in $labelOverview.labels) {
         $labelIdsByName[$label.name] = $label.id
     }
+    Add-DemoSubfolders -Project $project -LabelIds $labelIdsByName
     $addedTaskCount = Add-PerformanceTasks -Project $project -ExistingCount $existingTaskCount -LabelIds $labelIdsByName
     $finalTaskCount = $existingTaskCount + $addedTaskCount
 
@@ -328,6 +356,7 @@ $labelIdsByName = @{}
 foreach ($label in $createdLabels.Values) {
     $labelIdsByName[$label.name] = $label.id
 }
+Add-DemoSubfolders -Project $project -LabelIds $labelIdsByName
 $performanceTaskCount = Add-PerformanceTasks -Project $project -ExistingCount $createdTasks.Count -LabelIds $labelIdsByName
 
 $hierarchyDefinitions = @(
@@ -444,6 +473,6 @@ foreach ($reference in $references) {
 }
 
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "220 tâches de charge, 10 relations parentales, 9 éléments de checklist, 6 dossiers par labels, 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
+Write-Host "220 tâches de charge, 10 relations parentales, 9 éléments de checklist, 10 dossiers dont 4 sous-dossiers, 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

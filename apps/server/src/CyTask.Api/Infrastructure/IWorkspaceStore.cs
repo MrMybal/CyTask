@@ -231,6 +231,7 @@ public interface IWorkspaceStore
         Guid userId,
         string name,
         string color,
+        Guid? parentLabelId,
         CancellationToken cancellationToken);
 
     Task<bool> DeleteProjectLabelAsync(

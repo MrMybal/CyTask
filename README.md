@@ -47,8 +47,10 @@ utilise un code unique et un jeton Bearer opaque révocable réservé au client
 Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
 du moteur complète.
 Le client Web responsive et installable consomme la même API que les futurs
-clients et le plugin Unreal. Son interface de tâches propose maintenant vues
-Liste et Kanban, labels colorés, priorités, échéances, assignation aux membres, vues rapides et filtres nommés mémorisés localement,
+clients et le plugin Unreal. Son interface de tâches propose maintenant cinq vues :
+Liste, Compacte en colonnes, Kanban, tableau libre type Miro et graphe relationnel.
+Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
+des labels colorés, priorités, échéances, assignation aux membres, vues rapides et filtres nommés mémorisés localement,
 vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
 palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
 au survol, pagination serveur à curseur avec filtres, chargement progressif et
@@ -78,7 +80,7 @@ pwsh ./scripts/seed-demo.ps1
 ```
 
 Le script crée une équipe et un jeu de charge de **220 tâches** réalistes avec états, priorités,
-échéances, responsables et dossiers par labels, ainsi que des sous-tâches, checklists, commentaires,
+échéances, responsables, dossiers et sous-dossiers, ainsi que des sous-tâches, checklists, commentaires,
 références Git et dépendances. Il est idempotent : une nouvelle exécution complète seulement les tâches
 manquantes. Les identifiants de démonstration sont affichés à la fin de son exécution.
 
