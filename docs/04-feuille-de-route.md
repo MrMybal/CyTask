@@ -19,7 +19,7 @@ restaurable.
 - compte, organisation, membres et rôles ;
 - projet, tâche, sous-tâches, états, labels, checklists et commentaires ;
 - journal d'activité et mise à jour temps réel ;
-- recherche simple et export ;
+- recherche simple, vues filtrées enregistrées et export ;
 - application Web responsive/PWA.
 
 **Sortie :** une petite équipe peut réellement gérer un projet sans Git.

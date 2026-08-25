@@ -32,6 +32,15 @@ import { ApiTokensPane } from "./ApiTokensPane";
 import { ToastStack, useToasts } from "./Toasts";
 import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
 import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
+import {
+  parseSavedTaskViews,
+  savedTaskViewsStorageKey,
+  TaskSavedViews,
+  taskFilterSnapshotsEqual,
+  type SavedTaskView,
+  type TaskFilterSnapshot,
+  type TaskViewDefinition
+} from "./TaskSavedViews";
 
 interface WorkspaceProps {
   session: Session;
@@ -56,14 +65,14 @@ const priorityLabels: Record<WorkItem["priority"], string> = {
 const priorities: WorkItem["priority"][] = ["urgent", "high", "normal", "low"];
 
 const boardStatuses: WorkItem["status"][] = ["todo", "in_progress", "blocked", "done", "cancelled"];
-type TaskView = "list" | "board";
-type TaskStatusFilter = "all" | WorkItem["status"];
-type TaskPriorityFilter = "all" | WorkItem["priority"];
-type TaskAssigneeFilter = "all" | "unassigned" | string;
-type TaskDueFilter = "all" | "overdue" | "today" | "week" | "none";
-type TaskLabelFilter = "all" | "none" | string;
+type TaskView = TaskFilterSnapshot["view"];
+type TaskStatusFilter = TaskFilterSnapshot["status"];
+type TaskPriorityFilter = TaskFilterSnapshot["priority"];
+type TaskAssigneeFilter = TaskFilterSnapshot["assignee"];
+type TaskDueFilter = TaskFilterSnapshot["due"];
+type TaskLabelFilter = TaskFilterSnapshot["label"];
 type DetailTab = "overview" | "dependencies" | "files" | "git" | "activity";
-type TaskSort = "updated" | "created" | "due" | "key" | "title";
+type TaskSort = TaskFilterSnapshot["sort"];
 type DetailBundle = [TaskDetails, Attachment[], ExternalReference[], TaskDependencyOverview];
 
 export function Workspace({ session, onLogout }: WorkspaceProps) {
@@ -106,6 +115,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       ? saved
       : "updated";
   });
+  const [savedTaskViews, setSavedTaskViews] = useState<SavedTaskView[]>([]);
+  const [activeTaskViewId, setActiveTaskViewId] = useState<string>();
   const [tasksLoading, setTasksLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
@@ -135,6 +146,32 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     () => projects.find((project) => project.id === selectedProjectId),
     [projects, selectedProjectId]
   );
+  const taskViewsStorageKey = selectedProjectId
+    ? savedTaskViewsStorageKey(session.organizationId, session.userId, selectedProjectId)
+    : undefined;
+  const taskViewPresets = useMemo<TaskViewDefinition[]>(() => [
+    {
+      id: "preset:mine",
+      name: "Mes tâches",
+      filters: createTaskFilterSnapshot({ assignee: session.userId, sort: "due" })
+    },
+    {
+      id: "preset:overdue",
+      name: "En retard",
+      filters: createTaskFilterSnapshot({ due: "overdue", sort: "due" })
+    },
+    {
+      id: "preset:blocked",
+      name: "Bloquées",
+      filters: createTaskFilterSnapshot({ status: "blocked", view: "board" })
+    },
+    {
+      id: "preset:unassigned",
+      name: "Sans responsable",
+      filters: createTaskFilterSnapshot({ assignee: "unassigned", sort: "created" })
+    }
+  ], [session.userId]);
+
   const selectedTaskId = details?.task.id;
   const labelsByTask = useMemo(() => {
     const labelsById = new Map(projectLabels.labels.map((label) => [label.id, label]));
@@ -195,6 +232,24 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const parentCandidates = useMemo(() => tasks.filter((task) =>
     task.id !== selectedTaskId && !descendantTaskIds.has(task.id)
   ), [descendantTaskIds, selectedTaskId, tasks]);
+  const currentTaskFilters = useMemo<TaskFilterSnapshot>(
+    () => ({
+      query: taskQuery,
+      status: taskStatusFilter,
+      priority: taskPriorityFilter,
+      assignee: taskAssigneeFilter,
+      due: taskDueFilter,
+      label: taskLabelFilter,
+      sort: taskSort,
+      view: taskView
+    }),
+    [taskAssigneeFilter, taskDueFilter, taskLabelFilter, taskPriorityFilter, taskQuery,
+      taskSort, taskStatusFilter, taskView]
+  );
+  const activeTaskView = taskViewPresets.find((view) => view.id === activeTaskViewId)
+    ?? savedTaskViews.find((view) => view.id === activeTaskViewId);
+  const activeTaskViewDirty = activeTaskView !== undefined
+    && !taskFilterSnapshotsEqual(currentTaskFilters, activeTaskView.filters);
 
   const filteredTasks = useMemo(() => {
     const query = taskQuery.trim().toLocaleLowerCase("fr");
@@ -350,6 +405,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setTaskLabelFilter("all");
     setTaskDueFilter("all");
   }, [loadTasks, selectedProjectId]);
+  useEffect(() => {
+    setActiveTaskViewId(undefined);
+    if (!taskViewsStorageKey) {
+      setSavedTaskViews([]);
+      return;
+    }
+    try {
+      setSavedTaskViews(parseSavedTaskViews(window.localStorage.getItem(taskViewsStorageKey)));
+    } catch {
+      setSavedTaskViews([]);
+    }
+  }, [taskViewsStorageKey]);
 
   useEffect(() => {
     if (taskLabelFilter === "all" || taskLabelFilter === "none") return;
@@ -502,6 +569,130 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     selectedTaskId,
     showActivity
   ]);
+
+  function applyTaskFilters(filters: TaskFilterSnapshot) {
+    setTaskQuery(filters.query);
+    setTaskStatusFilter(filters.status);
+    setTaskPriorityFilter(filters.priority);
+    setTaskAssigneeFilter(filters.assignee);
+    setTaskDueFilter(filters.due);
+    setTaskLabelFilter(filters.label);
+    setTaskSort(filters.sort);
+    setTaskView(filters.view);
+  }
+
+  function resetTaskFilters() {
+    setActiveTaskViewId(undefined);
+    applyTaskFilters(createTaskFilterSnapshot({
+      sort: taskSort,
+      view: taskView
+    }));
+  }
+
+  function selectTaskView(viewId?: string) {
+    if (!viewId) {
+      setActiveTaskViewId(undefined);
+      return;
+    }
+    const view = taskViewPresets.find((candidate) => candidate.id === viewId)
+      ?? savedTaskViews.find((candidate) => candidate.id === viewId);
+    if (!view) {
+      setActiveTaskViewId(undefined);
+      return;
+    }
+    applyTaskFilters(view.filters);
+    setActiveTaskViewId(view.id);
+  }
+
+  function persistSavedTaskViews(nextViews: SavedTaskView[]) {
+    if (!taskViewsStorageKey) return false;
+    try {
+      window.localStorage.setItem(taskViewsStorageKey, JSON.stringify(nextViews));
+      setSavedTaskViews(nextViews);
+      return true;
+    } catch {
+      notify("error", "Le navigateur ne permet pas d’enregistrer cette vue.");
+      return false;
+    }
+  }
+
+  function taskViewNameIsAvailable(name: string, excludedId?: string) {
+    const normalized = name.trim().toLocaleLowerCase("fr");
+    return !savedTaskViews.some((view) =>
+      view.id !== excludedId && view.name.toLocaleLowerCase("fr") === normalized
+    );
+  }
+
+  function saveTaskView(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 40) {
+      notify("error", "Le nom de la vue doit contenir entre 1 et 40 caractères.");
+      return false;
+    }
+    if (!taskViewNameIsAvailable(trimmed)) {
+      notify("error", "Une vue porte déjà ce nom dans ce projet.");
+      return false;
+    }
+    if (savedTaskViews.length >= 20) {
+      notify("error", "Ce projet possède déjà le maximum de 20 vues personnelles.");
+      return false;
+    }
+    const now = new Date().toISOString();
+    const view: SavedTaskView = {
+      id: crypto.randomUUID(),
+      name: trimmed,
+      filters: currentTaskFilters,
+      createdAt: now,
+      updatedAt: now
+    };
+    if (!persistSavedTaskViews([...savedTaskViews, view])) return false;
+    setActiveTaskViewId(view.id);
+    notify("success", `Vue « ${view.name} » enregistrée.`);
+    return true;
+  }
+
+  function updateActiveTaskView() {
+    const active = savedTaskViews.find((view) => view.id === activeTaskViewId);
+    if (!active) return;
+    const nextViews = savedTaskViews.map((view) =>
+      view.id === active.id
+        ? { ...view, filters: currentTaskFilters, updatedAt: new Date().toISOString() }
+        : view
+    );
+    if (persistSavedTaskViews(nextViews)) {
+      notify("success", `Vue « ${active.name} » mise à jour.`);
+    }
+  }
+
+  function renameActiveTaskView(name: string) {
+    const active = savedTaskViews.find((view) => view.id === activeTaskViewId);
+    const trimmed = name.trim();
+    if (!active || !trimmed || trimmed.length > 40) {
+      notify("error", "Le nom de la vue doit contenir entre 1 et 40 caractères.");
+      return false;
+    }
+    if (!taskViewNameIsAvailable(trimmed, active.id)) {
+      notify("error", "Une vue porte déjà ce nom dans ce projet.");
+      return false;
+    }
+    const nextViews = savedTaskViews.map((view) =>
+      view.id === active.id
+        ? { ...view, name: trimmed, updatedAt: new Date().toISOString() }
+        : view
+    );
+    if (!persistSavedTaskViews(nextViews)) return false;
+    notify("success", `Vue renommée « ${trimmed} ».`);
+    return true;
+  }
+
+  function deleteActiveTaskView() {
+    const active = savedTaskViews.find((view) => view.id === activeTaskViewId);
+    if (!active) return;
+    const nextViews = savedTaskViews.filter((view) => view.id !== active.id);
+    if (!persistSavedTaskViews(nextViews)) return;
+    setActiveTaskViewId(undefined);
+    notify("success", `Vue « ${active.name} » supprimée.`);
+  }
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1372,14 +1563,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     && taskAssigneeFilter === "all"
                     && taskDueFilter === "all"
                     && !taskQuery}
-                  onClick={() => {
-                    setTaskQuery("");
-                    setTaskLabelFilter("all");
-                    setTaskStatusFilter("all");
-                    setTaskPriorityFilter("all");
-                    setTaskAssigneeFilter("all");
-                    setTaskDueFilter("all");
-                  }}
+                  onClick={resetTaskFilters}
                 >
                   <strong>{tasks.length}</strong><span>Total</span>
                 </button>
@@ -1408,6 +1592,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <strong>{taskCounts.done}</strong><span>Terminées</span>
                 </button>
               </div>
+              <TaskSavedViews
+                presets={taskViewPresets}
+                savedViews={savedTaskViews}
+                activeViewId={activeTaskViewId}
+                dirty={activeTaskViewDirty}
+                onSelect={selectTaskView}
+                onSave={saveTaskView}
+                onUpdate={updateActiveTaskView}
+                onRename={renameActiveTaskView}
+                onDelete={deleteActiveTaskView}
+                onReset={resetTaskFilters}
+              />
 
               <div className="task-tools">
                 <label className="task-filter-search">
@@ -1415,6 +1611,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <input
                     ref={taskFilterInput}
                     type="search"
+                    maxLength={240}
                     value={taskQuery}
                     onChange={(event) => setTaskQuery(event.currentTarget.value)}
                     placeholder="Filtrer par titre, clé…"
@@ -1520,14 +1717,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 <span aria-hidden="true">⌕</span>
                 <h2>Aucune tâche trouvée</h2>
                 <p>Modifiez la recherche ou réinitialisez les filtres de ce projet.</p>
-                <button className="text-button" type="button" onClick={() => {
-                  setTaskQuery("");
-                  setTaskStatusFilter("all");
-                  setTaskPriorityFilter("all");
-                  setTaskAssigneeFilter("all");
-                  setTaskDueFilter("all");
-                  setTaskLabelFilter("all");
-                }}>Réinitialiser les filtres</button>
+                <button className="text-button" type="button" onClick={resetTaskFilters}>Réinitialiser les filtres</button>
               </section>
             ) : taskView === "list" ? (
               <section className="task-list" aria-label="Tâches en liste">
@@ -2290,6 +2480,22 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   );
+}
+
+function createTaskFilterSnapshot(
+  overrides: Partial<TaskFilterSnapshot> = {}
+): TaskFilterSnapshot {
+  return {
+    query: "",
+    status: "all",
+    priority: "all",
+    assignee: "all",
+    due: "all",
+    label: "all",
+    sort: "updated",
+    view: "list",
+    ...overrides
+  };
 }
 
 function initials(name: string): string {
