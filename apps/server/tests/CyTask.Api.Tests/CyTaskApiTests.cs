@@ -9,7 +9,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using CyTask.Api.Configuration;
 using CyTask.Api.Media;
+using CyTask.Api.Realtime;
 using Xunit;
 
 namespace CyTask.Api.Tests;
@@ -1535,30 +1539,254 @@ public sealed class CyTaskApiTests
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        using var eventRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/events");
-        using var eventResponse = await client.SendAsync(
-            eventRequest,
-            HttpCompletionOption.ResponseHeadersRead,
-            timeout.Token);
-        Assert.Equal(HttpStatusCode.OK, eventResponse.StatusCode);
+        using var eventResponse = await OpenEventStreamAsync(client, null, timeout.Token);
         await using var stream = await eventResponse.Content.ReadAsStreamAsync(timeout.Token);
         using var reader = new StreamReader(stream);
-        Assert.Equal("event: ready", await reader.ReadLineAsync(timeout.Token));
-        _ = await reader.ReadLineAsync(timeout.Token);
-        _ = await reader.ReadLineAsync(timeout.Token);
+        _ = await ReadNamedSseEventAsync(reader, "ready", timeout.Token);
 
         _ = await PostAndReadAsync(
             client,
             $"/api/v1/projects/{projectId}/tasks",
             new { title = "Diffuser la création", description = "" });
 
-        string? line;
-        do
-        {
-            line = await reader.ReadLineAsync(timeout.Token);
-        } while (line is not null && !string.Equals(line, "event: task.created", StringComparison.Ordinal));
+        var created = await ReadNamedSseEventAsync(reader, "task.created", timeout.Token);
+        Assert.True(Guid.TryParse(created.Id, out _));
+    }
 
-        Assert.Equal("event: task.created", line);
+    [Fact]
+    public async Task SseReconnectReplaysOnlyMissedEvents()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Reconnexion", key = "REC" });
+        var projectId = project.GetProperty("id").GetGuid();
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        string firstEventId;
+        using (var firstResponse = await OpenEventStreamAsync(client, null, timeout.Token))
+        await using (var firstStream = await firstResponse.Content.ReadAsStreamAsync(timeout.Token))
+        using (var firstReader = new StreamReader(firstStream))
+        {
+            _ = await ReadNamedSseEventAsync(firstReader, "ready", timeout.Token);
+            _ = await PostAndReadAsync(
+                client,
+                $"/api/v1/projects/{projectId}/tasks",
+                new { title = "Première tâche", description = "" });
+            var firstEvent = await ReadNamedSseEventAsync(firstReader, "task.created", timeout.Token);
+            firstEventId = Assert.IsType<string>(firstEvent.Id);
+        }
+
+        var missedTask = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Tâche manquée", description = "" });
+
+        using var secondResponse = await OpenEventStreamAsync(client, firstEventId, timeout.Token);
+        await using var secondStream = await secondResponse.Content.ReadAsStreamAsync(timeout.Token);
+        using var secondReader = new StreamReader(secondStream);
+        _ = await ReadNamedSseEventAsync(secondReader, "ready", timeout.Token);
+        var replayed = await ReadNamedSseEventAsync(secondReader, "task.created", timeout.Token);
+
+        Assert.NotEqual(firstEventId, replayed.Id);
+        using var replayedData = JsonDocument.Parse(Assert.IsType<string>(replayed.Data));
+        Assert.Equal(
+            missedTask.GetProperty("id").GetGuid(),
+            replayedData.RootElement.GetProperty("entityId").GetGuid());
+    }
+
+    [Fact]
+    public async Task InvalidSseCursorRequestsClientResynchronization()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        await BootstrapAsync(client);
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        using var response = await OpenEventStreamAsync(client, "not-a-guid", timeout.Token);
+        await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+        using var reader = new StreamReader(stream);
+        _ = await ReadNamedSseEventAsync(reader, "ready", timeout.Token);
+        var reset = await ReadNamedSseEventAsync(reader, "reset", timeout.Token);
+
+        using var data = JsonDocument.Parse(Assert.IsType<string>(reset.Data));
+        Assert.Equal("invalid_cursor", data.RootElement.GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task OutboxRetryDoesNotPublishTheSameEventTwice()
+    {
+        var options = Options.Create(new CyTaskOptions
+        {
+            UseInMemoryStore = false,
+            OutboxBatchSize = 8
+        });
+        using var signal = new OutboxDispatchSignal();
+        var hub = new WorkspaceEventHub(options, signal);
+        var workspaceEvent = new WorkspaceEvent(
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            "task.created",
+            Guid.CreateVersion7(),
+            DateTimeOffset.UtcNow);
+        var store = new RetryingOutboxStore(workspaceEvent);
+        var dispatcher = new OutboxDispatcher(
+            store,
+            hub,
+            signal,
+            options,
+            NullLogger<OutboxDispatcher>.Instance);
+        using var subscription = hub.Subscribe(workspaceEvent.OrganizationId);
+
+        Assert.Equal(1, await dispatcher.DispatchBatchAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await dispatcher.DispatchBatchAsync(TestContext.Current.CancellationToken));
+
+        Assert.True(subscription.Reader.TryRead(out var delivered));
+        Assert.Equal(workspaceEvent.Id, delivered.Id);
+        Assert.False(subscription.Reader.TryRead(out _));
+        Assert.Equal(2, store.Claims);
+        Assert.Equal(1, store.Failures);
+        Assert.True(store.Processed);
+    }
+
+    private static async Task<HttpResponseMessage> OpenEventStreamAsync(
+        HttpClient client,
+        string? lastEventId,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/events");
+        if (lastEventId is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Last-Event-ID", lastEventId);
+        }
+
+        var response = await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return response;
+    }
+
+    private static async Task<SseEvent> ReadNamedSseEventAsync(
+        StreamReader reader,
+        string eventName,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var item = await ReadSseEventAsync(reader, cancellationToken);
+            if (string.Equals(item.Event, eventName, StringComparison.Ordinal))
+            {
+                return item;
+            }
+        }
+    }
+
+    private static async Task<SseEvent> ReadSseEventAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken)
+    {
+        string? id = null;
+        string? eventName = null;
+        string? data = null;
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            if (line.Length == 0)
+            {
+                if (id is not null || eventName is not null || data is not null)
+                {
+                    return new SseEvent(id, eventName, data);
+                }
+
+                continue;
+            }
+
+            if (line.StartsWith("id: ", StringComparison.Ordinal))
+            {
+                id = line[4..];
+            }
+            else if (line.StartsWith("event: ", StringComparison.Ordinal))
+            {
+                eventName = line[7..];
+            }
+            else if (line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                data = line[6..];
+            }
+        }
+
+        throw new EndOfStreamException("The SSE stream ended before the expected event.");
+    }
+
+    private sealed record SseEvent(string? Id, string? Event, string? Data);
+
+    private sealed class RetryingOutboxStore(WorkspaceEvent workspaceEvent) : IOutboxEventStore
+    {
+        private bool _failFirstAcknowledgement = true;
+
+        public int Claims { get; private set; }
+
+        public int Failures { get; private set; }
+
+        public bool Processed { get; private set; }
+
+        public Task<IReadOnlyList<OutboxDelivery>> ClaimBatchAsync(
+            int limit,
+            DateTimeOffset now,
+            DateTimeOffset lockedUntil,
+            CancellationToken cancellationToken)
+        {
+            Claims++;
+            IReadOnlyList<OutboxDelivery> deliveries = Processed
+                ? []
+                : [new OutboxDelivery(workspaceEvent, Claims)];
+            return Task.FromResult(deliveries);
+        }
+
+        public Task MarkProcessedAsync(
+            Guid eventId,
+            DateTimeOffset processedAt,
+            CancellationToken cancellationToken)
+        {
+            if (_failFirstAcknowledgement)
+            {
+                _failFirstAcknowledgement = false;
+                throw new InvalidOperationException("Transient acknowledgement failure.");
+            }
+
+            Processed = true;
+            return Task.CompletedTask;
+        }
+
+        public Task MarkFailedAsync(
+            Guid eventId,
+            string failureMessage,
+            DateTimeOffset availableAt,
+            CancellationToken cancellationToken)
+        {
+            Failures++;
+            return Task.CompletedTask;
+        }
+
+        public Task<int> DeleteProcessedBeforeAsync(
+            DateTimeOffset cutoff,
+            int limit,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<WorkspaceEventReplay> ReplayAfterAsync(
+            Guid organizationId,
+            Guid? afterEventId,
+            int limit,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new WorkspaceEventReplay(true, [], false));
     }
 
     private static object CreateBootstrapRequest() => new

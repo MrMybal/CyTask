@@ -189,9 +189,18 @@
     "/api/v1/events": {
       "get": {
         "tags": ["espace"],
-        "summary": "Flux d'événements temps réel (SSE)",
-        "description": "`text/event-stream`. Types : `task.created`, `task.updated`, `comment.created`, `attachment.available`, `attachment.rejected`, `project.created`, etc. Chaque événement porte l'identifiant de l'entité ; recharger l'entité par l'API après réception.",
-        "responses": { "200": { "description": "Flux ouvert", "content": { "text/event-stream": {} } } }
+        "summary": "Flux d'événements temps réel durable (SSE)",
+        "description": "`text/event-stream`. Types : `task.created`, `task.updated`, `comment.created`, `attachment.available`, `attachment.rejected`, `project.created`, etc. Chaque événement possède un UUID dans le champ SSE `id`. À la reconnexion, `Last-Event-ID` rejoue dans l'ordre les événements manqués encore retenus. `reset` demande une resynchronisation par l'API si le curseur est invalide ou expiré ; `ready` confirme l'ouverture du flux.",
+        "parameters": [
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "description": "UUID du dernier événement complètement traité par le client.",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": { "200": { "description": "Flux ouvert ou repris", "content": { "text/event-stream": {} } } }
       }
     },
     "/api/v1/activity": {

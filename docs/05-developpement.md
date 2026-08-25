@@ -69,6 +69,12 @@ Clés de la section `CyTask` :
 | `MaxMediaDimension` | `20000` | côté maximal accepté pour une image |
 | `MaxMediaPixels` | `80000000` | surface maximale acceptée pour une image |
 | `MaxApiTokensPerUser` | `20` | jetons d'API actifs au maximum par compte |
+| `OutboxPollMilliseconds` | `250` | repli de scrutation quand aucune mutation ne réveille le dispatcher |
+| `OutboxBatchSize` | `64` | événements réservés par passe |
+| `OutboxLeaseSeconds` | `30` | durée du bail de livraison concurrent |
+| `OutboxRetentionDays` | `7` | durée de rejeu des événements traités |
+| `EventReplayBatchSize` | `256` | événements rejoués par lecture SSE |
+| `SseHeartbeatSeconds` | `15` | intervalle des commentaires keep-alive |
 
 Dans une variable d'environnement, `CyTask:DatabaseConnection` devient
 `CYTASK__DATABASECONNECTION`.
@@ -87,7 +93,8 @@ d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.ex
 - cookies `Secure`, `HttpOnly` pour la session et `SameSite=Strict` en Production ;
 - requêtes de données toujours bornées par l'organisation authentifiée ;
 - tailles contrôlées dans l'API et par contraintes PostgreSQL ;
-- événements temps réel en SSE, avec relecture de l'état après reconnexion.
+- événements temps réel transactionnels, livrés par outbox avec retry et repris par
+  `Last-Event-ID` après reconnexion ; le client resynchronise l'état sur `reset` ;
 - recherche limitée à 50 résultats et toujours bornée par l'organisation ;
 - export JSON versionné réservé aux propriétaires et administrateurs ;
 - service worker de production qui exclut explicitement `/api` et `/health` du cache.
@@ -106,7 +113,6 @@ d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.ex
 - un seul espace est sélectionné automatiquement à la connexion ;
 - l'ajout d'un compte existant à plusieurs espaces, les passkeys, OIDC, MFA et la récupération de compte restent à faire ;
 - la migration vers Argon2id et son calibrage sur le matériel serveur doivent être terminés avant la bêta ;
-- le dispatcher durable de l'outbox n'est pas encore branché au flux SSE ;
 - la recherche PostgreSQL utilise encore `ILIKE` avant l'ajout d'un index de recherche dédié ;
 - aucune migration de changement de schéma n'a encore été exercée en production ;
 - les connecteurs Git distants et la plateforme de plugins restent à construire ;
