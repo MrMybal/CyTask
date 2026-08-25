@@ -33,7 +33,11 @@ Chaque mutation métier produit dans la même transaction :
 - une révision monotone de l'entité.
 
 L'outbox alimente le temps réel, les webhooks, les index et les futurs paquets de
-synchronisation sans utiliser un double enregistrement fragile.
+synchronisation sans utiliser un double enregistrement fragile. Le dispatcher
+PostgreSQL réserve les événements par bail avec `FOR UPDATE SKIP LOCKED`, réessaie
+les erreurs avec temporisation et ne valide un événement qu'après sa publication.
+Les événements traités restent sept jours par défaut pour permettre au flux SSE de
+reprendre après un redémarrage avec `Last-Event-ID`.
 
 ## Données
 
@@ -51,7 +55,8 @@ Les clés lisibles comme `CY-142` restent des alias propres à un projet.
 ## API
 
 - HTTP JSON versionné et décrit par OpenAPI pour commandes, requêtes et clients ;
-- WebSocket pour les deltas, présences et progression de jobs ;
+- SSE durable pour les invalidations, avec rejeu borné et signal de resynchronisation ;
+- WebSocket réservé aux futures présences et interactions bidirectionnelles ;
 - URL signées à durée courte pour l'envoi et la lecture de fichiers ;
 - curseurs opaques pour la pagination ;
 - clés d'idempotence sur mutations réessayables ;

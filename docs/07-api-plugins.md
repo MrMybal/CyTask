@@ -95,9 +95,17 @@ supprime la classe SSRF tant que le connecteur Git officiel n'existe pas.
 ## Temps réel
 
 `GET /api/v1/events` diffuse un flux `text/event-stream` borné à l'organisation.
-Chaque événement porte un type et l'identifiant de l'entité concernée ; le client
-recharge ensuite l'entité par l'API. Le flux ne transporte pas les données, ce qui
-évite qu'un client obtienne par le flux ce qu'une route lui refuserait.
+Chaque événement porte un type, un UUID SSE `id` et l'identifiant de l'entité
+concernée ; le client recharge ensuite l'entité par l'API. Le flux ne transporte
+pas les données, ce qui évite qu'un client obtienne par le flux ce qu'une route lui
+refuserait.
+
+Le navigateur renvoie automatiquement le dernier `id` dans `Last-Event-ID`.
+Le serveur rejoue alors, dans l'ordre, les événements conservés dans l'outbox puis
+reprend le direct. Le rejeu et le direct sont dédupliqués. Si le curseur est invalide,
+appartient à une autre organisation ou a dépassé la rétention, un événement `reset`
+demande au client de recharger projets, tâches et détail courant. Des commentaires
+`: keep-alive` empêchent les proxys de fermer un flux inactif.
 
 ## Médias
 

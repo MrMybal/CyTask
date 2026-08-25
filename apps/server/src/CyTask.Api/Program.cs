@@ -72,6 +72,18 @@ builder.Services.AddOptions<CyTaskOptions>()
         "MaxMediaPixels must be between 65536 and 100 billion pixels.")
     .Validate(options => options.MaxApiTokensPerUser is >= 1 and <= 100,
         "MaxApiTokensPerUser must be between 1 and 100.")
+    .Validate(options => options.OutboxPollMilliseconds is >= 50 and <= 60_000,
+        "OutboxPollMilliseconds must be between 50 and 60000.")
+    .Validate(options => options.OutboxBatchSize is >= 1 and <= 512,
+        "OutboxBatchSize must be between 1 and 512.")
+    .Validate(options => options.OutboxLeaseSeconds is >= 5 and <= 300,
+        "OutboxLeaseSeconds must be between 5 and 300.")
+    .Validate(options => options.OutboxRetentionDays is >= 1 and <= 90,
+        "OutboxRetentionDays must be between 1 and 90.")
+    .Validate(options => options.EventReplayBatchSize is >= 16 and <= 1024,
+        "EventReplayBatchSize must be between 16 and 1024.")
+    .Validate(options => options.SseHeartbeatSeconds is >= 5 and <= 60,
+        "SseHeartbeatSeconds must be between 5 and 60.")
     .ValidateOnStart();
 
 var cyTaskOptions = builder.Configuration
@@ -116,6 +128,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddSingleton<PasswordService>();
+builder.Services.AddSingleton<OutboxDispatchSignal>();
 builder.Services.AddSingleton<WorkspaceEventHub>();
 builder.Services.AddSingleton<LocalMediaStorage>();
 builder.Services.AddSingleton<RequireSessionFilter>();
@@ -128,6 +141,8 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Attach
 if (cyTaskOptions.UseInMemoryStore)
 {
     builder.Services.AddSingleton<IWorkspaceStore, InMemoryWorkspaceStore>();
+    builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
+        provider => provider.GetRequiredService<WorkspaceEventHub>());
 }
 else
 {
@@ -146,6 +161,13 @@ else
         return dataSourceBuilder.Build();
     });
     builder.Services.AddSingleton<IWorkspaceStore, PostgresWorkspaceStore>();
+    builder.Services.AddSingleton<PostgresOutboxEventStore>();
+    builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
+        provider => provider.GetRequiredService<PostgresOutboxEventStore>());
+    builder.Services.AddSingleton<IOutboxEventStore>(
+        provider => provider.GetRequiredService<PostgresOutboxEventStore>());
+    builder.Services.AddSingleton<OutboxDispatcher>();
+    builder.Services.AddHostedService(provider => provider.GetRequiredService<OutboxDispatcher>());
     builder.Services.AddSingleton<DatabaseMigrator>();
 }
 

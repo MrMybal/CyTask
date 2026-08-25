@@ -39,4 +39,16 @@ public sealed class CyTaskOptions
     public long MaxMediaPixels { get; init; } = 80_000_000;
 
     public int MaxApiTokensPerUser { get; init; } = 20;
+
+    public int OutboxPollMilliseconds { get; init; } = 250;
+
+    public int OutboxBatchSize { get; init; } = 64;
+
+    public int OutboxLeaseSeconds { get; init; } = 30;
+
+    public int OutboxRetentionDays { get; init; } = 7;
+
+    public int EventReplayBatchSize { get; init; } = 256;
+
+    public int SseHeartbeatSeconds { get; init; } = 15;
 }

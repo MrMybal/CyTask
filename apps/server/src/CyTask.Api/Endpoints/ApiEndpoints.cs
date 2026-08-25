@@ -1886,6 +1886,8 @@ public static class ApiEndpoints
     private static async Task EventsAsync(
         HttpContext context,
         WorkspaceEventHub events,
+        IWorkspaceEventReplayStore replayStore,
+        IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
     {
         var user = context.GetUser()!;
@@ -1894,18 +1896,130 @@ public static class ApiEndpoints
         context.Response.Headers.CacheControl = "no-cache, no-store";
         context.Response.Headers.Append("X-Accel-Buffering", "no");
 
+        var rawCursor = context.Request.Headers["Last-Event-ID"].ToString();
+        var hasCursor = !string.IsNullOrWhiteSpace(rawCursor);
+        var parsedCursor = Guid.Empty;
+        var cursorIsValid = !hasCursor || Guid.TryParse(rawCursor, out parsedCursor);
+        Guid? replayCursor = cursorIsValid && hasCursor ? parsedCursor : null;
+
         using var subscription = events.Subscribe(user.OrganizationId);
         await context.Response.WriteAsync("event: ready\ndata: {}\n\n", cancellationToken);
         await context.Response.Body.FlushAsync(cancellationToken);
 
-        await foreach (var workspaceEvent in subscription.Reader.ReadAllAsync(cancellationToken))
+        var sentIds = new HashSet<Guid>();
+        var sentOrder = new Queue<Guid>();
+        if (replayCursor is { } cursor)
         {
-            var data = JsonSerializer.Serialize(workspaceEvent);
-            await context.Response.WriteAsync(
-                $"id: {workspaceEvent.Id}\nevent: {workspaceEvent.Type}\ndata: {data}\n\n",
-                cancellationToken);
-            await context.Response.Body.FlushAsync(cancellationToken);
+            RememberEvent(cursor, sentIds, sentOrder);
         }
+
+        if (!cursorIsValid)
+        {
+            await WriteSseResetAsync(context.Response, "invalid_cursor", cancellationToken);
+        }
+        else if (replayCursor is not null)
+        {
+            while (true)
+            {
+                var replay = await replayStore.ReplayAfterAsync(
+                    user.OrganizationId,
+                    replayCursor,
+                    options.Value.EventReplayBatchSize,
+                    cancellationToken);
+                if (!replay.CursorFound)
+                {
+                    await WriteSseResetAsync(context.Response, "cursor_unavailable", cancellationToken);
+                    break;
+                }
+
+                foreach (var workspaceEvent in replay.Events)
+                {
+                    replayCursor = workspaceEvent.Id;
+                    if (RememberEvent(workspaceEvent.Id, sentIds, sentOrder))
+                    {
+                        await WriteWorkspaceEventAsync(
+                            context.Response,
+                            workspaceEvent,
+                            cancellationToken);
+                    }
+                }
+
+                if (!replay.HasMore || replay.Events.Count == 0)
+                {
+                    break;
+                }
+            }
+        }
+
+        var heartbeat = TimeSpan.FromSeconds(options.Value.SseHeartbeatSeconds);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var readableTask = subscription.Reader.WaitToReadAsync(cancellationToken).AsTask();
+            var heartbeatTask = Task.Delay(heartbeat, cancellationToken);
+            if (await Task.WhenAny(readableTask, heartbeatTask) == heartbeatTask)
+            {
+                await context.Response.WriteAsync(": keep-alive\n\n", cancellationToken);
+                await context.Response.Body.FlushAsync(cancellationToken);
+                continue;
+            }
+
+            if (!await readableTask)
+            {
+                break;
+            }
+
+            while (subscription.Reader.TryRead(out var workspaceEvent))
+            {
+                if (RememberEvent(workspaceEvent.Id, sentIds, sentOrder))
+                {
+                    await WriteWorkspaceEventAsync(
+                        context.Response,
+                        workspaceEvent,
+                        cancellationToken);
+                }
+            }
+        }
+    }
+
+    private static async Task WriteWorkspaceEventAsync(
+        HttpResponse response,
+        WorkspaceEvent workspaceEvent,
+        CancellationToken cancellationToken)
+    {
+        var data = JsonSerializer.Serialize(workspaceEvent, JsonSerializerOptions.Web);
+        await response.WriteAsync(
+            $"id: {workspaceEvent.Id}\nevent: {workspaceEvent.Type}\ndata: {data}\n\n",
+            cancellationToken);
+        await response.Body.FlushAsync(cancellationToken);
+    }
+
+    private static async Task WriteSseResetAsync(
+        HttpResponse response,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var data = JsonSerializer.Serialize(new { reason }, JsonSerializerOptions.Web);
+        await response.WriteAsync($"event: reset\ndata: {data}\n\n", cancellationToken);
+        await response.Body.FlushAsync(cancellationToken);
+    }
+
+    private static bool RememberEvent(
+        Guid eventId,
+        HashSet<Guid> sentIds,
+        Queue<Guid> sentOrder)
+    {
+        if (!sentIds.Add(eventId))
+        {
+            return false;
+        }
+
+        sentOrder.Enqueue(eventId);
+        while (sentOrder.Count > 8192)
+        {
+            sentIds.Remove(sentOrder.Dequeue());
+        }
+
+        return true;
     }
 
     private static Dictionary<string, string[]> ValidateBootstrap(BootstrapRequest request)

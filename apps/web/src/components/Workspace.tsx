@@ -570,6 +570,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     const refreshActivity = () => {
       if (showActivity) void loadActivity();
     };
+    const resynchronize = () => {
+      void loadProjects();
+      void loadMembers();
+      refreshComment();
+      refreshActivity();
+    };
+    stream.addEventListener("reset", resynchronize);
     stream.addEventListener("project.created", refreshActivity);
     stream.addEventListener("task.created", refreshActivity);
     stream.addEventListener("task.updated", refreshActivity);
