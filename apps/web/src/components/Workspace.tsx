@@ -16,6 +16,8 @@ import {
   type ExternalReference,
   type OrganizationMember,
   type Project,
+  type ProjectLabel,
+  type ProjectLabelOverview,
   type Session,
   type SearchHit,
   type TaskDependencyOverview,
@@ -27,6 +29,7 @@ import { sha256 } from "../sha256";
 import { CommandPalette, type PaletteAction } from "./CommandPalette";
 import { ApiTokensPane } from "./ApiTokensPane";
 import { ToastStack, useToasts } from "./Toasts";
+import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
 
 interface WorkspaceProps {
   session: Session;
@@ -56,6 +59,7 @@ type TaskStatusFilter = "all" | WorkItem["status"];
 type TaskPriorityFilter = "all" | WorkItem["priority"];
 type TaskAssigneeFilter = "all" | "unassigned" | string;
 type TaskDueFilter = "all" | "overdue" | "today" | "week" | "none";
+type TaskLabelFilter = "all" | "none" | string;
 type DetailTab = "overview" | "dependencies" | "files" | "git" | "activity";
 type TaskSort = "updated" | "created" | "due" | "key" | "title";
 type DetailBundle = [TaskDetails, Attachment[], ExternalReference[], TaskDependencyOverview];
@@ -64,6 +68,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [tasks, setTasks] = useState<WorkItem[]>([]);
+  const [projectLabels, setProjectLabels] = useState<ProjectLabelOverview>({ labels: [], assignments: [] });
   const [details, setDetails] = useState<TaskDetails>();
   const [dependencies, setDependencies] = useState<TaskDependencyOverview>({ dependsOn: [], blocking: [] });
   const [showProjectForm, setShowProjectForm] = useState(false);
@@ -91,6 +96,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [taskPriorityFilter, setTaskPriorityFilter] = useState<TaskPriorityFilter>("all");
   const [taskAssigneeFilter, setTaskAssigneeFilter] = useState<TaskAssigneeFilter>("all");
   const [taskDueFilter, setTaskDueFilter] = useState<TaskDueFilter>("all");
+  const [taskLabelFilter, setTaskLabelFilter] = useState<TaskLabelFilter>("all");
   const [taskSort, setTaskSort] = useState<TaskSort>(() => {
     const saved = window.localStorage.getItem("cytask.taskSort");
     return saved === "created" || saved === "due" || saved === "key" || saved === "title"
@@ -105,6 +111,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [pendingTaskIds, setPendingTaskIds] = useState<Set<string>>(() => new Set());
   const [pendingChecklistItemIds, setPendingChecklistItemIds] =
     useState<Set<string>>(() => new Set());
+  const [pendingLabelIds, setPendingLabelIds] = useState<Set<string>>(() => new Set());
   const [checklistCreating, setChecklistCreating] = useState(false);
   const [taskLinkLabel, setTaskLinkLabel] = useState("Copier le lien");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
@@ -125,6 +132,26 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     [projects, selectedProjectId]
   );
   const selectedTaskId = details?.task.id;
+  const labelsByTask = useMemo(() => {
+    const labelsById = new Map(projectLabels.labels.map((label) => [label.id, label]));
+    const result = new Map<string, ProjectLabel[]>();
+    for (const assignment of projectLabels.assignments) {
+      const label = labelsById.get(assignment.labelId);
+      if (!label) continue;
+      const taskLabels = result.get(assignment.taskId) ?? [];
+      taskLabels.push(label);
+      result.set(assignment.taskId, taskLabels);
+    }
+    for (const taskLabels of result.values()) {
+      taskLabels.sort((left, right) => left.name.localeCompare(right.name, "fr"));
+    }
+    return result;
+  }, [projectLabels]);
+  const selectedTaskLabelIds = useMemo(() => new Set(
+    projectLabels.assignments
+      .filter((assignment) => assignment.taskId === selectedTaskId)
+      .map((assignment) => assignment.labelId)
+  ), [projectLabels.assignments, selectedTaskId]);
   const filteredTasks = useMemo(() => {
     const query = taskQuery.trim().toLocaleLowerCase("fr");
     const matching = tasks.filter((task) => {
@@ -134,6 +161,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       if (taskAssigneeFilter !== "all" && taskAssigneeFilter !== "unassigned"
         && task.assigneeId !== taskAssigneeFilter) return false;
       if (!matchesDueFilter(task, taskDueFilter)) return false;
+      const taskLabels = labelsByTask.get(task.id) ?? [];
+      if (taskLabelFilter === "none" && taskLabels.length > 0) return false;
+      if (taskLabelFilter !== "all" && taskLabelFilter !== "none"
+        && !taskLabels.some((label) => label.id === taskLabelFilter)) {
+        return false;
+      }
       if (!query) return true;
       return `${task.key} ${task.title} ${task.description} ${task.assigneeName ?? ""}`
         .toLocaleLowerCase("fr")
@@ -150,7 +183,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       }
       return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
     });
-  }, [taskAssigneeFilter, taskDueFilter, taskPriorityFilter, taskQuery, taskSort, taskStatusFilter, tasks]);
+  }, [labelsByTask, taskAssigneeFilter, taskDueFilter, taskLabelFilter, taskPriorityFilter,
+    taskQuery, taskSort, taskStatusFilter, tasks]);
   const taskCounts = useMemo(() => Object.fromEntries(
     boardStatuses.map((status) => [status, tasks.filter((task) => task.status === status).length])
   ) as Record<WorkItem["status"], number>, [tasks]);
@@ -173,8 +207,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     const request = ++taskRequestSequence.current;
     setTasksLoading(true);
     try {
-      const nextTasks = await api.tasks(projectId);
-      if (request === taskRequestSequence.current) setTasks(nextTasks);
+      const [nextTasks, nextLabels] = await Promise.all([
+        api.tasks(projectId),
+        api.projectLabels(projectId)
+      ]);
+      if (request === taskRequestSequence.current) {
+        setTasks(nextTasks);
+        setProjectLabels(nextLabels);
+      }
     } finally {
       if (request === taskRequestSequence.current) setTasksLoading(false);
     }
@@ -242,10 +282,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   useEffect(() => {
     if (selectedProjectId) {
       setTasks([]);
+      setProjectLabels({ labels: [], assignments: [] });
       loadTasks(selectedProjectId).catch(() => setError("Impossible de charger les tâches."));
     } else {
       taskRequestSequence.current += 1;
       setTasks([]);
+      setProjectLabels({ labels: [], assignments: [] });
       setTasksLoading(false);
     }
     detailRequestSequence.current += 1;
@@ -257,8 +299,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setTaskStatusFilter("all");
     setTaskPriorityFilter("all");
     setTaskAssigneeFilter("all");
+    setTaskLabelFilter("all");
     setTaskDueFilter("all");
   }, [loadTasks, selectedProjectId]);
+
+  useEffect(() => {
+    if (taskLabelFilter === "all" || taskLabelFilter === "none") return;
+    if (!projectLabels.labels.some((label) => label.id === taskLabelFilter)) {
+      setTaskLabelFilter("all");
+    }
+  }, [projectLabels.labels, taskLabelFilter]);
 
   useEffect(() => {
     window.localStorage.setItem("cytask.taskView", taskView);
@@ -357,6 +407,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("task.checklist_item_created", refreshComment);
     stream.addEventListener("task.checklist_item_updated", refreshComment);
     stream.addEventListener("task.checklist_item_deleted", refreshComment);
+    stream.addEventListener("project.label_created", refreshTasks);
+    stream.addEventListener("project.label_deleted", refreshTasks);
+    stream.addEventListener("task.label_added", refreshComment);
+    stream.addEventListener("task.label_removed", refreshComment);
     const refreshActivity = () => {
       if (showActivity) void loadActivity();
     };
@@ -367,6 +421,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("task.checklist_item_created", refreshActivity);
     stream.addEventListener("task.checklist_item_updated", refreshActivity);
     stream.addEventListener("task.checklist_item_deleted", refreshActivity);
+    stream.addEventListener("project.label_created", refreshActivity);
+    stream.addEventListener("project.label_deleted", refreshActivity);
+    stream.addEventListener("task.label_added", refreshActivity);
+    stream.addEventListener("task.label_removed", refreshActivity);
     stream.addEventListener("invitation.created", refreshActivity);
     const refreshAttachments = () => {
       if (selectedTaskId) void loadDetails(selectedTaskId);
@@ -558,6 +616,67 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       setPendingChecklistItemIds((current) => {
         const next = new Set(current);
         next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  async function toggleTaskLabel(label: ProjectLabel, shouldAssign: boolean) {
+    if (!details || pendingLabelIds.has(label.id)) return;
+    const taskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    setPendingLabelIds((current) => new Set(current).add(label.id));
+    try {
+      if (shouldAssign) await api.addTaskLabel(taskId, label.id);
+      else await api.removeTaskLabel(taskId, label.id);
+      await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
+    } catch (reason) {
+      setError(messageFor(reason));
+      await loadTasks(projectId).catch(() => undefined);
+    } finally {
+      setPendingLabelIds((current) => {
+        const next = new Set(current);
+        next.delete(label.id);
+        return next;
+      });
+    }
+  }
+
+  async function createProjectLabel(name: string, color: string) {
+    if (!details) return false;
+    const taskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    try {
+      const label = await api.createProjectLabel(projectId, { name, color });
+      await api.addTaskLabel(taskId, label.id);
+      notify("success", `Label « ${label.name} » créé et attribué.`);
+      await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
+      return true;
+    } catch (reason) {
+      setError(messageFor(reason));
+      await loadTasks(projectId).catch(() => undefined);
+      return false;
+    }
+  }
+
+  async function deleteProjectLabel(label: ProjectLabel) {
+    if (!selectedProjectId || pendingLabelIds.has(label.id)) return;
+    const projectId = selectedProjectId;
+    setError("");
+    setPendingLabelIds((current) => new Set(current).add(label.id));
+    try {
+      await api.deleteProjectLabel(projectId, label.id);
+      notify("success", `Label « ${label.name} » supprimé du projet.`);
+      await loadTasks(projectId);
+      if (selectedTaskId) await loadDetails(selectedTaskId).catch(() => undefined);
+    } catch (reason) {
+      setError(messageFor(reason));
+    } finally {
+      setPendingLabelIds((current) => {
+        const next = new Set(current);
+        next.delete(label.id);
         return next;
       });
     }
@@ -1124,6 +1243,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 <button
                   className={taskStatusFilter === "all"
                     && taskPriorityFilter === "all"
+                    && taskLabelFilter === "all"
                     && taskAssigneeFilter === "all"
                     && taskDueFilter === "all"
                     && !taskQuery
@@ -1131,12 +1251,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     : "task-metric"}
                   type="button"
                   aria-pressed={taskStatusFilter === "all"
+                    && taskLabelFilter === "all"
                     && taskPriorityFilter === "all"
                     && taskAssigneeFilter === "all"
                     && taskDueFilter === "all"
                     && !taskQuery}
                   onClick={() => {
                     setTaskQuery("");
+                    setTaskLabelFilter("all");
                     setTaskStatusFilter("all");
                     setTaskPriorityFilter("all");
                     setTaskAssigneeFilter("all");
@@ -1229,6 +1351,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <option value="none">Sans échéance</option>
                 </select>
                 <select
+                  className="task-label-filter"
+                  aria-label="Filtrer par label"
+                  value={taskLabelFilter}
+                  onChange={(event) => setTaskLabelFilter(event.currentTarget.value)}
+                >
+                  <option value="all">Tous les labels</option>
+                  <option value="none">Sans label</option>
+                  {projectLabels.labels.map((label) => (
+                    <option value={label.id} key={label.id}>{label.name}</option>
+                  ))}
+                </select>
+                <select
                   className="task-sort"
                   aria-label="Trier les tâches"
                   value={taskSort}
@@ -1276,6 +1410,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   setTaskPriorityFilter("all");
                   setTaskAssigneeFilter("all");
                   setTaskDueFilter("all");
+                  setTaskLabelFilter("all");
                 }}>Réinitialiser les filtres</button>
               </section>
             ) : taskView === "list" ? (
@@ -1302,6 +1437,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   >
                     <span className="task-main">
                       <strong>{task.title}</strong>
+                      <TaskLabelChips labels={labelsByTask.get(task.id) ?? []} />
                       <small>
                         {task.key} · {task.assigneeName ?? "Non assignée"} · {task.dueAt ? `Échéance ${shortDate(task.dueAt)}` : "Sans échéance"}
                         {task.description ? ` · ${task.description}` : ""}
@@ -1387,6 +1523,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                                   <span className={`priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span>
                                 </span>
                                 <strong>{task.title}</strong>
+                                <TaskLabelChips labels={labelsByTask.get(task.id) ?? []} />
                                 <p>{task.description || "Sans description"}</p>
                               </button>
                               <footer className="board-card-footer">
@@ -1665,6 +1802,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     </label>
                   )}
                 </div>
+                <TaskLabelsSection
+                  labels={projectLabels.labels}
+                  assignedLabelIds={selectedTaskLabelIds}
+                  pendingLabelIds={pendingLabelIds}
+                  canContribute={canContribute}
+                  canDeleteLabels={canAdminister}
+                  onToggle={toggleTaskLabel}
+                  onCreate={createProjectLabel}
+                  onDelete={deleteProjectLabel}
+                />
                 <p className={details.task.description ? "description" : "description muted"}>
                   {details.task.description || "Aucune description."}
                 </p>

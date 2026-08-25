@@ -58,6 +58,25 @@ public static class ApiEndpoints
         authenticated.MapPost("/projects", CreateProjectAsync)
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin"));
+        authenticated.MapGet("/projects/{projectId:guid}/labels", GetProjectLabelsAsync);
+        authenticated.MapPost("/projects/{projectId:guid}/labels", CreateProjectLabelAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapDelete(
+                "/projects/{projectId:guid}/labels/{labelId:guid}",
+                DeleteProjectLabelAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin"));
+        authenticated.MapPut(
+                "/tasks/{taskId:guid}/labels/{labelId:guid}",
+                AddTaskLabelAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapDelete(
+                "/tasks/{taskId:guid}/labels/{labelId:guid}",
+                RemoveTaskLabelAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapGet("/projects/{projectId:guid}/tasks", ListTasksAsync);
         authenticated.MapPost("/projects/{projectId:guid}/tasks", CreateTaskAsync)
             .AddEndpointFilter<CsrfFilter>()
@@ -599,6 +618,147 @@ public static class ApiEndpoints
 
         events.Publish(user.OrganizationId, "project.created", project.Id);
         return Results.Created($"/api/v1/projects/{project.Id}", project);
+    }
+
+    private static async Task<IResult> GetProjectLabelsAsync(
+        Guid projectId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var overview = await store.GetProjectLabelsAsync(
+            user.OrganizationId, projectId, cancellationToken);
+        return overview is null ? Results.NotFound() : Results.Ok(overview);
+    }
+
+    private static async Task<IResult> CreateProjectLabelAsync(
+        Guid projectId,
+        CreateProjectLabelRequest request,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var name = request.Name?.Trim() ?? "";
+        var color = request.Color?.Trim().ToUpperInvariant() ?? "";
+        var errors = new Dictionary<string, string[]>();
+        if (name.Length is < 1 or > 80)
+        {
+            errors[nameof(request.Name)] = ["Le nom doit contenir entre 1 et 80 caractères."];
+        }
+
+        if (color.Length != 7 || color[0] != '#' || color[1..].Any(character => !Uri.IsHexDigit(character)))
+        {
+            errors[nameof(request.Color)] = ["La couleur doit être au format hexadécimal #RRGGBB."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var user = context.GetUser()!;
+        var overview = await store.GetProjectLabelsAsync(
+            user.OrganizationId, projectId, cancellationToken);
+        if (overview is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (overview.Labels.Count >= 64)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Un projet ne peut pas dépasser 64 labels.");
+        }
+
+        if (overview.Labels.Any(label =>
+            string.Equals(label.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Un label portant ce nom existe déjà.");
+        }
+
+        var label = await store.CreateProjectLabelAsync(
+            user.OrganizationId, projectId, user.UserId, name, color, cancellationToken);
+        if (label is null)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Le label existe déjà ou la limite du projet est atteinte.");
+        }
+
+        events.Publish(user.OrganizationId, "project.label_created", projectId);
+        return Results.Created($"/api/v1/projects/{projectId}/labels/{label.Id}", label);
+    }
+
+    private static async Task<IResult> DeleteProjectLabelAsync(
+        Guid projectId,
+        Guid labelId,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var removed = await store.DeleteProjectLabelAsync(
+            user.OrganizationId, projectId, labelId, user.UserId, cancellationToken);
+        if (!removed)
+        {
+            return Results.NotFound();
+        }
+
+        events.Publish(user.OrganizationId, "project.label_deleted", projectId);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> AddTaskLabelAsync(
+        Guid taskId,
+        Guid labelId,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var result = await store.AddTaskLabelAsync(
+            user.OrganizationId, taskId, labelId, user.UserId, cancellationToken);
+        if (result.Status == AddTaskLabelStatus.NotFound)
+        {
+            return Results.NotFound();
+        }
+
+        if (result.Status == AddTaskLabelStatus.Created)
+        {
+            events.Publish(user.OrganizationId, "task.label_added", taskId);
+            return Results.Created(
+                $"/api/v1/tasks/{taskId}/labels/{labelId}",
+                result.Assignment);
+        }
+
+        return Results.Ok(result.Assignment);
+    }
+
+    private static async Task<IResult> RemoveTaskLabelAsync(
+        Guid taskId,
+        Guid labelId,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var removed = await store.RemoveTaskLabelAsync(
+            user.OrganizationId, taskId, labelId, user.UserId, cancellationToken);
+        if (!removed)
+        {
+            return Results.NotFound();
+        }
+
+        events.Publish(user.OrganizationId, "task.label_removed", taskId);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> ListTasksAsync(

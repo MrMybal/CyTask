@@ -14,6 +14,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private readonly Dictionary<string, AccessTokenEntry> _accessTokens = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ApiTokenEntry> _apiTokens = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Project> _projects = [];
+    private readonly Dictionary<Guid, ProjectLabel> _projectLabels = [];
+    private readonly Dictionary<(Guid TaskId, Guid LabelId), TaskLabelAssignment> _taskLabelAssignments = [];
     private readonly Dictionary<Guid, WorkItem> _tasks = [];
     private readonly Dictionary<Guid, Comment> _comments = [];
     private readonly Dictionary<string, InvitationEntry> _invitations = new(StringComparer.Ordinal);
@@ -632,12 +634,24 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 .ThenBy(item => item.Position)
                 .ThenBy(item => item.Id)
                 .ToArray();
+            var projectLabels = _projectLabels.Values
+                .Where(label => label.OrganizationId == organizationId)
+                .OrderBy(label => label.ProjectId)
+                .ThenBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var taskLabels = _taskLabelAssignments.Values
+                .Where(assignment =>
+                    _tasks.TryGetValue(assignment.TaskId, out var task)
+                    && task.OrganizationId == organizationId)
+                .OrderBy(assignment => assignment.TaskId)
+                .ThenBy(assignment => assignment.LabelId)
+                .ToArray();
             var activity = _activities.Where(entry => entry.OrganizationId == organizationId).ToArray();
             var attachments = _attachments.Values
                 .Where(attachment => attachment.OrganizationId == organizationId)
                 .ToArray();
             return Task.FromResult<WorkspaceExport?>(new(
-                2, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, activity, attachments));
+                3, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, projectLabels, taskLabels, activity, attachments));
         }
     }
 
@@ -992,6 +1006,193 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 organizationId, "project.created", "project", project.Id,
                 userId, _users[userId].DisplayName, $"Projet {project.Name} créé", project.CreatedAt);
             return Task.FromResult<Project?>(project);
+        }
+    }
+
+    public Task<ProjectLabelOverview?> GetProjectLabelsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<ProjectLabelOverview?>(null);
+            }
+
+            IReadOnlyList<ProjectLabel> labels = _projectLabels.Values
+                .Where(label => label.OrganizationId == organizationId && label.ProjectId == projectId)
+                .OrderBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(label => label.Id)
+                .ToArray();
+            var labelIds = labels.Select(label => label.Id).ToHashSet();
+            IReadOnlyList<TaskLabelAssignment> assignments = _taskLabelAssignments.Values
+                .Where(assignment =>
+                    labelIds.Contains(assignment.LabelId)
+                    && _tasks.TryGetValue(assignment.TaskId, out var task)
+                    && task.ProjectId == projectId)
+                .OrderBy(assignment => assignment.TaskId)
+                .ThenBy(assignment => assignment.LabelId)
+                .ToArray();
+            return Task.FromResult<ProjectLabelOverview?>(new(labels, assignments));
+        }
+    }
+
+    public Task<ProjectLabel?> CreateProjectLabelAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string name,
+        string color,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId
+                || _projectLabels.Values.Count(label =>
+                    label.OrganizationId == organizationId && label.ProjectId == projectId) >= 64
+                || _projectLabels.Values.Any(label =>
+                    label.OrganizationId == organizationId
+                    && label.ProjectId == projectId
+                    && string.Equals(label.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Task.FromResult<ProjectLabel?>(null);
+            }
+
+            var label = new ProjectLabel(
+                Guid.CreateVersion7(),
+                organizationId,
+                projectId,
+                name,
+                color,
+                userId,
+                DateTimeOffset.UtcNow);
+            _projectLabels.Add(label.Id, label);
+            AddActivity(
+                organizationId, "project.label_created", "project", projectId,
+                userId, _users[userId].DisplayName,
+                $"Label « {label.Name} » créé dans {project.Key}", label.CreatedAt);
+            return Task.FromResult<ProjectLabel?>(label);
+        }
+    }
+
+    public Task<bool> DeleteProjectLabelAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || (membership.Role != "owner" && membership.Role != "admin")
+                || !_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId
+                || !_projectLabels.TryGetValue(labelId, out var label)
+                || label.OrganizationId != organizationId
+                || label.ProjectId != projectId)
+            {
+                return Task.FromResult(false);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var assignments = _taskLabelAssignments.Keys
+                .Where(key => key.LabelId == labelId)
+                .ToArray();
+            foreach (var assignment in assignments)
+            {
+                _taskLabelAssignments.Remove(assignment);
+                if (_tasks.TryGetValue(assignment.TaskId, out var task))
+                {
+                    _tasks[task.Id] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+                }
+            }
+
+            _projectLabels.Remove(labelId);
+            AddActivity(
+                organizationId, "project.label_deleted", "project", projectId,
+                userId, _users[userId].DisplayName,
+                $"Label « {label.Name} » supprimé de {project.Key}", now);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<AddTaskLabelResult> AddTaskLabelAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_tasks.TryGetValue(taskId, out var task)
+                || task.OrganizationId != organizationId
+                || !_projectLabels.TryGetValue(labelId, out var label)
+                || label.OrganizationId != organizationId
+                || label.ProjectId != task.ProjectId)
+            {
+                return Task.FromResult(new AddTaskLabelResult(AddTaskLabelStatus.NotFound, null));
+            }
+
+            if (_taskLabelAssignments.TryGetValue((taskId, labelId), out var existing))
+            {
+                return Task.FromResult(new AddTaskLabelResult(
+                    AddTaskLabelStatus.AlreadyExists, existing));
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var assignment = new TaskLabelAssignment(taskId, labelId, userId, now);
+            _taskLabelAssignments.Add((taskId, labelId), assignment);
+            _tasks[taskId] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+            AddActivity(
+                organizationId, "task.label_added", "task", taskId,
+                userId, _users[userId].DisplayName,
+                $"Label « {label.Name} » ajouté à {task.Key}", now);
+            return Task.FromResult(new AddTaskLabelResult(AddTaskLabelStatus.Created, assignment));
+        }
+    }
+
+    public Task<bool> RemoveTaskLabelAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_tasks.TryGetValue(taskId, out var task)
+                || task.OrganizationId != organizationId
+                || !_projectLabels.TryGetValue(labelId, out var label)
+                || label.OrganizationId != organizationId
+                || label.ProjectId != task.ProjectId
+                || !_taskLabelAssignments.Remove((taskId, labelId)))
+            {
+                return Task.FromResult(false);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            _tasks[taskId] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+            AddActivity(
+                organizationId, "task.label_removed", "task", taskId,
+                userId, _users[userId].DisplayName,
+                $"Label « {label.Name} » retiré de {task.Key}", now);
+            return Task.FromResult(true);
         }
     }
 

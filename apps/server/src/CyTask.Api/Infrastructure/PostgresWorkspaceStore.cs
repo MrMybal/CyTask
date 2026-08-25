@@ -906,6 +906,39 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             }
         }
 
+        var projectLabels = new List<ProjectLabel>();
+        await using (var labelCommand = new NpgsqlCommand("""
+                         SELECT id, organization_id, project_id, name, color, created_by, created_at
+                         FROM project_labels
+                         WHERE organization_id = @organization_id
+                         ORDER BY project_id, lower(name), id;
+                         """, connection, transaction))
+        {
+            labelCommand.Parameters.AddWithValue("organization_id", organizationId);
+            await using var reader = await labelCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                projectLabels.Add(ReadProjectLabel(reader));
+            }
+        }
+
+        var taskLabels = new List<TaskLabelAssignment>();
+        await using (var assignmentCommand = new NpgsqlCommand("""
+                         SELECT task_id, label_id, assigned_by, assigned_at
+                         FROM task_labels
+                         WHERE organization_id = @organization_id
+                         ORDER BY task_id, label_id;
+                         """, connection, transaction))
+        {
+            assignmentCommand.Parameters.AddWithValue("organization_id", organizationId);
+            await using var reader = await assignmentCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                taskLabels.Add(ReadTaskLabelAssignment(reader));
+            }
+        }
+
+
 
         var activity = new List<ActivityEntry>();
         await using (var activityCommand = new NpgsqlCommand("""
@@ -948,7 +981,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
         await transaction.CommitAsync(cancellationToken);
         return new WorkspaceExport(
-            2, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, activity, attachments);
+            3, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, projectLabels, taskLabels, activity, attachments);
     }
 
     public async Task<IReadOnlyList<Attachment>?> ListAttachmentsAsync(
@@ -1534,6 +1567,372 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         {
             return null;
         }
+    }
+
+    public async Task<ProjectLabelOverview?> GetProjectLabelsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var labels = new List<ProjectLabel>();
+        await using (var labelCommand = new NpgsqlCommand("""
+                         SELECT id, organization_id, project_id, name, color, created_by, created_at
+                         FROM project_labels
+                         WHERE organization_id = @organization_id AND project_id = @project_id
+                         ORDER BY lower(name), id;
+                         """, connection))
+        {
+            labelCommand.Parameters.AddWithValue("organization_id", organizationId);
+            labelCommand.Parameters.AddWithValue("project_id", projectId);
+            await using var reader = await labelCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                labels.Add(ReadProjectLabel(reader));
+            }
+        }
+
+        var assignments = new List<TaskLabelAssignment>();
+        await using (var assignmentCommand = new NpgsqlCommand("""
+                         SELECT assignment.task_id, assignment.label_id,
+                                assignment.assigned_by, assignment.assigned_at
+                         FROM task_labels assignment
+                         JOIN project_labels label
+                           ON label.id = assignment.label_id
+                          AND label.organization_id = assignment.organization_id
+                         WHERE assignment.organization_id = @organization_id
+                           AND label.project_id = @project_id
+                         ORDER BY assignment.task_id, assignment.label_id;
+                         """, connection))
+        {
+            assignmentCommand.Parameters.AddWithValue("organization_id", organizationId);
+            assignmentCommand.Parameters.AddWithValue("project_id", projectId);
+            await using var reader = await assignmentCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                assignments.Add(ReadTaskLabelAssignment(reader));
+            }
+        }
+
+        return new ProjectLabelOverview(labels, assignments);
+    }
+
+    public async Task<ProjectLabel?> CreateProjectLabelAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string name,
+        string color,
+        CancellationToken cancellationToken)
+    {
+        var label = new ProjectLabel(
+            Guid.CreateVersion7(),
+            organizationId,
+            projectId,
+            name,
+            color,
+            userId,
+            DateTimeOffset.UtcNow);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await using (var projectCommand = new NpgsqlCommand("""
+                             SELECT project.id
+                             FROM projects project
+                             WHERE project.id = @project_id
+                               AND project.organization_id = @organization_id
+                               AND EXISTS (
+                                   SELECT 1 FROM organization_members
+                                   WHERE organization_id = @organization_id AND user_id = @created_by
+                                     AND role IN ('owner', 'admin', 'member')
+                               )
+                             FOR UPDATE OF project;
+                             """, connection, transaction))
+            {
+                projectCommand.Parameters.AddWithValue("project_id", projectId);
+                projectCommand.Parameters.AddWithValue("organization_id", organizationId);
+                projectCommand.Parameters.AddWithValue("created_by", userId);
+                if (await projectCommand.ExecuteScalarAsync(cancellationToken) is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return null;
+                }
+            }
+
+            await using var command = new NpgsqlCommand("""
+                INSERT INTO project_labels(
+                    id, organization_id, project_id, name, color, created_by, created_at)
+                SELECT @id, @organization_id, @project_id, @name, @color, @created_by, @created_at
+                FROM projects project
+                WHERE project.id = @project_id
+                  AND project.organization_id = @organization_id
+                  AND EXISTS (
+                      SELECT 1 FROM organization_members
+                      WHERE organization_id = @organization_id AND user_id = @created_by
+                        AND role IN ('owner', 'admin', 'member')
+                  )
+                  AND (
+                      SELECT count(*) FROM project_labels
+                      WHERE organization_id = @organization_id AND project_id = @project_id
+                  ) < 64
+                ON CONFLICT DO NOTHING
+                RETURNING id;
+                """, connection, transaction);
+            command.Parameters.AddWithValue("id", label.Id);
+            command.Parameters.AddWithValue("organization_id", organizationId);
+            command.Parameters.AddWithValue("project_id", projectId);
+            command.Parameters.AddWithValue("name", name);
+            command.Parameters.AddWithValue("color", color);
+            command.Parameters.AddWithValue("created_by", userId);
+            command.Parameters.AddWithValue("created_at", label.CreatedAt);
+            if (await command.ExecuteScalarAsync(cancellationToken) is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            var actorName = await GetDisplayNameAsync(
+                connection, transaction, userId, cancellationToken);
+            await InsertOutboxAsync(
+                connection, transaction, organizationId, "project.label_created",
+                projectId, label, cancellationToken);
+            await InsertAuditAsync(
+                connection, transaction, organizationId, "project.label_created",
+                "project", projectId, userId, actorName,
+                $"Label « {label.Name} » créé", label.CreatedAt, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return label;
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+    }
+
+    public async Task<bool> DeleteProjectLabelAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var labelCommand = new NpgsqlCommand("""
+            SELECT label.name
+            FROM project_labels label
+            WHERE label.id = @label_id
+              AND label.project_id = @project_id
+              AND label.organization_id = @organization_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin')
+              )
+            FOR UPDATE OF label;
+            """, connection, transaction);
+        labelCommand.Parameters.AddWithValue("label_id", labelId);
+        labelCommand.Parameters.AddWithValue("project_id", projectId);
+        labelCommand.Parameters.AddWithValue("organization_id", organizationId);
+        labelCommand.Parameters.AddWithValue("user_id", userId);
+        var name = (string?)await labelCommand.ExecuteScalarAsync(cancellationToken);
+        if (name is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await ExecuteAsync(connection, transaction, """
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @updated_at
+            WHERE organization_id = @organization_id
+              AND id IN (
+                  SELECT task_id FROM task_labels
+                  WHERE organization_id = @organization_id AND label_id = @label_id
+              );
+            """, cancellationToken,
+            ("updated_at", now), ("organization_id", organizationId), ("label_id", labelId));
+        await ExecuteAsync(connection, transaction, """
+            DELETE FROM project_labels
+            WHERE id = @label_id
+              AND project_id = @project_id
+              AND organization_id = @organization_id;
+            """, cancellationToken,
+            ("label_id", labelId), ("project_id", projectId), ("organization_id", organizationId));
+
+        var actorName = await GetDisplayNameAsync(
+            connection, transaction, userId, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "project.label_deleted",
+            projectId, new { labelId }, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "project.label_deleted",
+            "project", projectId, userId, actorName,
+            $"Label « {name} » supprimé", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<AddTaskLabelResult> AddTaskLabelAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        await using var insertCommand = new NpgsqlCommand("""
+            INSERT INTO task_labels(
+                organization_id, task_id, label_id, assigned_by, assigned_at)
+            SELECT @organization_id, task.id, label.id, @user_id, @assigned_at
+            FROM tasks task
+            JOIN project_labels label
+              ON label.organization_id = task.organization_id
+             AND label.project_id = task.project_id
+            WHERE task.id = @task_id
+              AND label.id = @label_id
+              AND task.organization_id = @organization_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin', 'member')
+              )
+            ON CONFLICT DO NOTHING
+            RETURNING task_id, label_id, assigned_by, assigned_at;
+            """, connection, transaction);
+        insertCommand.Parameters.AddWithValue("organization_id", organizationId);
+        insertCommand.Parameters.AddWithValue("task_id", taskId);
+        insertCommand.Parameters.AddWithValue("label_id", labelId);
+        insertCommand.Parameters.AddWithValue("user_id", userId);
+        insertCommand.Parameters.AddWithValue("assigned_at", now);
+        TaskLabelAssignment? assignment;
+        await using (var reader = await insertCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            assignment = await reader.ReadAsync(cancellationToken)
+                ? ReadTaskLabelAssignment(reader)
+                : null;
+        }
+
+        if (assignment is null)
+        {
+            await using var existingCommand = new NpgsqlCommand("""
+                SELECT assignment.task_id, assignment.label_id,
+                       assignment.assigned_by, assignment.assigned_at
+                FROM task_labels assignment
+                JOIN tasks task
+                  ON task.id = assignment.task_id
+                 AND task.organization_id = assignment.organization_id
+                JOIN project_labels label
+                  ON label.id = assignment.label_id
+                 AND label.organization_id = assignment.organization_id
+                WHERE assignment.organization_id = @organization_id
+                  AND assignment.task_id = @task_id
+                  AND assignment.label_id = @label_id
+                  AND task.project_id = label.project_id
+                  AND EXISTS (
+                      SELECT 1 FROM organization_members
+                      WHERE organization_id = @organization_id AND user_id = @user_id
+                        AND role IN ('owner', 'admin', 'member')
+                  );
+                """, connection, transaction);
+            existingCommand.Parameters.AddWithValue("organization_id", organizationId);
+            existingCommand.Parameters.AddWithValue("task_id", taskId);
+            existingCommand.Parameters.AddWithValue("label_id", labelId);
+            existingCommand.Parameters.AddWithValue("user_id", userId);
+            await using var existingReader = await existingCommand.ExecuteReaderAsync(cancellationToken);
+            var existing = await existingReader.ReadAsync(cancellationToken)
+                ? ReadTaskLabelAssignment(existingReader)
+                : null;
+            await transaction.RollbackAsync(cancellationToken);
+            return existing is null
+                ? new AddTaskLabelResult(AddTaskLabelStatus.NotFound, null)
+                : new AddTaskLabelResult(AddTaskLabelStatus.AlreadyExists, existing);
+        }
+
+        await ExecuteAsync(connection, transaction, """
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @updated_at
+            WHERE id = @task_id AND organization_id = @organization_id;
+            """, cancellationToken,
+            ("updated_at", now), ("task_id", taskId), ("organization_id", organizationId));
+        var actorName = await GetDisplayNameAsync(
+            connection, transaction, userId, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "task.label_added",
+            taskId, assignment, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "task.label_added",
+            "task", taskId, userId, actorName,
+            "Label ajouté à la tâche", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new AddTaskLabelResult(AddTaskLabelStatus.Created, assignment);
+    }
+
+    public async Task<bool> RemoveTaskLabelAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            DELETE FROM task_labels assignment
+            USING tasks task, project_labels label
+            WHERE assignment.organization_id = @organization_id
+              AND assignment.task_id = @task_id
+              AND assignment.label_id = @label_id
+              AND task.id = assignment.task_id
+              AND task.organization_id = assignment.organization_id
+              AND label.id = assignment.label_id
+              AND label.organization_id = assignment.organization_id
+              AND task.project_id = label.project_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin', 'member')
+              )
+            RETURNING assignment.task_id;
+            """, connection, transaction);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("task_id", taskId);
+        command.Parameters.AddWithValue("label_id", labelId);
+        command.Parameters.AddWithValue("user_id", userId);
+        if (await command.ExecuteScalarAsync(cancellationToken) is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await ExecuteAsync(connection, transaction, """
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @updated_at
+            WHERE id = @task_id AND organization_id = @organization_id;
+            """, cancellationToken,
+            ("updated_at", now), ("task_id", taskId), ("organization_id", organizationId));
+        var actorName = await GetDisplayNameAsync(
+            connection, transaction, userId, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "task.label_removed",
+            taskId, new { labelId }, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "task.label_removed",
+            "task", taskId, userId, actorName,
+            "Label retiré de la tâche", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     public async Task<IReadOnlyList<WorkItem>?> ListTasksAsync(
@@ -2493,6 +2892,15 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
     private static Project ReadProject(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
         reader.GetInt32(4), reader.GetGuid(5), reader.GetFieldValue<DateTimeOffset>(6));
+
+    private static ProjectLabel ReadProjectLabel(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
+        reader.GetString(4), reader.GetGuid(5), reader.GetFieldValue<DateTimeOffset>(6));
+
+    private static TaskLabelAssignment ReadTaskLabelAssignment(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2),
+        reader.GetFieldValue<DateTimeOffset>(3));
+
 
     private static WorkItem ReadTask(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetInt32(3),

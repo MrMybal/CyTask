@@ -183,6 +183,31 @@ foreach ($definition in $taskDefinitions) {
     }
     $createdTasks[$definition.Ref] = $created
 }
+$labelDefinitions = @(
+    @{ Ref = "art"; Name = "Art"; Color = "#A855F7"; Tasks = @("art-direction", "modular-kit", "lighting", "shader-optimization") },
+    @{ Ref = "gameplay"; Name = "Gameplay"; Color = "#3B82F6"; Tasks = @("hangar-blockout", "terminal-gameplay", "collision-qa") },
+    @{ Ref = "audio"; Name = "Audio"; Color = "#F59E0B"; Tasks = @("terminal-gameplay", "ambiences") },
+    @{ Ref = "build"; Name = "Build"; Color = "#22C55E"; Tasks = @("review-build", "documentation", "milestone") },
+    @{ Ref = "urgent"; Name = "Urgent"; Color = "#EF4444"; Tasks = @("hangar-blockout", "shader-optimization", "milestone") },
+    @{ Ref = "research"; Name = "R&D"; Color = "#06B6D4"; Tasks = @("niagara-research") }
+)
+
+$createdLabels = @{}
+$labelAssignmentCount = 0
+foreach ($definition in $labelDefinitions) {
+    $label = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($project.id)/labels" -Headers $csrfHeaders -Body @{
+        name = $definition.Name
+        color = $definition.Color
+    }
+    $createdLabels[$definition.Ref] = $label
+    foreach ($taskRef in $definition.Tasks) {
+        $taskId = $createdTasks[$taskRef].id
+        Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$taskId/labels/$($label.id)" -Headers $csrfHeaders | Out-Null
+        $labelAssignmentCount += 1
+    }
+}
+
+
 
 $dependencyDefinitions = @(
     @("modular-kit", "hangar-blockout"),
@@ -279,6 +304,6 @@ foreach ($reference in $references) {
 }
 
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "13 tâches, 9 éléments de checklist, 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
+Write-Host "13 tâches, 9 éléments de checklist, 6 labels (16 affectations), 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"
