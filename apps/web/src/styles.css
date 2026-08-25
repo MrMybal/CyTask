@@ -407,6 +407,13 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
 .attachment-available { border-color: #376957; color: var(--accent); }
 .attachment-rejected { border-color: #713d42; color: var(--danger); }
 .attachment-form { display: grid; gap: 10px; margin-top: 16px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #0c131b; }
+.upload-resume-list { display: grid; gap: 8px; padding: 10px; border: 1px solid #2b5272; border-radius: 7px; background: #0b1a27; color: #b8d8ee; font-size: 10px; }
+.upload-resume-list > small { color: #7994a8; line-height: 1.45; }
+.upload-resume-item { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; align-items: center; }
+.upload-resume-item > span { min-width: 0; display: grid; gap: 2px; }
+.upload-resume-item b, .upload-resume-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-resume-item small { color: #8eacc2; }
+.upload-resume-item progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .file-picker { display: grid; gap: 7px; color: #b7c2cd; font-size: 11px; font-weight: 600; }
 .file-picker input { padding: 8px; font-size: 10px; }
 .checkbox-line { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; }

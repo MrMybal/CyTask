@@ -123,6 +123,7 @@ public static class ApiEndpoints
         authenticated.MapPost("/tasks/{taskId:guid}/external-references", CreateExternalReferenceAsync)
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapGet("/tasks/{taskId:guid}/attachment-uploads", ListAttachmentUploadsAsync);
         authenticated.MapPost("/tasks/{taskId:guid}/attachment-uploads", CreateAttachmentUploadAsync)
             .RequireRateLimiting("uploads")
             .AddEndpointFilter<CsrfFilter>()
@@ -1539,6 +1540,21 @@ public static class ApiEndpoints
         _ => "application/octet-stream"
     };
 
+    private static async Task<IResult> ListAttachmentUploadsAsync(
+        Guid taskId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var uploads = await store.ListAttachmentUploadsAsync(
+            user.OrganizationId,
+            taskId,
+            user.UserId,
+            cancellationToken);
+        return uploads is null ? Results.NotFound() : Results.Ok(uploads);
+    }
+
     private static async Task<IResult> CreateAttachmentUploadAsync(
         Guid taskId,
         CreateAttachmentUploadRequest request,
@@ -1613,7 +1629,9 @@ public static class ApiEndpoints
         var user = context.GetUser()!;
         var upload = await store.GetAttachmentUploadAsync(
             user.OrganizationId, uploadId, cancellationToken);
-        return upload is null ? Results.NotFound() : Results.Ok(upload);
+        return upload is null || upload.Attachment.CreatedBy != user.UserId
+            ? Results.NotFound()
+            : Results.Ok(upload);
     }
 
     private static async Task<IResult> UploadAttachmentChunkAsync(
@@ -1643,7 +1661,7 @@ public static class ApiEndpoints
         }
 
         var upload = await store.GetAttachmentUploadAsync(user.OrganizationId, uploadId, cancellationToken);
-        if (upload is null)
+        if (upload is null || upload.Attachment.CreatedBy != user.UserId)
         {
             return Results.NotFound();
         }
@@ -1711,7 +1729,7 @@ public static class ApiEndpoints
         var user = context.GetUser()!;
         var upload = await store.GetAttachmentUploadAsync(
             user.OrganizationId, uploadId, cancellationToken);
-        if (upload is null)
+        if (upload is null || upload.Attachment.CreatedBy != user.UserId)
         {
             return Results.NotFound();
         }

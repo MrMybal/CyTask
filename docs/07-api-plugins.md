@@ -113,6 +113,13 @@ Les formats reconnus sont PNG, JPEG, GIF et WebP pour les images, MP4 et WebM po
 vidéos. Le serveur relève les dimensions dans tous les cas, et la durée pour les vidéos.
 Un plugin peut donc filtrer ou trier sans télécharger les fichiers.
 
+`GET /api/v1/tasks/{taskId}/attachment-uploads` retourne les sessions actives créées
+par l'utilisateur courant et leurs blocs reçus. Pour reprendre, le client vérifie
+le SHA-256 du fichier complet, additionne les tailles des blocs séquentiels, renvoie
+le premier bloc manquant puis appelle `complete`. Un bloc déjà reçu avec la même
+taille et la même empreinte est idempotent ; une différence répond `409`. L'état,
+les blocs et la finalisation d'une session sont réservés à son créateur.
+
 `GET /api/v1/attachments/{id}/content` accepte l'en-tête `Range` : un lecteur peut se
 déplacer dans une vidéo sans rapatrier le fichier entier. La réponse porte un `ETag`
 égal à l'empreinte SHA-256 du contenu, qui ne change jamais pour une pièce jointe

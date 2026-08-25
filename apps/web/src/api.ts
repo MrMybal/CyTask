@@ -432,6 +432,10 @@ export const api = {
     method: "POST",
     body: JSON.stringify(body)
   }),
+  attachmentUploads: (taskId: string) =>
+    request<AttachmentUpload[]>(`/api/v1/tasks/${taskId}/attachment-uploads`),
+  attachmentUpload: (uploadId: string) =>
+    request<AttachmentUpload>(`/api/v1/attachment-uploads/${uploadId}`),
   createAttachmentUpload: (taskId: string, body: {
     fileName: string;
     contentType: string;

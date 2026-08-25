@@ -1033,6 +1033,70 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         return result;
     }
 
+    public async Task<IReadOnlyList<AttachmentUpload>?> ListAttachmentUploadsAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT a.id, a.organization_id, a.task_id, a.file_name, a.declared_content_type,
+                   a.detected_content_type, a.size_bytes, a.sha256, a.status, a.optimized_locally,
+                   a.created_by, a.created_at, a.rejection_reason, a.width, a.height, a.reviewed_at,
+                   a.duration_seconds, u.id, u.chunk_size_bytes, u.expires_at, u.status,
+                   c.chunk_index, c.size_bytes, c.sha256, c.created_at
+            FROM attachment_uploads u
+            JOIN attachments a ON a.id = u.attachment_id AND a.organization_id = u.organization_id
+            LEFT JOIN attachment_upload_chunks c ON c.upload_id = u.id
+            WHERE u.organization_id = @organization_id
+              AND a.task_id = @task_id
+              AND a.created_by = @user_id
+              AND u.status = 'active'
+              AND u.expires_at > now()
+            ORDER BY u.created_at, u.id, c.chunk_index;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("task_id", taskId);
+        command.Parameters.AddWithValue("user_id", userId);
+
+        var result = new List<AttachmentUpload>();
+        List<UploadChunk>? currentChunks = null;
+        Guid? currentUploadId = null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var uploadId = reader.GetGuid(17);
+            if (uploadId != currentUploadId)
+            {
+                currentUploadId = uploadId;
+                currentChunks = [];
+                result.Add(new AttachmentUpload(
+                    uploadId,
+                    ReadAttachment(reader),
+                    reader.GetInt32(18),
+                    reader.GetFieldValue<DateTimeOffset>(19),
+                    reader.GetString(20),
+                    currentChunks));
+            }
+
+            if (!reader.IsDBNull(21))
+            {
+                currentChunks!.Add(new UploadChunk(
+                    reader.GetInt32(21),
+                    reader.GetInt64(22),
+                    reader.GetString(23),
+                    reader.GetFieldValue<DateTimeOffset>(24)));
+            }
+        }
+
+        if (result.Count == 0 && !await TaskExistsAsync(organizationId, taskId, cancellationToken))
+        {
+            return null;
+        }
+
+        return result;
+    }
+
     public async Task<AttachmentUpload?> CreateAttachmentUploadAsync(
         Guid organizationId,
         Guid taskId,

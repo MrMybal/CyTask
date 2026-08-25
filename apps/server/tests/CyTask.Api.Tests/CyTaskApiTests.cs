@@ -1094,6 +1094,127 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task InterruptedUploadCanResumeAndStaysPrivateToItsCreator()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var owner = factory.CreateClient();
+        var ownerCsrf = await BootstrapAsync(owner);
+        owner.DefaultRequestHeaders.Add("X-CSRF-Token", ownerCsrf);
+        var taskId = await CreateTaskForAttachmentAsync(owner);
+        var bytes = Enumerable.Range(0, 65_539).Select(index => (byte)(index % 251)).ToArray();
+        var fullSha256 = Sha256(bytes);
+
+        var upload = await PostAndReadAsync(
+            owner,
+            $"/api/v1/tasks/{taskId}/attachment-uploads",
+            new
+            {
+                fileName = "archive.bin",
+                contentType = "application/octet-stream",
+                sizeBytes = bytes.Length,
+                sha256 = fullSha256,
+                optimizedLocally = false
+            });
+        var uploadId = upload.GetProperty("id").GetGuid();
+        Assert.Equal(65_536, upload.GetProperty("chunkSizeBytes").GetInt32());
+
+        var firstChunk = bytes[..65_536];
+        using (var chunkRequest = new HttpRequestMessage(
+                   HttpMethod.Put,
+                   $"/api/v1/attachment-uploads/{uploadId}/chunks/0"))
+        {
+            chunkRequest.Headers.Add("X-Chunk-SHA256", Sha256(firstChunk));
+            chunkRequest.Content = new ByteArrayContent(firstChunk);
+            chunkRequest.Content.Headers.ContentType =
+                new MediaTypeHeaderValue("application/octet-stream");
+            using var chunkResponse = await owner.SendAsync(
+                chunkRequest,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, chunkResponse.StatusCode);
+        }
+
+        using var activeResponse = await owner.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/attachment-uploads", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, activeResponse.StatusCode);
+        var activeUploads = await ReadJsonAsync(activeResponse);
+        var activeUpload = Assert.Single(activeUploads.EnumerateArray());
+        Assert.Equal(uploadId, activeUpload.GetProperty("id").GetGuid());
+        Assert.Equal(65_536, Assert.Single(activeUpload.GetProperty("chunks").EnumerateArray())
+            .GetProperty("sizeBytes").GetInt64());
+
+        var invitation = await PostAndReadAsync(
+            owner,
+            "/api/v1/invitations",
+            new { email = "upload-member@cytask.local", role = "member" });
+        using var member = factory.CreateClient();
+        using var acceptResponse = await member.PostAsJsonAsync(
+            new Uri("/api/v1/invitations/accept", UriKind.Relative),
+            new
+            {
+                token = invitation.GetProperty("token").GetString(),
+                displayName = "Upload Member",
+                password = "upload member password"
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, acceptResponse.StatusCode);
+        var memberSession = await ReadJsonAsync(acceptResponse);
+        member.DefaultRequestHeaders.Add(
+            "X-CSRF-Token",
+            memberSession.GetProperty("csrfToken").GetString());
+
+        var memberUploads = await ReadJsonAsync(await member.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/attachment-uploads", UriKind.Relative),
+            TestContext.Current.CancellationToken));
+        Assert.Empty(memberUploads.EnumerateArray());
+        using var hiddenUpload = await member.GetAsync(
+            new Uri($"/api/v1/attachment-uploads/{uploadId}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, hiddenUpload.StatusCode);
+
+        using (var repeatedChunk = new HttpRequestMessage(
+                   HttpMethod.Put,
+                   $"/api/v1/attachment-uploads/{uploadId}/chunks/0"))
+        {
+            repeatedChunk.Headers.Add("X-Chunk-SHA256", Sha256(firstChunk));
+            repeatedChunk.Content = new ByteArrayContent(firstChunk);
+            repeatedChunk.Content.Headers.ContentType =
+                new MediaTypeHeaderValue("application/octet-stream");
+            using var repeatedResponse = await owner.SendAsync(
+                repeatedChunk,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, repeatedResponse.StatusCode);
+        }
+
+        var lastChunk = bytes[65_536..];
+        using (var lastChunkRequest = new HttpRequestMessage(
+                   HttpMethod.Put,
+                   $"/api/v1/attachment-uploads/{uploadId}/chunks/1"))
+        {
+            lastChunkRequest.Headers.Add("X-Chunk-SHA256", Sha256(lastChunk));
+            lastChunkRequest.Content = new ByteArrayContent(lastChunk);
+            lastChunkRequest.Content.Headers.ContentType =
+                new MediaTypeHeaderValue("application/octet-stream");
+            using var lastChunkResponse = await owner.SendAsync(
+                lastChunkRequest,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, lastChunkResponse.StatusCode);
+        }
+
+        using var complete = await owner.PostAsync(
+            new Uri($"/api/v1/attachment-uploads/{uploadId}/complete", UriKind.Relative),
+            null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
+        var attachment = await ReadJsonAsync(complete);
+        Assert.Equal("quarantined", attachment.GetProperty("status").GetString());
+
+        var remainingUploads = await ReadJsonAsync(await owner.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/attachment-uploads", UriKind.Relative),
+            TestContext.Current.CancellationToken));
+        Assert.Empty(remainingUploads.EnumerateArray());
+    }
+    [Fact]
     public async Task AttachmentChunksAreVerifiedAndQuarantined()
     {
         await using var factory = new CyTaskApiFactory();
@@ -1997,6 +2118,7 @@ public sealed class CyTaskApiTests
             builder.UseEnvironment("Development");
             builder.UseSetting("CyTask:MediaStoragePath", _mediaPath);
             builder.UseSetting("CyTask:MediaReviewSeconds", "3600");
+            builder.UseSetting("CyTask:UploadChunkBytes", "65536");
         }
 
         public Task<int> ReviewAttachmentsAsync() =>
@@ -2006,9 +2128,16 @@ public sealed class CyTaskApiTests
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
-            if (Directory.Exists(_mediaPath))
+            for (var attempt = 0; attempt < 5 && Directory.Exists(_mediaPath); attempt++)
             {
-                Directory.Delete(_mediaPath, recursive: true);
+                try
+                {
+                    Directory.Delete(_mediaPath, recursive: true);
+                }
+                catch (IOException) when (attempt < 4)
+                {
+                    Thread.Sleep(25 * (attempt + 1));
+                }
             }
         }
     }
