@@ -214,7 +214,41 @@ public interface IWorkspaceStore
         string key,
         CancellationToken cancellationToken);
 
+    Task<ProjectLabelOverview?> GetProjectLabelsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken);
+
+    Task<ProjectLabel?> CreateProjectLabelAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string name,
+        string color,
+        CancellationToken cancellationToken);
+
+    Task<bool> DeleteProjectLabelAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<AddTaskLabelResult> AddTaskLabelAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<bool> RemoveTaskLabelAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid labelId,
+        Guid userId,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<WorkItem>?> ListTasksAsync(
+
         Guid organizationId,
         Guid projectId,
         CancellationToken cancellationToken);

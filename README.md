@@ -15,7 +15,7 @@ cœur qui reste utilisable seul.
 
 - application Web rapide et installable, puis clients Windows, Linux, macOS et Android ;
 - serveur d'équipe auto-hébergeable avec une sécurité vérifiable ;
-- tâches, projets, commentaires, dépendances, pièces jointes et temps réel ;
+- tâches, projets, labels, commentaires, dépendances, pièces jointes et temps réel ;
 - images et vidéos avec conversion locale optionnelle et traitement serveur ;
 - commits, branches et demandes de fusion reliés aux tâches via un plugin Git ;
 - panneau CyTask dans Unreal Engine 4.27 à 5.8 ;
@@ -27,7 +27,7 @@ cœur qui reste utilisable seul.
 
 La première tranche verticale est implémentée : amorçage sécurisé du premier
 compte, sessions, invitations à usage unique, rôles, organisation, projets,
-tâches éditables avec contrôle de révision, checklists, commentaires et événements temps réel.
+tâches éditables avec contrôle de révision, labels, checklists, commentaires et événements temps réel.
 La recherche, le journal d’activité et l’export JSON sont également disponibles.
 Le pipeline de pièces jointes calcule les empreintes côté client, envoie les données
 par blocs vérifiés et conserve les originaux en quarantaine hors du Web. Un worker
@@ -48,7 +48,7 @@ Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une ins
 du moteur complète.
 Le client Web responsive et installable consomme la même API que les futurs
 clients et le plugin Unreal. Son interface de tâches propose maintenant vues
-Liste et Kanban, priorités, échéances, assignation aux membres, filtres et tris mémorisés localement,
+Liste et Kanban, labels colorés, priorités, échéances, assignation aux membres, filtres et tris mémorisés localement,
 vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
 palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
 au survol et notifications non bloquantes,
@@ -75,7 +75,7 @@ un second terminal pendant que le mode développement fonctionne :
 pwsh ./scripts/seed-demo.ps1
 ```
 
-Le script crée une équipe, treize tâches réalistes, des échéances, checklists,
+Le script crée une équipe, treize tâches réalistes, des échéances, labels, checklists,
 commentaires, références Git et dépendances. Les identifiants de démonstration sont affichés à
 la fin de son exécution.
 

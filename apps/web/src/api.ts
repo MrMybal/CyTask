@@ -54,6 +54,28 @@ export interface TaskChecklistItem {
   updatedAt: string;
 }
 
+export interface ProjectLabel {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  name: string;
+  color: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface TaskLabelAssignment {
+  taskId: string;
+  labelId: string;
+  assignedBy: string;
+  assignedAt: string;
+}
+
+export interface ProjectLabelOverview {
+  labels: ProjectLabel[];
+  assignments: TaskLabelAssignment[];
+}
+
 export interface TaskDetails {
   task: WorkItem;
   comments: Comment[];
@@ -279,6 +301,25 @@ export const api = {
   projects: () => request<Project[]>("/api/v1/projects"),
   createProject: (body: { name: string; key: string }) =>
     request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),
+  projectLabels: (projectId: string) =>
+    request<ProjectLabelOverview>(`/api/v1/projects/${projectId}/labels`),
+  createProjectLabel: (projectId: string, body: { name: string; color: string }) =>
+    request<ProjectLabel>(`/api/v1/projects/${projectId}/labels`, {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  deleteProjectLabel: (projectId: string, labelId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/labels/${labelId}`, {
+      method: "DELETE"
+    }),
+  addTaskLabel: (taskId: string, labelId: string) =>
+    request<TaskLabelAssignment>(`/api/v1/tasks/${taskId}/labels/${labelId}`, {
+      method: "PUT"
+    }),
+  removeTaskLabel: (taskId: string, labelId: string) =>
+    request<void>(`/api/v1/tasks/${taskId}/labels/${labelId}`, {
+      method: "DELETE"
+    }),
   tasks: (projectId: string) => request<WorkItem[]>(`/api/v1/projects/${projectId}/tasks`),
   createTask: (projectId: string, body: {
     title: string;

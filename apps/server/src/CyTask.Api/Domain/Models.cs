@@ -75,6 +75,37 @@ public sealed record TaskDetails(
     IReadOnlyList<Comment> Comments,
     IReadOnlyList<TaskChecklistItem> Checklist);
 
+
+public sealed record ProjectLabel(
+    Guid Id,
+    Guid OrganizationId,
+    Guid ProjectId,
+    string Name,
+    string Color,
+    Guid CreatedBy,
+    DateTimeOffset CreatedAt);
+
+public sealed record TaskLabelAssignment(
+    Guid TaskId,
+    Guid LabelId,
+    Guid AssignedBy,
+    DateTimeOffset AssignedAt);
+
+public sealed record ProjectLabelOverview(
+    IReadOnlyList<ProjectLabel> Labels,
+    IReadOnlyList<TaskLabelAssignment> Assignments);
+
+public enum AddTaskLabelStatus
+{
+    Created,
+    AlreadyExists,
+    NotFound
+}
+
+public sealed record AddTaskLabelResult(
+    AddTaskLabelStatus Status,
+    TaskLabelAssignment? Assignment);
+
 public sealed record OrganizationMember(
     Guid UserId,
     string Email,
@@ -123,6 +154,8 @@ public sealed record WorkspaceExport(
     IReadOnlyList<WorkItem> Tasks,
     IReadOnlyList<Comment> Comments,
     IReadOnlyList<TaskChecklistItem> Checklist,
+    IReadOnlyList<ProjectLabel> ProjectLabels,
+    IReadOnlyList<TaskLabelAssignment> TaskLabels,
     IReadOnlyList<ActivityEntry> Activity,
     IReadOnlyList<Attachment> Attachments);
 

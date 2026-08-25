@@ -7,7 +7,7 @@ restent dans le même espace de travail sans imposer une succession de pages.
 
 - la vue **Liste** privilégie le balayage rapide, le statut et la dernière activité ;
 - la vue **Kanban** regroupe les mêmes tâches par état sans dupliquer les données ;
-- recherche locale, filtres d'état, de priorité, de responsable et d'échéance,
+- recherche locale, filtres d'état, de priorité, de responsable, d'échéance et de label,
   ainsi que le tri, s'appliquent aux deux vues ;
 - les priorités et échéances sont visibles dans la liste, le Kanban et le détail ;
 - les échéances dépassées sont signalées sans masquer le statut de la tâche ;
@@ -48,6 +48,11 @@ La section **Checklist** vit directement dans **Détails** : elle affiche la pro
 permet d'ajouter jusqu'à 200 étapes, de les valider et de les supprimer. Chaque
 élément possède sa propre révision optimiste ; en cas de modification concurrente,
 l'interface recharge la dernière version au lieu d'écraser le travail d'un collègue.
+
+La section **Labels** affiche les étiquettes colorées de la tâche et permet aux
+contributeurs de les attribuer ou de créer celles du projet. Les administrateurs
+peuvent supprimer une définition pour tout le projet. Les affectations sont
+idempotentes, limitées au projet et synchronisées en temps réel.
 
 L'onglet **Relations** distingue les tâches dont la sélection dépend et celles
 qu'elle bloque. L'ajout est idempotent, limité à l'organisation et protégé contre

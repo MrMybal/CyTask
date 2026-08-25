@@ -45,6 +45,8 @@ public sealed record UpdateChecklistItemRequest(
     bool IsCompleted,
     long ExpectedRevision);
 
+
+public sealed record CreateProjectLabelRequest(string Name, string Color);
 public sealed class UpdateTaskRequest
 {
     private string? priority;

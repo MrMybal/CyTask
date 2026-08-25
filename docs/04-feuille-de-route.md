@@ -17,7 +17,7 @@ restaurable.
 ## Phase 1 — Première tranche verticale
 
 - compte, organisation, membres et rôles ;
-- projet, tâche, états, checklists et commentaires ;
+- projet, tâche, états, labels, checklists et commentaires ;
 - journal d'activité et mise à jour temps réel ;
 - recherche simple et export ;
 - application Web responsive/PWA.

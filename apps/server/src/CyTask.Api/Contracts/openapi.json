@@ -295,6 +295,60 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/labels": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "Labels et affectations d'un projet",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "responses": {
+          "200": { "description": "Labels du projet", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectLabelOverview" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["tâches"],
+        "summary": "Créer un label de projet",
+        "description": "Rôles `owner`, `admin` et `member`. Maximum 64 labels par projet.",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "color"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                  "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "examples": ["#3B82F6"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Label créé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectLabel" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/labels/{labelId}": {
+      "delete": {
+        "tags": ["tâches"],
+        "summary": "Supprimer un label du projet",
+        "description": "Rôles `owner` et `admin`. Retire aussi le label de toutes les tâches du projet.",
+        "parameters": [
+          { "$ref": "#/components/parameters/projectId" },
+          { "name": "labelId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Label supprimé" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
     "/api/v1/projects/{projectId}/tasks": {
       "get": {
         "tags": ["tâches"],
@@ -474,6 +528,35 @@
         }
       }
     },
+    "/api/v1/tasks/{taskId}/labels/{labelId}": {
+      "put": {
+        "tags": ["tâches"],
+        "summary": "Attribuer un label à une tâche",
+        "description": "Opération idempotente. La tâche et le label doivent appartenir au même projet.",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "name": "labelId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "201": { "description": "Label attribué", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskLabelAssignment" } } } },
+          "200": { "description": "Label déjà attribué", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskLabelAssignment" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["tâches"],
+        "summary": "Retirer un label d'une tâche",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "name": "labelId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Label retiré" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
     "/api/v1/tasks/{taskId}/dependencies": {
       "get": {
         "tags": ["tâches"],
@@ -733,6 +816,38 @@
           "createdAt": { "type": "string", "format": "date-time" }
         }
       },
+      "ProjectLabel": {
+        "type": "object",
+        "required": ["id", "organizationId", "projectId", "name", "color", "createdBy", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "color": { "type": "string", "pattern": "^#[0-9A-F]{6}$" },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TaskLabelAssignment": {
+        "type": "object",
+        "required": ["taskId", "labelId", "assignedBy", "assignedAt"],
+        "properties": {
+          "taskId": { "type": "string", "format": "uuid" },
+          "labelId": { "type": "string", "format": "uuid" },
+          "assignedBy": { "type": "string", "format": "uuid" },
+          "assignedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ProjectLabelOverview": {
+        "type": "object",
+        "required": ["labels", "assignments"],
+        "properties": {
+          "labels": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectLabel" } },
+          "assignments": { "type": "array", "items": { "$ref": "#/components/schemas/TaskLabelAssignment" } }
+        }
+      },
+
       "WorkItem": {
         "type": "object",
         "properties": {
