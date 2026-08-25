@@ -48,7 +48,7 @@ Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une ins
 du moteur complète.
 Le client Web responsive et installable consomme la même API que les futurs
 clients et le plugin Unreal. Son interface de tâches propose maintenant vues
-Liste et Kanban, labels colorés, priorités, échéances, assignation aux membres, filtres et tris mémorisés localement,
+Liste et Kanban, labels colorés, priorités, échéances, assignation aux membres, vues rapides et filtres nommés mémorisés localement,
 vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
 palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
 au survol et notifications non bloquantes,

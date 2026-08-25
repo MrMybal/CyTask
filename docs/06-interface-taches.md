@@ -16,6 +16,13 @@ restent dans le même espace de travail sans imposer une succession de pages.
 - une tâche possède une route `#/tasks/<uuid>` partageable et restaurée après connexion ;
 - Précédent/Suivant et la fermeture du détail ne créent pas de navigation fantôme.
 
+La barre **Vues** fournit quatre raccourcis : tâches de l'utilisateur, tâches en
+retard, tâches bloquées et tâches sans responsable. Une vue personnelle capture
+la recherche, l'état, la priorité, le responsable, l'échéance, le label, le tri et
+la présentation Liste/Kanban. Elle peut ensuite être mise à jour, renommée ou
+supprimée. Jusqu'à vingt vues sont stockées localement et isolées par organisation,
+utilisateur et projet ; une entrée corrompue ou d'un ancien format est ignorée.
+
 ## Mutations sûres
 
 Le glisser-déposer est un raccourci d'interface, pas une source de vérité. Chaque
