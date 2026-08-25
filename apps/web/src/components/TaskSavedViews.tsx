@@ -9,7 +9,7 @@ export type TaskFilterSnapshot = {
   due: "all" | "overdue" | "today" | "week" | "none";
   label: "all" | "none" | string;
   sort: "updated" | "created" | "due" | "key" | "title";
-  view: "list" | "board" | "compact" | "miro" | "graph";
+  view: "list" | "board" | "compact" | "canvas" | "graph";
 };
 
 export interface TaskViewDefinition {
@@ -41,7 +41,7 @@ const statuses = new Set(["all", "todo", "in_progress", "blocked", "done", "canc
 const priorities = new Set(["all", "low", "normal", "high", "urgent"]);
 const dueFilters = new Set(["all", "overdue", "today", "week", "none"]);
 const sorts = new Set(["updated", "created", "due", "key", "title"]);
-const views = new Set(["list", "board", "compact", "miro", "graph"]);
+const views = new Set(["list", "board", "compact", "canvas", "miro", "graph"]);
 
 export function savedTaskViewsStorageKey(
   organizationId: string,
@@ -235,7 +235,10 @@ function parseTaskFilterSnapshot(candidate: unknown): TaskFilterSnapshot | undef
     || typeof candidate.view !== "string" || !views.has(candidate.view)) {
     return undefined;
   }
-  return candidate as TaskFilterSnapshot;
+  return {
+    ...candidate,
+    view: candidate.view === "miro" ? "canvas" : candidate.view
+  } as TaskFilterSnapshot;
 }
 
 function isDynamicFilter(value: unknown, secondary: string): value is string {

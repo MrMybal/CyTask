@@ -117,7 +117,7 @@ export function CompactTaskTable({
   );
 }
 
-type CanvasMode = "miro" | "graph";
+type CanvasMode = "canvas" | "graph";
 
 interface TaskCanvasProps {
   mode: CanvasMode;
@@ -176,8 +176,8 @@ export function TaskCanvas({
   onOpenTask
 }: TaskCanvasProps) {
   const layout = useMemo(
-    () => mode === "miro"
-      ? buildMiroLayout(tasks, labels, assignments)
+    () => mode === "canvas"
+      ? buildGroupedCanvasLayout(tasks, labels, assignments)
       : buildGraphLayout(tasks, labels, assignments, hierarchy),
     [assignments, hierarchy, labels, mode, tasks]
   );
@@ -187,7 +187,7 @@ export function TaskCanvas({
 
   function resetViewport() {
     setViewport({ x: 28, y: 28, scale: mode === "graph" ? 0.72 : 0.9 });
-    if (mode === "miro") setNodeOffsets({});
+    if (mode === "canvas") setNodeOffsets({});
   }
 
   function zoom(delta: number) {
@@ -211,7 +211,7 @@ export function TaskCanvas({
   }
 
   function nodePointerDown(event: ReactPointerEvent<HTMLElement>, node: CanvasNode) {
-    if (mode !== "miro" || node.type !== "folder") return;
+    if (mode !== "canvas" || node.type !== "folder") return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -269,16 +269,16 @@ export function TaskCanvas({
 
   const nodesById = new Map(layout.nodes.map((node) => [node.id, node]));
   const position = (node: CanvasNode) => {
-    const movableId = mode === "miro" ? node.groupId ?? (node.type === "folder" ? node.id : undefined) : undefined;
+    const movableId = mode === "canvas" ? node.groupId ?? (node.type === "folder" ? node.id : undefined) : undefined;
     const offset = movableId ? nodeOffsets[movableId] ?? { x: 0, y: 0 } : { x: 0, y: 0 };
     return { x: node.x + offset.x, y: node.y + offset.y };
   };
 
   return (
-    <section className={`relation-canvas relation-canvas-${mode}`} aria-label={mode === "miro" ? "Canvas libre type Miro" : "Graphe du projet"}>
+    <section className={`relation-canvas relation-canvas-${mode}`} aria-label={mode === "canvas" ? "Canvas groupé du projet" : "Graphe du projet"}>
       <header className="canvas-toolbar">
         <div>
-          <strong>{mode === "miro" ? "Canvas libre" : "Graphe relationnel"}</strong>
+          <strong>{mode === "canvas" ? "Canvas groupé" : "Graphe relationnel"}</strong>
           <small>{layout.nodes.length} éléments · molette pour zoomer · glisser le fond pour naviguer</small>
         </div>
         <div className="canvas-actions">
@@ -363,7 +363,7 @@ export function TaskCanvas({
                 <span className="canvas-folder-icon">▰</span>
                 <strong>{node.title}</strong>
                 <small>{node.subtitle}</small>
-                {mode === "miro" && <em>Glisser le groupe</em>}
+                {mode === "canvas" && <em>Glisser le groupe</em>}
               </article>
             );
           })}
@@ -378,7 +378,7 @@ export function TaskCanvas({
   );
 }
 
-function buildMiroLayout(
+function buildGroupedCanvasLayout(
   tasks: TaskOption[],
   labels: ProjectLabel[],
   assignments: TaskLabelAssignment[]

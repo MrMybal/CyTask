@@ -48,10 +48,14 @@ Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une ins
 du moteur complète.
 Le client Web responsive et installable consomme la même API que les futurs
 clients et le plugin Unreal. Son interface de tâches propose maintenant cinq vues :
-Liste, Compacte en colonnes, Kanban, tableau libre type Miro et graphe relationnel.
+Liste, Compacte en colonnes, Kanban, Canvas libre multimédia et graphe relationnel.
 Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
 des labels colorés, priorités, échéances, assignation aux membres, vues rapides et filtres nommés mémorisés localement,
 vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
+drag-and-drop multi-fichier sur toute la fenêtre de tâche, galerie intégrée aux détails
+et jusqu'à quatre aperçus image/vidéo par carte Kanban. Le Canvas permet d'ajouter
+et déplacer des textes, formes, tâches, images et vidéos, ainsi que de dessiner à main
+levée ; ses objets et blobs multimédias sont conservés localement dans le navigateur,
 palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
 au survol, pagination serveur à curseur avec filtres, chargement progressif et
 notifications non bloquantes,

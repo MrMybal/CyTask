@@ -90,6 +90,7 @@ public static class ApiEndpoints
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapGet("/projects/{projectId:guid}/task-page", GetTaskPageAsync);
         authenticated.MapGet("/projects/{projectId:guid}/task-options", ListTaskOptionsAsync);
+        authenticated.MapGet("/projects/{projectId:guid}/media-previews", ListProjectMediaPreviewsAsync);
         authenticated.MapGet("/projects/{projectId:guid}/tasks", ListTasksAsync);
         authenticated.MapPost("/projects/{projectId:guid}/tasks", CreateTaskAsync)
             .AddEndpointFilter<CsrfFilter>()
@@ -1336,6 +1337,18 @@ public static class ApiEndpoints
 
         events.Publish(user.OrganizationId, "task.dependency_removed", taskId);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> ListProjectMediaPreviewsAsync(
+        Guid projectId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var previews = await store.ListProjectMediaPreviewsAsync(
+            user.OrganizationId, projectId, cancellationToken);
+        return previews is null ? Results.NotFound() : Results.Ok(previews);
     }
 
     private static async Task<IResult> ListAttachmentsAsync(

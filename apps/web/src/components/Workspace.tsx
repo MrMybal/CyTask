@@ -35,6 +35,7 @@ import { ToastStack, useToasts } from "./Toasts";
 import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
 import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
 import { ProjectFolderTree } from "./ProjectFolderTree";
+import { ProjectCanvas } from "./ProjectCanvas";
 import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
 import {
   parseSavedTaskViews,
@@ -104,6 +105,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [taskMediaPreviews, setTaskMediaPreviews] = useState<Attachment[]>([]);
   const [activeUploads, setActiveUploads] = useState<AttachmentUpload[]>([]);
   const [externalReferences, setExternalReferences] = useState<ExternalReference[]>([]);
   const [searchHits, setSearchHits] = useState<SearchHit[]>();
@@ -117,7 +119,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   }, [notify]);
   const [taskView, setTaskView] = useState<TaskView>(() => {
     const saved = window.localStorage.getItem("cytask.taskView");
-    return saved === "board" || saved === "compact" || saved === "miro" || saved === "graph"
+    if (saved === "miro") return "canvas";
+    return saved === "board" || saved === "compact" || saved === "canvas" || saved === "graph"
       ? saved
       : "list";
   });
@@ -141,6 +144,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const [draggedTaskId, setDraggedTaskId] = useState<string>();
   const [dragOverStatus, setDragOverStatus] = useState<WorkItem["status"]>();
+  const [attachmentDragActive, setAttachmentDragActive] = useState(false);
   const [pendingTaskIds, setPendingTaskIds] = useState<Set<string>>(() => new Set());
   const [pendingChecklistItemIds, setPendingChecklistItemIds] =
     useState<Set<string>>(() => new Set());
@@ -240,6 +244,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
     return result;
   }, [projectLabels]);
+  const mediaByTask = useMemo(() => {
+    const result = new Map<string, Attachment[]>();
+    for (const attachment of taskMediaPreviews) {
+      const media = result.get(attachment.taskId) ?? [];
+      media.push(attachment);
+      result.set(attachment.taskId, media);
+    }
+    return result;
+  }, [taskMediaPreviews]);
   const selectedTaskLabelIds = useMemo(() => new Set(
     projectLabels.assignments
       .filter((assignment) => assignment.taskId === selectedTaskId)
@@ -356,15 +369,17 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   const loadTaskSupport = useCallback(async (projectId: string) => {
     const request = ++taskSupportRequestSequence.current;
-    const [nextOptions, nextLabels, nextHierarchy] = await Promise.all([
+    const [nextOptions, nextLabels, nextHierarchy, nextMedia] = await Promise.all([
       api.taskOptions(projectId),
       api.projectLabels(projectId),
-      api.projectTaskHierarchy(projectId)
+      api.projectTaskHierarchy(projectId),
+      api.projectMediaPreviews(projectId)
     ]);
     if (request !== taskSupportRequestSequence.current) return;
     setTaskOptions(nextOptions);
     setProjectLabels(nextLabels);
     setTaskHierarchy(nextHierarchy);
+    setTaskMediaPreviews(nextMedia);
   }, []);
 
   const loadTasks = useCallback(async (projectId: string) => {
@@ -457,6 +472,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setTaskTotalCount(0);
     setTaskNextCursor(null);
     setProjectLabels({ labels: [], assignments: [] });
+    setTaskMediaPreviews([]);
     setTaskHierarchy({ relations: [] });
     setTasksLoadingMore(false);
     if (selectedProjectId) {
@@ -651,6 +667,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("invitation.created", refreshActivity);
     const refreshAttachments = () => {
       if (selectedTaskId) void loadDetails(selectedTaskId);
+      refreshTasks();
       refreshActivity();
     };
     stream.addEventListener("attachment.upload_started", refreshAttachments);
@@ -1287,13 +1304,27 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
   }
 
-  async function uploadAttachment(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function uploadAttachment(
+    eventOrFile: FormEvent<HTMLFormElement> | File,
+    optimizedOverride = false
+  ) {
+    const event = eventOrFile instanceof File ? undefined : eventOrFile;
+    event?.preventDefault();
     if (!details || uploadProgress) return;
     const taskId = details.task.id;
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const file = data.get("file");
+    const form = event?.currentTarget;
+    const data = form ? new FormData(form) : undefined;
+    const formFiles = (data?.getAll("file") ?? [])
+      .filter((value): value is File => value instanceof File && value.size > 0);
+    const optimizedLocally = optimizedOverride || data?.get("optimizedLocally") === "on";
+    if (!(eventOrFile instanceof File) && formFiles.length > 1) {
+      for (const selectedFile of formFiles) {
+        await uploadAttachment(selectedFile, optimizedLocally);
+      }
+      form?.reset();
+      return;
+    }
+    const file = eventOrFile instanceof File ? eventOrFile : formFiles[0];
     if (!(file instanceof File) || file.size === 0) return;
     setError("");
     try {
@@ -1334,7 +1365,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           contentType: file.type || "application/octet-stream",
           sizeBytes: file.size,
           sha256: fullSha256,
-          optimizedLocally: data.get("optimizedLocally") === "on"
+          optimizedLocally
         });
       }
 
@@ -1372,7 +1403,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       notify("success", `${file.name} envoyé, analyse en cours.`);
       detailPrefetch.current.delete(taskId);
       await loadDetails(taskId);
-      form.reset();
+      form?.reset();
     } catch (reason) {
       setError(messageFor(reason));
       if (selectedTaskId === taskId) {
@@ -1381,6 +1412,30 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       }
     } finally {
       setUploadProgress(undefined);
+    }
+  }
+
+  function dragTaskFiles(event: DragEvent<HTMLElement>) {
+    if (!canContribute || !event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setAttachmentDragActive(true);
+  }
+
+  function leaveTaskFileDrop(event: DragEvent<HTMLElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setAttachmentDragActive(false);
+    }
+  }
+
+  async function dropTaskFiles(event: DragEvent<HTMLElement>) {
+    if (!canContribute || !event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setAttachmentDragActive(false);
+    setDetailTab("files");
+    for (const file of Array.from(event.dataTransfer.files)) {
+      await uploadAttachment(file);
     }
   }
 
@@ -1990,11 +2045,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     onClick={() => setTaskView("board")}
                   >Kanban</button>
                   <button
-                    className={taskView === "miro" ? "active" : ""}
+                    className={taskView === "canvas" ? "active" : ""}
                     type="button"
-                    aria-pressed={taskView === "miro"}
-                    onClick={() => setTaskView("miro")}
-                  >Miro</button>
+                    aria-pressed={taskView === "canvas"}
+                    onClick={() => setTaskView("canvas")}
+                  >Canvas</button>
                   <button
                     className={taskView === "graph" ? "active" : ""}
                     type="button"
@@ -2027,10 +2082,17 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 selectedTaskId={selectedTaskId}
                 onOpenTask={openTask}
               />
-            ) : taskView === "miro" || taskView === "graph" ? (
+            ) : taskView === "canvas" ? (
+              <ProjectCanvas
+                key={selectedProjectId}
+                projectId={selectedProjectId!}
+                tasks={taskOptions}
+                onOpenTask={openTask}
+              />
+            ) : taskView === "graph" ? (
               <TaskCanvas
-                key={taskView}
-                mode={taskView}
+                key="graph"
+                mode="graph"
                 tasks={taskOptions}
                 labels={projectLabels.labels}
                 assignments={projectLabels.assignments}
@@ -2151,6 +2213,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                                   <span className={`priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span>
                                 </span>
                                 <strong>{task.title}</strong>
+                                <TaskMediaStrip media={mediaByTask.get(task.id) ?? []} />
                                 <TaskLabelChips labels={labelsByTask.get(task.id) ?? []} />
                                 <TaskHierarchyMeta
                                   parent={hierarchyIndex.parentsByTask.get(task.id)}
@@ -2200,7 +2263,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   })}
               </section>
             )}
-            {taskNextCursor && taskView !== "miro" && taskView !== "graph" && (
+            {taskNextCursor && taskView !== "canvas" && taskView !== "graph" && (
               <div className="task-pagination">
                 <button
                   className="primary-button small"
@@ -2315,7 +2378,20 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       )}
 
       {details && !showTeam && !showActivity && !showTokens && (
-        <aside className="detail-pane task-detail-pane" aria-busy={detailsLoading}>
+        <aside
+          className="detail-pane task-detail-pane"
+          aria-busy={detailsLoading}
+          onDragEnter={dragTaskFiles}
+          onDragOver={dragTaskFiles}
+          onDragLeave={leaveTaskFileDrop}
+          onDrop={(event) => void dropTaskFiles(event)}
+        >
+          {attachmentDragActive && (
+            <div className="task-file-drop-overlay" aria-hidden="true">
+              <strong>Déposer dans la tâche</strong>
+              <span>Images, vidéos et autres fichiers seront envoyés de façon sécurisée.</span>
+            </div>
+          )}
           <header className="detail-header">
             <span className="task-key">{details.task.key}</span>
             <div className="detail-actions">
@@ -2476,6 +2552,48 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     {details.task.description || "Aucune description."}
                   </p>
                 )}
+                {attachments.length > 0 && (
+                  <section className="task-overview-media" aria-label="Médias et fichiers récents">
+                    <header>
+                      <div>
+                        <h3>Médias et fichiers</h3>
+                        <small>{attachments.length} fichier{attachments.length > 1 ? "s" : ""} lié{attachments.length > 1 ? "s" : ""}</small>
+                      </div>
+                      <button type="button" className="text-button" onClick={() => setDetailTab("files")}>
+                        Tout afficher
+                      </button>
+                    </header>
+                    <div className="task-overview-media-grid">
+                      {attachments.slice(0, 4).map((attachment) => {
+                        const served = attachment.detectedContentType ?? attachment.declaredContentType;
+                        const available = attachment.status === "available";
+                        const contentUrl = api.attachmentContentUrl(attachment.id);
+                        if (available && served.startsWith("image/")) {
+                          return <img src={contentUrl} alt={attachment.fileName} loading="lazy" key={attachment.id} />;
+                        }
+                        if (available && served.startsWith("video/")) {
+                          return (
+                            <video
+                              src={contentUrl}
+                              controls
+                              preload="metadata"
+                              playsInline
+                              key={attachment.id}
+                            />
+                          );
+                        }
+                        return (
+                          <article className="task-overview-file" key={attachment.id}>
+                            <span>{served.startsWith("video/") ? "VIDÉO" : "FICHIER"}</span>
+                            <strong>{attachment.fileName}</strong>
+                            <small>{attachmentStatusLabel(attachment.status)}</small>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
                 <dl className="task-facts">
                   <div><dt>Créée</dt><dd title={fullDate(details.task.createdAt)}>{relativeDate(details.task.createdAt)}</dd></div>
                   <div><dt>Mise à jour</dt><dd title={fullDate(details.task.updatedAt)}>{relativeDate(details.task.updatedAt)}</dd></div>
@@ -2781,7 +2899,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   )}
                   <label className="file-picker">
                     Ajouter une image, une vidéo ou un fichier
-                    <input name="file" type="file" required disabled={Boolean(uploadProgress)} />
+                    <input
+                      name="file"
+                      type="file"
+                      accept="image/*,video/*,.pdf,.zip,.txt,.json"
+                      multiple
+                      required
+                      disabled={Boolean(uploadProgress)}
+                    />
                   </label>
                   <label className="checkbox-line">
                     <input name="optimizedLocally" type="checkbox" />
@@ -2904,6 +3029,30 @@ function fullDate(value: string): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function TaskMediaStrip({ media }: { media: Attachment[] }) {
+  if (media.length === 0) return null;
+  return (
+    <span className={`board-card-media board-card-media-${Math.min(media.length, 4)}`}>
+      {media.slice(0, 4).map((attachment) => {
+        const contentType = attachment.detectedContentType ?? attachment.declaredContentType;
+        const url = api.attachmentContentUrl(attachment.id);
+        return contentType.startsWith("video/") ? (
+          <video
+            src={url}
+            muted
+            playsInline
+            preload="metadata"
+            aria-label={attachment.fileName}
+            key={attachment.id}
+          />
+        ) : (
+          <img src={url} alt={attachment.fileName} loading="lazy" key={attachment.id} />
+        );
+      })}
+    </span>
+  );
 }
 
 function shortDate(value: string): string {

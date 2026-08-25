@@ -388,6 +388,8 @@ export const api = {
   },
   taskOptions: (projectId: string) =>
     request<TaskOption[]>(`/api/v1/projects/${projectId}/task-options`),
+  projectMediaPreviews: (projectId: string) =>
+    request<Attachment[]>(`/api/v1/projects/${projectId}/media-previews`),
 
   tasks: (projectId: string) => request<WorkItem[]>(`/api/v1/projects/${projectId}/tasks`),
   createTask: (projectId: string, body: {
