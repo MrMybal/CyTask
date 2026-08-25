@@ -49,6 +49,46 @@ public sealed record WorkItem(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
+public sealed record TaskOption(
+    Guid Id,
+    Guid ProjectId,
+    string Key,
+    string Title,
+    string Status);
+
+public sealed record TaskPageCursor(
+    Guid TaskId,
+    DateTimeOffset? Timestamp,
+    string? Text,
+    int? Number,
+    bool IsNull);
+
+public sealed record TaskPageRequest(
+    int Limit,
+    string Query,
+    string? Status,
+    string? Priority,
+    Guid? AssigneeId,
+    bool Unassigned,
+    string DueFilter,
+    DateTimeOffset Now,
+    DateTimeOffset? DueStart,
+    DateTimeOffset? DueEnd,
+    Guid? LabelId,
+    bool WithoutLabel,
+    string Sort,
+    TaskPageCursor? Cursor);
+
+public sealed record TaskPageSlice(
+    IReadOnlyList<WorkItem> Items,
+    int TotalCount,
+    bool HasMore);
+
+public sealed record TaskPageResponse(
+    IReadOnlyList<WorkItem> Items,
+    int TotalCount,
+    string? NextCursor);
+
 public sealed record Comment(
     Guid Id,
     Guid OrganizationId,

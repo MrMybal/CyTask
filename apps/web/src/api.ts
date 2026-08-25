@@ -33,6 +33,31 @@ export interface WorkItem {
   updatedAt: string;
 }
 
+export interface TaskOption {
+  id: string;
+  projectId: string;
+  key: string;
+  title: string;
+  status: WorkItem["status"];
+}
+
+export interface TaskPage {
+  items: WorkItem[];
+  totalCount: number;
+  nextCursor: string | null;
+}
+
+export interface TaskPageFilters {
+  query: string;
+  status: "all" | WorkItem["status"];
+  priority: "all" | WorkItem["priority"];
+  assignee: "all" | "unassigned" | string;
+  due: "all" | "overdue" | "today" | "week" | "none";
+  label: "all" | "none" | string;
+  sort: "updated" | "created" | "due" | "key" | "title";
+  limit?: number;
+}
+
 export interface Comment {
   id: string;
   taskId: string;
@@ -341,6 +366,28 @@ export const api = {
     request<void>(`/api/v1/tasks/${taskId}/parent`, {
       method: "DELETE"
     }),
+  taskPage: (
+    projectId: string,
+    filters: TaskPageFilters,
+    cursor?: string
+  ) => {
+    const parameters = new URLSearchParams({
+      query: filters.query,
+      status: filters.status,
+      priority: filters.priority,
+      assignee: filters.assignee,
+      due: filters.due,
+      label: filters.label,
+      sort: filters.sort,
+      limit: String(filters.limit ?? 50),
+      utcOffsetMinutes: String(new Date().getTimezoneOffset())
+    });
+    if (cursor) parameters.set("cursor", cursor);
+    return request<TaskPage>(`/api/v1/projects/${projectId}/task-page?${parameters}`);
+  },
+  taskOptions: (projectId: string) =>
+    request<TaskOption[]>(`/api/v1/projects/${projectId}/task-options`),
+
   tasks: (projectId: string) => request<WorkItem[]>(`/api/v1/projects/${projectId}/tasks`),
   createTask: (projectId: string, body: {
     title: string;

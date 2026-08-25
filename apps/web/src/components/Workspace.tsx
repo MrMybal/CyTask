@@ -24,6 +24,7 @@ import {
   type TaskDependencyOverview,
   type TaskDetails,
   type TaskChecklistItem,
+  type TaskOption,
   type WorkItem
 } from "../api";
 import { sha256 } from "../sha256";
@@ -79,6 +80,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [tasks, setTasks] = useState<WorkItem[]>([]);
+  const [taskOptions, setTaskOptions] = useState<TaskOption[]>([]);
+  const [taskTotalCount, setTaskTotalCount] = useState(0);
+  const [taskNextCursor, setTaskNextCursor] = useState<string | null>(null);
   const [projectLabels, setProjectLabels] = useState<ProjectLabelOverview>({ labels: [], assignments: [] });
   const [taskHierarchy, setTaskHierarchy] = useState<ProjectTaskHierarchy>({ relations: [] });
   const [details, setDetails] = useState<TaskDetails>();
@@ -118,6 +122,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [savedTaskViews, setSavedTaskViews] = useState<SavedTaskView[]>([]);
   const [activeTaskViewId, setActiveTaskViewId] = useState<string>();
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksLoadingMore, setTasksLoadingMore] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const [draggedTaskId, setDraggedTaskId] = useState<string>();
@@ -135,6 +140,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [showTokens, setShowTokens] = useState(false);
   const taskRequestSequence = useRef(0);
+  const taskSupportRequestSequence = useRef(0);
   const detailRequestSequence = useRef(0);
   const taskFilterInput = useRef<HTMLInputElement>(null);
   const detailPrefetch = useRef(new Map<string, { at: number; load: Promise<DetailBundle> }>());
@@ -194,9 +200,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       .map((assignment) => assignment.labelId)
   ), [projectLabels.assignments, selectedTaskId]);
   const hierarchyIndex = useMemo(() => {
-    const tasksById = new Map(tasks.map((task) => [task.id, task]));
-    const parentsByTask = new Map<string, WorkItem>();
-    const childrenByParent = new Map<string, WorkItem[]>();
+    const tasksById = new Map(taskOptions.map((task) => [task.id, task]));
+    const parentsByTask = new Map<string, TaskOption>();
+    const childrenByParent = new Map<string, TaskOption[]>();
     for (const relation of taskHierarchy.relations) {
       const task = tasksById.get(relation.taskId);
       const parent = tasksById.get(relation.parentTaskId);
@@ -210,7 +216,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       children.sort((left, right) => left.key.localeCompare(right.key, "fr", { numeric: true }));
     }
     return { parentsByTask, childrenByParent };
-  }, [taskHierarchy.relations, tasks]);
+  }, [taskHierarchy.relations, taskOptions]);
   const selectedParent = selectedTaskId
     ? hierarchyIndex.parentsByTask.get(selectedTaskId)
     : undefined;
@@ -229,9 +235,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
     return descendants;
   }, [hierarchyIndex.childrenByParent, selectedTaskId]);
-  const parentCandidates = useMemo(() => tasks.filter((task) =>
+  const parentCandidates = useMemo(() => taskOptions.filter((task) =>
     task.id !== selectedTaskId && !descendantTaskIds.has(task.id)
-  ), [descendantTaskIds, selectedTaskId, tasks]);
+  ), [descendantTaskIds, selectedTaskId, taskOptions]);
   const currentTaskFilters = useMemo<TaskFilterSnapshot>(
     () => ({
       query: taskQuery,
@@ -246,51 +252,21 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     [taskAssigneeFilter, taskDueFilter, taskLabelFilter, taskPriorityFilter, taskQuery,
       taskSort, taskStatusFilter, taskView]
   );
+  const taskFiltersRef = useRef(currentTaskFilters);
+  taskFiltersRef.current = currentTaskFilters;
   const activeTaskView = taskViewPresets.find((view) => view.id === activeTaskViewId)
     ?? savedTaskViews.find((view) => view.id === activeTaskViewId);
   const activeTaskViewDirty = activeTaskView !== undefined
     && !taskFilterSnapshotsEqual(currentTaskFilters, activeTaskView.filters);
 
-  const filteredTasks = useMemo(() => {
-    const query = taskQuery.trim().toLocaleLowerCase("fr");
-    const matching = tasks.filter((task) => {
-      if (taskStatusFilter !== "all" && task.status !== taskStatusFilter) return false;
-      if (taskPriorityFilter !== "all" && task.priority !== taskPriorityFilter) return false;
-      if (taskAssigneeFilter === "unassigned" && task.assigneeId) return false;
-      if (taskAssigneeFilter !== "all" && taskAssigneeFilter !== "unassigned"
-        && task.assigneeId !== taskAssigneeFilter) return false;
-      if (!matchesDueFilter(task, taskDueFilter)) return false;
-      const taskLabels = labelsByTask.get(task.id) ?? [];
-      if (taskLabelFilter === "none" && taskLabels.length > 0) return false;
-      if (taskLabelFilter !== "all" && taskLabelFilter !== "none"
-        && !taskLabels.some((label) => label.id === taskLabelFilter)) {
-        return false;
-      }
-      if (!query) return true;
-      return `${task.key} ${task.title} ${task.description} ${task.assigneeName ?? ""}`
-        .toLocaleLowerCase("fr")
-        .includes(query);
-    });
-    return matching.sort((left, right) => {
-      if (taskSort === "key") return left.key.localeCompare(right.key, "fr", { numeric: true });
-      if (taskSort === "title") return left.title.localeCompare(right.title, "fr");
-      if (taskSort === "created") return Date.parse(right.createdAt) - Date.parse(left.createdAt);
-      if (taskSort === "due") {
-        if (!left.dueAt) return right.dueAt ? 1 : 0;
-        if (!right.dueAt) return -1;
-        return Date.parse(left.dueAt) - Date.parse(right.dueAt);
-      }
-      return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-    });
-  }, [labelsByTask, taskAssigneeFilter, taskDueFilter, taskLabelFilter, taskPriorityFilter,
-    taskQuery, taskSort, taskStatusFilter, tasks]);
+  const filteredTasks = tasks;
   const taskCounts = useMemo(() => Object.fromEntries(
-    boardStatuses.map((status) => [status, tasks.filter((task) => task.status === status).length])
-  ) as Record<WorkItem["status"], number>, [tasks]);
-  const dependencyCandidates = useMemo(() => tasks.filter((task) =>
+    boardStatuses.map((status) => [status, taskOptions.filter((task) => task.status === status).length])
+  ) as Record<WorkItem["status"], number>, [taskOptions]);
+  const dependencyCandidates = useMemo(() => taskOptions.filter((task) =>
     task.id !== selectedTaskId
     && dependencies.dependsOn.every((dependency) => dependency.id !== task.id)
-  ), [dependencies.dependsOn, selectedTaskId, tasks]);
+  ), [dependencies.dependsOn, selectedTaskId, taskOptions]);
   const completedChecklistItems = details?.checklist.filter((item) => item.isCompleted).length ?? 0;
   const checklistProgress = details?.checklist.length
     ? Math.round((completedChecklistItems / details.checklist.length) * 100)
@@ -302,24 +278,64 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setSelectedProjectId((current) => current ?? nextProjects[0]?.id);
   }, []);
 
-  const loadTasks = useCallback(async (projectId: string) => {
+  const loadTaskPage = useCallback(async (
+    projectId: string,
+    filters: TaskFilterSnapshot,
+    cursor?: string,
+    append = false
+  ) => {
     const request = ++taskRequestSequence.current;
-    setTasksLoading(true);
+    if (append) {
+      setTasksLoadingMore(true);
+    } else {
+      setTasksLoading(true);
+    }
     try {
-      const [nextTasks, nextLabels, nextHierarchy] = await Promise.all([
-        api.tasks(projectId),
-        api.projectLabels(projectId),
-        api.projectTaskHierarchy(projectId)
-      ]);
-      if (request === taskRequestSequence.current) {
-        setTasks(nextTasks);
-        setProjectLabels(nextLabels);
-        setTaskHierarchy(nextHierarchy);
-      }
+      const page = await api.taskPage(projectId, filters, cursor);
+      if (request !== taskRequestSequence.current) return;
+      setTasks((current) => {
+        if (!append) return page.items;
+        const existingIds = new Set(current.map((task) => task.id));
+        return [...current, ...page.items.filter((task) => !existingIds.has(task.id))];
+      });
+      setTaskTotalCount(page.totalCount);
+      setTaskNextCursor(page.nextCursor);
     } finally {
-      if (request === taskRequestSequence.current) setTasksLoading(false);
+      if (request === taskRequestSequence.current) {
+        setTasksLoading(false);
+        setTasksLoadingMore(false);
+      }
     }
   }, []);
+
+  const loadTaskSupport = useCallback(async (projectId: string) => {
+    const request = ++taskSupportRequestSequence.current;
+    const [nextOptions, nextLabels, nextHierarchy] = await Promise.all([
+      api.taskOptions(projectId),
+      api.projectLabels(projectId),
+      api.projectTaskHierarchy(projectId)
+    ]);
+    if (request !== taskSupportRequestSequence.current) return;
+    setTaskOptions(nextOptions);
+    setProjectLabels(nextLabels);
+    setTaskHierarchy(nextHierarchy);
+  }, []);
+
+  const loadTasks = useCallback(async (projectId: string) => {
+    await Promise.all([
+      loadTaskPage(projectId, taskFiltersRef.current),
+      loadTaskSupport(projectId)
+    ]);
+  }, [loadTaskPage, loadTaskSupport]);
+
+  const loadMoreTasks = useCallback(async () => {
+    if (!selectedProjectId || !taskNextCursor || tasksLoadingMore) return;
+    await loadTaskPage(
+      selectedProjectId,
+      taskFiltersRef.current,
+      taskNextCursor,
+      true);
+  }, [loadTaskPage, selectedProjectId, taskNextCursor, tasksLoadingMore]);
 
   const fetchDetailBundle = useCallback((taskId: string): Promise<DetailBundle> => Promise.all([
     api.task(taskId),
@@ -381,16 +397,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   }, [loadMembers]);
 
   useEffect(() => {
+    taskRequestSequence.current += 1;
+    setTasks([]);
+    setTaskOptions([]);
+    setTaskTotalCount(0);
+    setTaskNextCursor(null);
+    setProjectLabels({ labels: [], assignments: [] });
+    setTaskHierarchy({ relations: [] });
+    setTasksLoadingMore(false);
     if (selectedProjectId) {
-      setTasks([]);
-      setProjectLabels({ labels: [], assignments: [] });
-      setTaskHierarchy({ relations: [] });
-      loadTasks(selectedProjectId).catch(() => setError("Impossible de charger les tâches."));
+      loadTaskSupport(selectedProjectId)
+        .catch(() => setError("Impossible de charger les informations du projet."));
     } else {
-      taskRequestSequence.current += 1;
-      setTasks([]);
-      setProjectLabels({ labels: [], assignments: [] });
-      setTaskHierarchy({ relations: [] });
+      taskSupportRequestSequence.current += 1;
       setTasksLoading(false);
     }
     detailRequestSequence.current += 1;
@@ -404,7 +423,27 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setTaskAssigneeFilter("all");
     setTaskLabelFilter("all");
     setTaskDueFilter("all");
-  }, [loadTasks, selectedProjectId]);
+  }, [loadTaskSupport, selectedProjectId, setError]);
+
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    const timeout = window.setTimeout(() => {
+      void loadTaskPage(selectedProjectId, taskFiltersRef.current)
+        .catch(() => setError("Impossible de charger les tâches."));
+    }, taskQuery.trim().length > 0 ? 250 : 0);
+    return () => window.clearTimeout(timeout);
+  }, [
+    loadTaskPage,
+    selectedProjectId,
+    setError,
+    taskAssigneeFilter,
+    taskDueFilter,
+    taskLabelFilter,
+    taskPriorityFilter,
+    taskQuery,
+    taskSort,
+    taskStatusFilter
+  ]);
   useEffect(() => {
     setActiveTaskViewId(undefined);
     if (!taskViewsStorageKey) {
@@ -754,9 +793,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         dueAt: null,
         assigneeId: null
       });
-      setTasks((current) => current.some((item) => item.id === task.id)
-        ? current
-        : [task, ...current]);
+      await loadTasks(selectedProjectId);
       notify("success", `${task.key} créée.`);
     } catch (reason) {
       setError(messageFor(reason));
@@ -1072,6 +1109,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
       setTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
       setDetails((current) => current?.task.id === updated.id ? { ...current, task: updated } : current);
+      await loadTasks(updated.projectId);
     } catch (reason) {
       if (selectedProjectId) await loadTasks(selectedProjectId).catch(() => undefined);
       if (selectedTaskId === task.id) await loadDetails(task.id);
@@ -1445,9 +1483,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             <h1>{selectedProject?.name ?? "Bienvenue dans CyTask"}</h1>
             {selectedProject && (
               <p className="project-summary">
-                {tasksLoading
-                  ? "Synchronisation…"
-                  : `${tasks.length} tâche${tasks.length > 1 ? "s" : ""} · ${taskCounts.in_progress} en cours`}
+                {`${taskOptions.length} tâche${taskOptions.length === 1 ? "" : "s"} · ${taskCounts.in_progress} en cours`}
               </p>
             )}
           </div>
@@ -1712,7 +1748,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <span key={index} />
                 ))}
               </div>
-            ) : !tasksLoading && tasks.length > 0 && filteredTasks.length === 0 ? (
+            ) : !tasksLoading && tasks.length === 0 && taskOptions.length > 0 ? (
               <section className="filter-empty" aria-live="polite">
                 <span aria-hidden="true">⌕</span>
                 <h2>Aucune tâche trouvée</h2>
@@ -1761,7 +1797,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   </button>
                 ))}
                 {!tasksLoading && filteredTasks.length === 0 && (
-                  <p className="empty-list">{tasks.length === 0
+                  <p className="empty-list">{taskOptions.length === 0
                     ? "Aucune tâche dans ce projet pour le moment."
                     : "Aucune tâche ne correspond à ces filtres."}</p>
                 )}
@@ -1795,7 +1831,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         <header className="board-column-header">
                           <span className={`status-dot status-dot-${status}`} aria-hidden="true" />
                           <h2>{statusLabels[status]}</h2>
-                          <span>{columnTasks.length}</span>
+                          <span>{columnTasks.length}{taskNextCursor ? "+" : ""}</span>
                         </header>
                         <div className="board-column-body">
                           {status === "todo" && canContribute && (
@@ -1881,6 +1917,17 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     );
                   })}
               </section>
+            )}
+            {taskNextCursor && (
+              <div className="task-pagination">
+                <button
+                  className="primary-button small"
+                  type="button"
+                  disabled={tasksLoadingMore}
+                  onClick={() => void loadMoreTasks().catch(() =>
+                    setError("Impossible de charger la page suivante."))}
+                >{tasksLoadingMore ? "Chargement…" : `Afficher plus (${tasks.length}/${taskTotalCount})`}</button>
+              </div>
             )}
           </>
         )}
@@ -2538,20 +2585,6 @@ function isTaskOverdue(task: WorkItem): boolean {
   return task.status !== "done"
     && task.status !== "cancelled"
     && Date.parse(task.dueAt) < Date.now();
-}
-
-function matchesDueFilter(task: WorkItem, filter: TaskDueFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "none") return task.dueAt === null;
-  if (!task.dueAt) return false;
-  if (filter === "overdue") return isTaskOverdue(task);
-
-  const dueAt = new Date(task.dueAt).getTime();
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + (filter === "today" ? 1 : 8));
-  return dueAt >= start.getTime() && dueAt < end.getTime();
 }
 
 function localDateTimeToIso(value: string): string | null {

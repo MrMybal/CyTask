@@ -1,8 +1,8 @@
 import { type FormEvent, useEffect, useState } from "react";
-import type { WorkItem } from "../api";
+import type { TaskOption, WorkItem } from "../api";
 
 interface TaskHierarchyMetaProps {
-  parent?: WorkItem;
+  parent?: TaskOption;
   childCount: number;
 }
 
@@ -21,9 +21,9 @@ export function TaskHierarchyMeta({ parent, childCount }: TaskHierarchyMetaProps
 
 interface TaskHierarchySectionProps {
   task: WorkItem;
-  parent?: WorkItem;
-  children: WorkItem[];
-  parentCandidates: WorkItem[];
+  parent?: TaskOption;
+  children: TaskOption[];
+  parentCandidates: TaskOption[];
   canContribute: boolean;
   pending: boolean;
   onOpenTask: (taskId: string) => void;

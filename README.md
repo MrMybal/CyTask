@@ -51,7 +51,8 @@ clients et le plugin Unreal. Son interface de tâches propose maintenant vues
 Liste et Kanban, labels colorés, priorités, échéances, assignation aux membres, vues rapides et filtres nommés mémorisés localement,
 vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
 palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
-au survol et notifications non bloquantes,
+au survol, pagination serveur à curseur avec filtres, chargement progressif et
+notifications non bloquantes,
 déplacement optimiste avec contrôle de révision, détail en onglets et liens directs
 partageables. Les tâches intègrent des checklists avec progression, une hiérarchie
 parent/sous-tâches acyclique et des dépendances indiquant le travail qu'elles bloquent.

@@ -108,6 +108,9 @@ détail affiche un squelette pendant son chargement au lieu d'un panneau vide.
 - les contrôles exposent labels, états pressés et focus visible ;
 - la préférence système de réduction des animations est respectée.
 
-La prochaine étape d'échelle sera une pagination serveur à curseur et une mesure
-sur des projets réalistes avant d'introduire une virtualisation JavaScript plus
-complexe.
+La liste et le Kanban chargent maintenant les tâches par pages de 50 avec un
+curseur serveur opaque. Recherche, statut, priorité, responsable, échéance, label
+et tri sont appliqués avant la pagination ; le bouton « Afficher plus » conserve
+un ordre stable. Un index léger de toutes les tâches maintient les compteurs,
+hiérarchies et sélecteurs de dépendances sans télécharger toutes les descriptions.
+La virtualisation JavaScript reste optionnelle pour les projets exceptionnellement volumineux.
