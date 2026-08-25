@@ -58,6 +58,10 @@ par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même
 quarantaine que les pièces jointes de tâches.
 La discussion d’équipe fournit des salons par projet, messages, mentions, images, vidéos
 et fichiers issus de cette bibliothèque. Le vocal et le partage d’écran reposent sur WebRTC
+Des groupes privés limitent côté serveur la liste des salons, les messages et la
+signalisation aux seuls membres invités. Les liens de tâches génèrent une carte ouvrable ;
+images et vidéos disposent d’un aperçu, d’une visionneuse agrandie, d’un lecteur intégré
+et d’un téléchargement direct.
 avec une signalisation WebSocket authentifiée. Le mode actuel est pair-à-pair direct ;
 un relais TURN privé sera nécessaire pour les déploiements dont les membres sont séparés
 par des NAT ou pare-feu stricts.
@@ -97,6 +101,7 @@ Le script crée une équipe et un jeu de charge de **220 tâches** réalistes av
 échéances, responsables, dossiers et sous-dossiers, ainsi que des sous-tâches, checklists, commentaires,
 références Git et dépendances. Il ajoute aussi **6 contenus d’espace**, **4 salons** et
 une conversation d’exemple avec mentions et documents joints. Il est idempotent : une nouvelle exécution complète seulement les tâches
+Le jeu de démonstration ajoute également un groupe privé et un lien de tâche prévisualisable.
 manquantes. Les identifiants de démonstration sont affichés à la fin de son exécution.
 
 L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :

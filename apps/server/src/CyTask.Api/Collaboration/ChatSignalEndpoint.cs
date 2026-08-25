@@ -22,7 +22,7 @@ public static partial class CollaborationEndpoints
         }
         var user = context.GetUser()!;
         if (await store.GetChannelAsync(
-                user.OrganizationId, channelId, cancellationToken) is null)
+                user.OrganizationId, channelId, user.UserId, cancellationToken) is null)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;

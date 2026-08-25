@@ -392,6 +392,85 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task PrivateChatGroupsOnlyExposeMessagesToInvitedMembers()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var owner = factory.CreateClient();
+        var ownerCsrf = await BootstrapAsync(owner);
+        owner.DefaultRequestHeaders.Add("X-CSRF-Token", ownerCsrf);
+        var project = await PostAndReadAsync(
+            owner,
+            "/api/v1/projects",
+            new { name = "Groupes privés", key = "GROUP" });
+        var projectId = project.GetProperty("id").GetGuid();
+
+        var invitation = await PostAndReadAsync(
+            owner,
+            "/api/v1/invitations",
+            new { email = "group-member@cytask.local", role = "member" });
+        using var member = factory.CreateClient();
+        using var acceptResponse = await member.PostAsJsonAsync(
+            new Uri("/api/v1/invitations/accept", UriKind.Relative),
+            new
+            {
+                token = invitation.GetProperty("token").GetString(),
+                displayName = "Group Member",
+                password = "group member password is strong"
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, acceptResponse.StatusCode);
+        var memberSession = await ReadJsonAsync(acceptResponse);
+        var memberId = memberSession.GetProperty("userId").GetGuid();
+        member.DefaultRequestHeaders.Add(
+            "X-CSRF-Token", memberSession.GetProperty("csrfToken").GetString());
+
+        var hiddenGroup = await PostAndReadAsync(
+            owner,
+            $"/api/v1/projects/{projectId}/chat/channels",
+            new
+            {
+                name = "Direction",
+                topic = "Créateurs uniquement",
+                channelType = "group",
+                memberIds = Array.Empty<Guid>()
+            });
+        Assert.Equal("group", hiddenGroup.GetProperty("channelType").GetString());
+        Assert.Single(hiddenGroup.GetProperty("memberIds").EnumerateArray());
+
+        var sharedGroup = await PostAndReadAsync(
+            owner,
+            $"/api/v1/projects/{projectId}/chat/channels",
+            new
+            {
+                name = "Production",
+                topic = "Groupe partagé",
+                channelType = "group",
+                memberIds = new[] { memberId }
+            });
+        Assert.Contains(sharedGroup.GetProperty("memberIds").EnumerateArray(),
+            item => item.GetGuid() == memberId);
+
+        using var memberChannelsResponse = await member.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/chat/channels", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, memberChannelsResponse.StatusCode);
+        var memberChannels = await ReadJsonAsync(memberChannelsResponse);
+        Assert.DoesNotContain(memberChannels.EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == hiddenGroup.GetProperty("id").GetGuid());
+        Assert.Contains(memberChannels.EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == sharedGroup.GetProperty("id").GetGuid());
+
+        using var hiddenMessages = await member.GetAsync(
+            new Uri($"/api/v1/chat/channels/{hiddenGroup.GetProperty("id").GetGuid()}/messages",
+                UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, hiddenMessages.StatusCode);
+        using var sharedMessages = await member.GetAsync(
+            new Uri($"/api/v1/chat/channels/{sharedGroup.GetProperty("id").GetGuid()}/messages",
+                UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, sharedMessages.StatusCode);
+    }
+
+    [Fact]
     public async Task TaskPagesUseStableCursorsAndServerSideFilters()
     {
         await using var factory = new CyTaskApiFactory();

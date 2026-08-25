@@ -27,8 +27,9 @@ public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSour
 
     private static ChatChannel ReadChannel(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
-        reader.GetString(4), reader.GetString(5), reader.GetGuid(6),
-        reader.GetFieldValue<DateTimeOffset>(7));
+        reader.GetString(4), reader.GetString(5), reader.GetString(6),
+        reader.GetFieldValue<Guid[]>(7), reader.GetGuid(8),
+        reader.GetFieldValue<DateTimeOffset>(9));
 
     private static async Task<IReadOnlyList<ProjectResource>> ReadResourcesAsync(
         NpgsqlCommand command, CancellationToken cancellationToken)
@@ -37,6 +38,21 @@ public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSour
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) result.Add(ReadResource(reader));
         return result;
+    }
+
+    private static async Task SetTenantContextAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT set_config('cytask.organization_id', @organization, @transaction_local);
+            """, connection, transaction);
+        command.Parameters.AddWithValue("organization", organizationId.ToString());
+        command.Parameters.AddWithValue("transaction_local", transaction is not null);
+        await command.ExecuteScalarAsync(cancellationToken);
     }
 
     private static async Task<bool> ProjectExistsAsync(

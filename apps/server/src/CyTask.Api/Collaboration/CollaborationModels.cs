@@ -60,6 +60,8 @@ public sealed record ChatChannel(
     string Name,
     string Slug,
     string Topic,
+    string ChannelType,
+    IReadOnlyList<Guid> MemberIds,
     Guid CreatedBy,
     DateTimeOffset CreatedAt);
 
