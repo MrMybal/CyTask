@@ -76,6 +76,17 @@ export interface ProjectLabelOverview {
   assignments: TaskLabelAssignment[];
 }
 
+export interface TaskParentAssignment {
+  taskId: string;
+  parentTaskId: string;
+  linkedBy: string;
+  linkedAt: string;
+}
+
+export interface ProjectTaskHierarchy {
+  relations: TaskParentAssignment[];
+}
+
 export interface TaskDetails {
   task: WorkItem;
   comments: Comment[];
@@ -318,6 +329,16 @@ export const api = {
     }),
   removeTaskLabel: (taskId: string, labelId: string) =>
     request<void>(`/api/v1/tasks/${taskId}/labels/${labelId}`, {
+      method: "DELETE"
+    }),
+  projectTaskHierarchy: (projectId: string) =>
+    request<ProjectTaskHierarchy>(`/api/v1/projects/${projectId}/task-hierarchy`),
+  setTaskParent: (taskId: string, parentTaskId: string) =>
+    request<TaskParentAssignment>(`/api/v1/tasks/${taskId}/parent/${parentTaskId}`, {
+      method: "PUT"
+    }),
+  removeTaskParent: (taskId: string) =>
+    request<void>(`/api/v1/tasks/${taskId}/parent`, {
       method: "DELETE"
     }),
   tasks: (projectId: string) => request<WorkItem[]>(`/api/v1/projects/${projectId}/tasks`),

@@ -209,6 +209,25 @@ foreach ($definition in $labelDefinitions) {
 
 
 
+$hierarchyDefinitions = @(
+    @("hangar-blockout", "milestone"),
+    @("terminal-gameplay", "milestone"),
+    @("trailer-capture", "milestone"),
+    @("review-build", "milestone"),
+    @("documentation", "milestone"),
+    @("modular-kit", "hangar-blockout"),
+    @("lighting", "hangar-blockout"),
+    @("collision-qa", "hangar-blockout"),
+    @("shader-optimization", "hangar-blockout"),
+    @("ambiences", "terminal-gameplay")
+)
+
+foreach ($relation in $hierarchyDefinitions) {
+    $taskId = $createdTasks[$relation[0]].id
+    $parentTaskId = $createdTasks[$relation[1]].id
+    Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$taskId/parent/$parentTaskId" -Headers $csrfHeaders | Out-Null
+}
+
 $dependencyDefinitions = @(
     @("modular-kit", "hangar-blockout"),
     @("lighting", "modular-kit"),
@@ -304,6 +323,6 @@ foreach ($reference in $references) {
 }
 
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "13 tâches, 9 éléments de checklist, 6 labels (16 affectations), 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
+Write-Host "13 tâches, 10 relations parentales, 9 éléments de checklist, 6 labels (16 affectations), 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

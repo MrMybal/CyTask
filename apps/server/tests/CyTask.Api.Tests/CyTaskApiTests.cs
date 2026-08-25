@@ -420,7 +420,7 @@ public sealed class CyTaskApiTests
         Assert.Equal("no-store", exportResponse.Headers.CacheControl?.ToString());
         Assert.StartsWith("cytask-export-", exportResponse.Content.Headers.ContentDisposition?.FileName);
         var export = await ReadJsonAsync(exportResponse);
-        Assert.Equal(3, export.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(4, export.GetProperty("formatVersion").GetInt32());
         Assert.Single(export.GetProperty("projects").EnumerateArray());
         Assert.Single(export.GetProperty("tasks").EnumerateArray());
     }
@@ -618,7 +618,7 @@ public sealed class CyTaskApiTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, exportResponse.StatusCode);
         var export = await ReadJsonAsync(exportResponse);
-        Assert.Equal(3, export.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(4, export.GetProperty("formatVersion").GetInt32());
         Assert.Equal(
             itemId,
             Assert.Single(export.GetProperty("checklist").EnumerateArray()).GetProperty("id").GetGuid());
@@ -733,7 +733,7 @@ public sealed class CyTaskApiTests
             new Uri("/api/v1/export", UriKind.Relative),
             TestContext.Current.CancellationToken);
         var export = await ReadJsonAsync(exportResponse);
-        Assert.Equal(3, export.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(4, export.GetProperty("formatVersion").GetInt32());
         Assert.Equal(2, export.GetProperty("projectLabels").GetArrayLength());
         Assert.Single(export.GetProperty("taskLabels").EnumerateArray());
 
@@ -764,7 +764,123 @@ public sealed class CyTaskApiTests
         Assert.Empty(finalOverview.GetProperty("assignments").EnumerateArray());
     }
 
+    [Fact]
+    public async Task TaskHierarchyIsProjectScopedIdempotentAndAcyclic()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Sous-tâches", key = "SUB" });
+        var projectId = project.GetProperty("id").GetGuid();
+        var parent = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Tâche parente", description = "" });
+        var child = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Sous-tâche", description = "" });
+        var grandchild = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Sous-sous-tâche", description = "" });
+        var parentId = parent.GetProperty("id").GetGuid();
+        var childId = child.GetProperty("id").GetGuid();
+        var grandchildId = grandchild.GetProperty("id").GetGuid();
 
+        using var emptyResponse = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/task-hierarchy", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, emptyResponse.StatusCode);
+        var empty = await ReadJsonAsync(emptyResponse);
+        Assert.Empty(empty.GetProperty("relations").EnumerateArray());
+
+        using var setChildParent = await client.PutAsync(
+            new Uri($"/api/v1/tasks/{childId}/parent/{parentId}", UriKind.Relative),
+            content: null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, setChildParent.StatusCode);
+        var relation = await ReadJsonAsync(setChildParent);
+        Assert.Equal(childId, relation.GetProperty("taskId").GetGuid());
+        Assert.Equal(parentId, relation.GetProperty("parentTaskId").GetGuid());
+
+        using var setAgain = await client.PutAsync(
+            new Uri($"/api/v1/tasks/{childId}/parent/{parentId}", UriKind.Relative),
+            content: null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, setAgain.StatusCode);
+
+        using var setGrandchildParent = await client.PutAsync(
+            new Uri($"/api/v1/tasks/{grandchildId}/parent/{childId}", UriKind.Relative),
+            content: null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, setGrandchildParent.StatusCode);
+
+        using var selfParent = await client.PutAsync(
+            new Uri($"/api/v1/tasks/{parentId}/parent/{parentId}", UriKind.Relative),
+            content: null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, selfParent.StatusCode);
+
+        using var cycle = await client.PutAsync(
+            new Uri($"/api/v1/tasks/{parentId}/parent/{grandchildId}", UriKind.Relative),
+            content: null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, cycle.StatusCode);
+
+        var otherProject = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Hiérarchie externe", key = "EXT" });
+        var otherTask = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{otherProject.GetProperty("id").GetGuid()}/tasks",
+            new { title = "Autre projet", description = "" });
+        using var crossProject = await client.PutAsync(
+            new Uri(
+                $"/api/v1/tasks/{childId}/parent/{otherTask.GetProperty("id").GetGuid()}",
+                UriKind.Relative),
+            content: null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, crossProject.StatusCode);
+
+        using var hierarchyResponse = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/task-hierarchy", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var hierarchy = await ReadJsonAsync(hierarchyResponse);
+        Assert.Equal(2, hierarchy.GetProperty("relations").GetArrayLength());
+
+        using var exportResponse = await client.GetAsync(
+            new Uri("/api/v1/export", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var export = await ReadJsonAsync(exportResponse);
+        Assert.Equal(4, export.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(2, export.GetProperty("taskParents").GetArrayLength());
+
+        using var remove = await client.DeleteAsync(
+            new Uri($"/api/v1/tasks/{childId}/parent", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, remove.StatusCode);
+        using var removeAgain = await client.DeleteAsync(
+            new Uri($"/api/v1/tasks/{childId}/parent", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, removeAgain.StatusCode);
+
+        using var finalHierarchyResponse = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/task-hierarchy", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var finalHierarchy = await ReadJsonAsync(finalHierarchyResponse);
+        Assert.Single(finalHierarchy.GetProperty("relations").EnumerateArray());
+        using var childResponse = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{childId}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var childDetails = await ReadJsonAsync(childResponse);
+        Assert.Equal(3, childDetails.GetProperty("task").GetProperty("revision").GetInt64());
+    }
 
     [Fact]
     public async Task TaskDependenciesRejectSelfReferencesAndCycles()
@@ -986,6 +1102,8 @@ public sealed class CyTaskApiTests
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}/checklist", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/labels", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}/labels/{labelId}", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/task-hierarchy", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}/parent/{parentTaskId}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tokens", out _));
     }
 

@@ -18,6 +18,7 @@ import {
   type Project,
   type ProjectLabel,
   type ProjectLabelOverview,
+  type ProjectTaskHierarchy,
   type Session,
   type SearchHit,
   type TaskDependencyOverview,
@@ -30,6 +31,7 @@ import { CommandPalette, type PaletteAction } from "./CommandPalette";
 import { ApiTokensPane } from "./ApiTokensPane";
 import { ToastStack, useToasts } from "./Toasts";
 import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
+import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
 
 interface WorkspaceProps {
   session: Session;
@@ -69,6 +71,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [tasks, setTasks] = useState<WorkItem[]>([]);
   const [projectLabels, setProjectLabels] = useState<ProjectLabelOverview>({ labels: [], assignments: [] });
+  const [taskHierarchy, setTaskHierarchy] = useState<ProjectTaskHierarchy>({ relations: [] });
   const [details, setDetails] = useState<TaskDetails>();
   const [dependencies, setDependencies] = useState<TaskDependencyOverview>({ dependsOn: [], blocking: [] });
   const [showProjectForm, setShowProjectForm] = useState(false);
@@ -112,6 +115,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [pendingChecklistItemIds, setPendingChecklistItemIds] =
     useState<Set<string>>(() => new Set());
   const [pendingLabelIds, setPendingLabelIds] = useState<Set<string>>(() => new Set());
+  const [hierarchyPending, setHierarchyPending] = useState(false);
   const [checklistCreating, setChecklistCreating] = useState(false);
   const [taskLinkLabel, setTaskLinkLabel] = useState("Copier le lien");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
@@ -152,6 +156,46 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       .filter((assignment) => assignment.taskId === selectedTaskId)
       .map((assignment) => assignment.labelId)
   ), [projectLabels.assignments, selectedTaskId]);
+  const hierarchyIndex = useMemo(() => {
+    const tasksById = new Map(tasks.map((task) => [task.id, task]));
+    const parentsByTask = new Map<string, WorkItem>();
+    const childrenByParent = new Map<string, WorkItem[]>();
+    for (const relation of taskHierarchy.relations) {
+      const task = tasksById.get(relation.taskId);
+      const parent = tasksById.get(relation.parentTaskId);
+      if (!task || !parent) continue;
+      parentsByTask.set(task.id, parent);
+      const children = childrenByParent.get(parent.id) ?? [];
+      children.push(task);
+      childrenByParent.set(parent.id, children);
+    }
+    for (const children of childrenByParent.values()) {
+      children.sort((left, right) => left.key.localeCompare(right.key, "fr", { numeric: true }));
+    }
+    return { parentsByTask, childrenByParent };
+  }, [taskHierarchy.relations, tasks]);
+  const selectedParent = selectedTaskId
+    ? hierarchyIndex.parentsByTask.get(selectedTaskId)
+    : undefined;
+  const selectedChildren = selectedTaskId
+    ? hierarchyIndex.childrenByParent.get(selectedTaskId) ?? []
+    : [];
+  const descendantTaskIds = useMemo(() => {
+    const descendants = new Set<string>();
+    if (!selectedTaskId) return descendants;
+    const pending = [...(hierarchyIndex.childrenByParent.get(selectedTaskId) ?? [])];
+    while (pending.length > 0) {
+      const child = pending.pop()!;
+      if (descendants.has(child.id)) continue;
+      descendants.add(child.id);
+      pending.push(...(hierarchyIndex.childrenByParent.get(child.id) ?? []));
+    }
+    return descendants;
+  }, [hierarchyIndex.childrenByParent, selectedTaskId]);
+  const parentCandidates = useMemo(() => tasks.filter((task) =>
+    task.id !== selectedTaskId && !descendantTaskIds.has(task.id)
+  ), [descendantTaskIds, selectedTaskId, tasks]);
+
   const filteredTasks = useMemo(() => {
     const query = taskQuery.trim().toLocaleLowerCase("fr");
     const matching = tasks.filter((task) => {
@@ -207,13 +251,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     const request = ++taskRequestSequence.current;
     setTasksLoading(true);
     try {
-      const [nextTasks, nextLabels] = await Promise.all([
+      const [nextTasks, nextLabels, nextHierarchy] = await Promise.all([
         api.tasks(projectId),
-        api.projectLabels(projectId)
+        api.projectLabels(projectId),
+        api.projectTaskHierarchy(projectId)
       ]);
       if (request === taskRequestSequence.current) {
         setTasks(nextTasks);
         setProjectLabels(nextLabels);
+        setTaskHierarchy(nextHierarchy);
       }
     } finally {
       if (request === taskRequestSequence.current) setTasksLoading(false);
@@ -283,11 +329,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     if (selectedProjectId) {
       setTasks([]);
       setProjectLabels({ labels: [], assignments: [] });
+      setTaskHierarchy({ relations: [] });
       loadTasks(selectedProjectId).catch(() => setError("Impossible de charger les tâches."));
     } else {
       taskRequestSequence.current += 1;
       setTasks([]);
       setProjectLabels({ labels: [], assignments: [] });
+      setTaskHierarchy({ relations: [] });
       setTasksLoading(false);
     }
     detailRequestSequence.current += 1;
@@ -411,6 +459,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("project.label_deleted", refreshTasks);
     stream.addEventListener("task.label_added", refreshComment);
     stream.addEventListener("task.label_removed", refreshComment);
+    stream.addEventListener("task.parent_set", refreshComment);
+    stream.addEventListener("task.parent_removed", refreshComment);
     const refreshActivity = () => {
       if (showActivity) void loadActivity();
     };
@@ -425,6 +475,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("project.label_deleted", refreshActivity);
     stream.addEventListener("task.label_added", refreshActivity);
     stream.addEventListener("task.label_removed", refreshActivity);
+    stream.addEventListener("task.parent_set", refreshActivity);
+    stream.addEventListener("task.parent_removed", refreshActivity);
     stream.addEventListener("invitation.created", refreshActivity);
     const refreshAttachments = () => {
       if (selectedTaskId) void loadDetails(selectedTaskId);
@@ -681,6 +733,70 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
     }
   }
+
+  async function setTaskParent(parentTaskId: string) {
+    if (!details || hierarchyPending) return;
+    const taskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    setHierarchyPending(true);
+    try {
+      await api.setTaskParent(taskId, parentTaskId);
+      notify("success", "Tâche parente mise à jour.");
+      await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
+    } catch (reason) {
+      setError(messageFor(reason));
+      await loadTasks(projectId).catch(() => undefined);
+    } finally {
+      setHierarchyPending(false);
+    }
+  }
+
+  async function removeTaskParent() {
+    if (!details || hierarchyPending) return;
+    const taskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    setHierarchyPending(true);
+    try {
+      await api.removeTaskParent(taskId);
+      notify("success", "La tâche est maintenant à la racine du projet.");
+      await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
+    } catch (reason) {
+      setError(messageFor(reason));
+      await loadTasks(projectId).catch(() => undefined);
+    } finally {
+      setHierarchyPending(false);
+    }
+  }
+
+  async function createSubtask(title: string) {
+    if (!details || hierarchyPending) return false;
+    const parentTaskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    setHierarchyPending(true);
+    try {
+      const subtask = await api.createTask(projectId, {
+        title,
+        description: "",
+        priority: "normal",
+        dueAt: null,
+        assigneeId: null
+      });
+      await api.setTaskParent(subtask.id, parentTaskId);
+      notify("success", `Sous-tâche « ${subtask.title} » créée.`);
+      await loadTasks(projectId);
+      return true;
+    } catch (reason) {
+      setError(messageFor(reason));
+      await loadTasks(projectId).catch(() => undefined);
+      return false;
+    } finally {
+      setHierarchyPending(false);
+    }
+  }
+
 
   async function createDependency(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1438,6 +1554,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     <span className="task-main">
                       <strong>{task.title}</strong>
                       <TaskLabelChips labels={labelsByTask.get(task.id) ?? []} />
+                      <TaskHierarchyMeta
+                        parent={hierarchyIndex.parentsByTask.get(task.id)}
+                        childCount={hierarchyIndex.childrenByParent.get(task.id)?.length ?? 0}
+                      />
                       <small>
                         {task.key} · {task.assigneeName ?? "Non assignée"} · {task.dueAt ? `Échéance ${shortDate(task.dueAt)}` : "Sans échéance"}
                         {task.description ? ` · ${task.description}` : ""}
@@ -1524,6 +1644,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                                 </span>
                                 <strong>{task.title}</strong>
                                 <TaskLabelChips labels={labelsByTask.get(task.id) ?? []} />
+                                <TaskHierarchyMeta
+                                  parent={hierarchyIndex.parentsByTask.get(task.id)}
+                                  childCount={hierarchyIndex.childrenByParent.get(task.id)?.length ?? 0}
+                                />
                                 <p>{task.description || "Sans description"}</p>
                               </button>
                               <footer className="board-card-footer">
@@ -1827,6 +1951,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <div><dt>Assignée à</dt><dd>{details.task.assigneeName ?? "Personne"}</dd></div>
                   <div><dt>Révision</dt><dd>#{details.task.revision}</dd></div>
                 </dl>
+
+                <TaskHierarchySection
+                  task={details.task}
+                  parent={selectedParent}
+                  children={selectedChildren}
+                  parentCandidates={parentCandidates}
+                  canContribute={canContribute}
+                  pending={hierarchyPending}
+                  onOpenTask={openTask}
+                  onSetParent={setTaskParent}
+                  onRemoveParent={removeTaskParent}
+                  onCreateSubtask={createSubtask}
+                />
 
                 <section className="task-checklist" aria-labelledby="task-checklist-title">
                   <div className="checklist-heading">

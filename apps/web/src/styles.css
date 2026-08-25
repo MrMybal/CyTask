@@ -204,6 +204,11 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
 .task-main .task-label-chips, .board-card-open .task-label-chips { overflow: hidden; flex-wrap: nowrap; }
 .task-main .task-label-chip { max-width: 110px; }
 .board-card-open .task-label-chip { max-width: 96px; }
+.task-hierarchy-meta { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.task-hierarchy-meta > span { width: fit-content; max-width: 140px; overflow: hidden; border-radius: 999px; padding: 2px 6px; color: #86a9c7; background: #142333; font-size: 8px; font-weight: 700; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.task-main .task-hierarchy-meta, .board-card-open .task-hierarchy-meta { overflow: hidden; flex-wrap: nowrap; }
+.task-main .task-hierarchy-meta > span { max-width: 115px; }
+.board-card-open .task-hierarchy-meta > span { max-width: 100px; }
 .task-board { display: grid; grid-auto-columns: minmax(255px, 1fr); grid-auto-flow: column; align-items: start; gap: 12px; min-width: 0; padding: 16px 40px 60px; overflow-x: auto; }
 .board-column { min-width: 0; border: 1px solid var(--line-soft); border-radius: 11px; background: rgba(13, 20, 28, .72); }
 .board-column.drop-target { border-color: #579078; background: rgba(30, 61, 52, .28); box-shadow: inset 0 0 0 1px rgba(124, 242, 196, .08); }
@@ -305,6 +310,30 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
 .task-labels-section .empty-note { margin: 4px 0; }
 .task-labels-section + .description { margin-top: 0; }
 .task-label-filter { min-width: 0; }
+.task-hierarchy-section { margin: 0 0 24px; border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px; background: #0c131b; }
+.hierarchy-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.hierarchy-heading h3 { margin: 0 0 4px; font-size: 13px; }
+.hierarchy-heading p { margin: 0; color: var(--muted); font-size: 9px; }
+.hierarchy-parent { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 9px; border: 1px solid #1c2a37; border-radius: 8px; padding: 7px 8px; background: #101923; }
+.hierarchy-parent > span:first-child { color: #708294; font-size: 8px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.hierarchy-parent > button:nth-child(2) { display: grid; min-width: 0; border: 0; padding: 0; color: #b9c5d0; background: transparent; text-align: left; }
+.hierarchy-parent > button:nth-child(2):hover { color: #fff; }
+.hierarchy-parent strong { overflow: hidden; color: var(--accent); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.hierarchy-parent button span { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.hierarchy-parent .icon-button { padding: 3px 7px; }
+.hierarchy-children { display: grid; gap: 6px; }
+.hierarchy-children > button { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; border: 1px solid #1c2a37; border-radius: 8px; padding: 8px; color: #b9c5d0; background: #101923; text-align: left; }
+.hierarchy-children > button:hover { border-color: #345267; background: #121e29; }
+.hierarchy-children > button > span:last-child { display: grid; min-width: 0; }
+.hierarchy-children strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.hierarchy-children small { color: #708294; font-size: 8px; }
+.hierarchy-children .empty-note { margin: 2px 0 8px; }
+.hierarchy-actions { display: grid; gap: 7px; margin-top: 12px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
+.hierarchy-parent-form, .hierarchy-create-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.hierarchy-parent-form select, .hierarchy-create-form input { min-width: 0; }
+.hierarchy-parent-form button, .hierarchy-create-form button { min-width: 78px; }
+.hierarchy-actions :disabled { cursor: wait; opacity: .6; }
+.task-hierarchy-section + .task-checklist { margin-top: 0; }
 .detail-section { margin-top: 0; border-top: 0; padding-top: 0; }
 .dependency-heading { margin-bottom: 9px; }
 .dependency-heading h3 { margin: 0 0 4px; font-size: 13px; }

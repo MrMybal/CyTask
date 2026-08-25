@@ -938,7 +938,25 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             }
         }
 
-
+        var taskParents = new List<TaskParentAssignment>();
+        await using (var hierarchyCommand = new NpgsqlCommand("""
+                         SELECT task_id, parent_task_id, linked_by, linked_at
+                         FROM task_hierarchy
+                         WHERE organization_id = @organization_id
+                         ORDER BY task_id;
+                         """, connection, transaction))
+        {
+            hierarchyCommand.Parameters.AddWithValue("organization_id", organizationId);
+            await using var reader = await hierarchyCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                taskParents.Add(new TaskParentAssignment(
+                    reader.GetGuid(0),
+                    reader.GetGuid(1),
+                    reader.GetGuid(2),
+                    reader.GetFieldValue<DateTimeOffset>(3)));
+            }
+        }
 
         var activity = new List<ActivityEntry>();
         await using (var activityCommand = new NpgsqlCommand("""
@@ -981,7 +999,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
         await transaction.CommitAsync(cancellationToken);
         return new WorkspaceExport(
-            3, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, projectLabels, taskLabels, activity, attachments);
+            4, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, projectLabels, taskLabels, taskParents, activity, attachments);
     }
 
     public async Task<IReadOnlyList<Attachment>?> ListAttachmentsAsync(
@@ -1931,6 +1949,224 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             connection, transaction, organizationId, "task.label_removed",
             "task", taskId, userId, actorName,
             "Label retiré de la tâche", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<ProjectTaskHierarchy?> GetProjectTaskHierarchyAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken))
+        {
+            return null;
+        }
+
+        await using var command = dataSource.CreateCommand("""
+            SELECT task_id, parent_task_id, linked_by, linked_at
+            FROM task_hierarchy
+            WHERE organization_id = @organization_id
+              AND project_id = @project_id
+            ORDER BY task_id;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        var relations = new List<TaskParentAssignment>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            relations.Add(new TaskParentAssignment(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                reader.GetGuid(2),
+                reader.GetFieldValue<DateTimeOffset>(3)));
+        }
+
+        return new ProjectTaskHierarchy(relations);
+    }
+
+    public async Task<SetTaskParentResult> SetTaskParentAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid parentTaskId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        if (taskId == parentTaskId)
+        {
+            return new SetTaskParentResult(SetTaskParentStatus.SelfParent, null);
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var lockCommand = new NpgsqlCommand(
+                         "SELECT pg_advisory_xact_lock(hashtextextended(CAST(@organization_id AS text), 1));",
+                         connection,
+                         transaction))
+        {
+            lockCommand.Parameters.AddWithValue("organization_id", organizationId);
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        Guid projectId;
+        await using (var accessCommand = new NpgsqlCommand("""
+                         SELECT task.project_id
+                         FROM tasks task
+                         JOIN tasks parent
+                           ON parent.organization_id = task.organization_id
+                          AND parent.project_id = task.project_id
+                         WHERE task.organization_id = @organization_id
+                           AND task.id = @task_id
+                           AND parent.id = @parent_task_id
+                           AND EXISTS (
+                               SELECT 1 FROM organization_members
+                               WHERE organization_id = @organization_id AND user_id = @user_id
+                                 AND role IN ('owner', 'admin', 'member')
+                           );
+                         """, connection, transaction))
+        {
+            accessCommand.Parameters.AddWithValue("organization_id", organizationId);
+            accessCommand.Parameters.AddWithValue("task_id", taskId);
+            accessCommand.Parameters.AddWithValue("parent_task_id", parentTaskId);
+            accessCommand.Parameters.AddWithValue("user_id", userId);
+            var result = await accessCommand.ExecuteScalarAsync(cancellationToken);
+            if (result is not Guid value)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new SetTaskParentResult(SetTaskParentStatus.NotFound, null);
+            }
+
+            projectId = value;
+        }
+
+        await using (var existingCommand = new NpgsqlCommand("""
+                         SELECT parent_task_id, linked_by, linked_at
+                         FROM task_hierarchy
+                         WHERE organization_id = @organization_id
+                           AND task_id = @task_id;
+                         """, connection, transaction))
+        {
+            existingCommand.Parameters.AddWithValue("organization_id", organizationId);
+            existingCommand.Parameters.AddWithValue("task_id", taskId);
+            await using var reader = await existingCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken) && reader.GetGuid(0) == parentTaskId)
+            {
+                var existing = new TaskParentAssignment(
+                    taskId,
+                    parentTaskId,
+                    reader.GetGuid(1),
+                    reader.GetFieldValue<DateTimeOffset>(2));
+                await reader.CloseAsync();
+                await transaction.RollbackAsync(cancellationToken);
+                return new SetTaskParentResult(SetTaskParentStatus.AlreadySet, existing);
+            }
+        }
+
+        await using (var cycleCommand = new NpgsqlCommand("""
+                         WITH RECURSIVE ancestors(task_id) AS (
+                             SELECT @parent_task_id
+                             UNION
+                             SELECT hierarchy.parent_task_id
+                             FROM task_hierarchy hierarchy
+                             JOIN ancestors path ON hierarchy.task_id = path.task_id
+                             WHERE hierarchy.organization_id = @organization_id
+                         )
+                         SELECT EXISTS (
+                             SELECT 1 FROM ancestors WHERE task_id = @task_id
+                         );
+                         """, connection, transaction))
+        {
+            cycleCommand.Parameters.AddWithValue("organization_id", organizationId);
+            cycleCommand.Parameters.AddWithValue("task_id", taskId);
+            cycleCommand.Parameters.AddWithValue("parent_task_id", parentTaskId);
+            if ((bool)(await cycleCommand.ExecuteScalarAsync(cancellationToken) ?? false))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new SetTaskParentResult(SetTaskParentStatus.Cycle, null);
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await ExecuteAsync(connection, transaction, """
+            INSERT INTO task_hierarchy(
+                organization_id, project_id, task_id, parent_task_id, linked_by, linked_at)
+            VALUES (
+                @organization_id, @project_id, @task_id, @parent_task_id, @linked_by, @linked_at)
+            ON CONFLICT (organization_id, task_id) DO UPDATE
+            SET project_id = EXCLUDED.project_id,
+                parent_task_id = EXCLUDED.parent_task_id,
+                linked_by = EXCLUDED.linked_by,
+                linked_at = EXCLUDED.linked_at;
+
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @linked_at
+            WHERE organization_id = @organization_id AND id = @task_id;
+            """, cancellationToken,
+            ("organization_id", organizationId), ("project_id", projectId),
+            ("task_id", taskId), ("parent_task_id", parentTaskId),
+            ("linked_by", userId), ("linked_at", now));
+        var relation = new TaskParentAssignment(taskId, parentTaskId, userId, now);
+        var parent = await ReadTaskRelationAsync(
+            connection, transaction, organizationId, parentTaskId, now, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "task.parent_set", taskId, relation, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "task.parent_set", "task", taskId,
+            userId, await GetDisplayNameAsync(connection, transaction, userId, cancellationToken),
+            $"Parent défini sur {parent?.Key ?? parentTaskId.ToString()}", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new SetTaskParentResult(SetTaskParentStatus.Updated, relation);
+    }
+
+    public async Task<bool> RemoveTaskParentAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            DELETE FROM task_hierarchy relation
+            USING tasks task
+            WHERE relation.organization_id = @organization_id
+              AND relation.task_id = @task_id
+              AND task.organization_id = relation.organization_id
+              AND task.id = relation.task_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin', 'member')
+              )
+            RETURNING relation.parent_task_id;
+            """, connection, transaction);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("task_id", taskId);
+        command.Parameters.AddWithValue("user_id", userId);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is not Guid parentTaskId)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await ExecuteAsync(connection, transaction, """
+            UPDATE tasks
+            SET revision = revision + 1, updated_at = @updated_at
+            WHERE organization_id = @organization_id AND id = @task_id;
+            """, cancellationToken,
+            ("updated_at", now), ("organization_id", organizationId), ("task_id", taskId));
+        var parent = await ReadTaskRelationAsync(
+            connection, transaction, organizationId, parentTaskId, now, cancellationToken);
+        await InsertOutboxAsync(
+            connection, transaction, organizationId, "task.parent_removed",
+            taskId, new { parentTaskId }, cancellationToken);
+        await InsertAuditAsync(
+            connection, transaction, organizationId, "task.parent_removed", "task", taskId,
+            userId, await GetDisplayNameAsync(connection, transaction, userId, cancellationToken),
+            $"Parent {parent?.Key ?? parentTaskId.ToString()} retiré", now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
     }

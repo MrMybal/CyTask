@@ -77,6 +77,17 @@ public static class ApiEndpoints
                 RemoveTaskLabelAsync)
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapGet(
+            "/projects/{projectId:guid}/task-hierarchy",
+            GetProjectTaskHierarchyAsync);
+        authenticated.MapPut(
+                "/tasks/{taskId:guid}/parent/{parentTaskId:guid}",
+                SetTaskParentAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapDelete("/tasks/{taskId:guid}/parent", RemoveTaskParentAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapGet("/projects/{projectId:guid}/tasks", ListTasksAsync);
         authenticated.MapPost("/projects/{projectId:guid}/tasks", CreateTaskAsync)
             .AddEndpointFilter<CsrfFilter>()
@@ -758,6 +769,68 @@ public static class ApiEndpoints
         }
 
         events.Publish(user.OrganizationId, "task.label_removed", taskId);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetProjectTaskHierarchyAsync(
+        Guid projectId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var hierarchy = await store.GetProjectTaskHierarchyAsync(
+            user.OrganizationId, projectId, cancellationToken);
+        return hierarchy is null ? Results.NotFound() : Results.Ok(hierarchy);
+    }
+
+    private static async Task<IResult> SetTaskParentAsync(
+        Guid taskId,
+        Guid parentTaskId,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var result = await store.SetTaskParentAsync(
+            user.OrganizationId, taskId, parentTaskId, user.UserId, cancellationToken);
+        if (result.Status == SetTaskParentStatus.Updated)
+        {
+            events.Publish(user.OrganizationId, "task.parent_set", taskId);
+            return Results.Ok(result.Relation);
+        }
+
+        return result.Status switch
+        {
+            SetTaskParentStatus.AlreadySet => Results.Ok(result.Relation),
+            SetTaskParentStatus.NotFound => Results.NotFound(),
+            SetTaskParentStatus.SelfParent => Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Une tâche ne peut pas être sa propre parente."),
+            SetTaskParentStatus.Cycle => Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Cette hiérarchie créerait un cycle."),
+            _ => Results.Problem(statusCode: StatusCodes.Status409Conflict)
+        };
+    }
+
+    private static async Task<IResult> RemoveTaskParentAsync(
+        Guid taskId,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var removed = await store.RemoveTaskParentAsync(
+            user.OrganizationId, taskId, user.UserId, cancellationToken);
+        if (!removed)
+        {
+            return Results.NotFound();
+        }
+
+        events.Publish(user.OrganizationId, "task.parent_removed", taskId);
         return Results.NoContent();
     }
 
