@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using CyTask.Api.Collaboration;
 using CyTask.Api.Configuration;
 using CyTask.Api.Endpoints;
 using CyTask.Api.Infrastructure;
@@ -131,6 +132,7 @@ builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<OutboxDispatchSignal>();
 builder.Services.AddSingleton<WorkspaceEventHub>();
 builder.Services.AddSingleton<LocalMediaStorage>();
+builder.Services.AddSingleton<ChatSignalHub>();
 builder.Services.AddSingleton<RequireSessionFilter>();
 builder.Services.AddSingleton<RequireCookieSessionFilter>();
 builder.Services.AddSingleton<RequireBearerTokenFilter>();
@@ -141,6 +143,7 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Attach
 if (cyTaskOptions.UseInMemoryStore)
 {
     builder.Services.AddSingleton<IWorkspaceStore, InMemoryWorkspaceStore>();
+    builder.Services.AddSingleton<ICollaborationStore, InMemoryCollaborationStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<WorkspaceEventHub>());
 }
@@ -161,6 +164,7 @@ else
         return dataSourceBuilder.Build();
     });
     builder.Services.AddSingleton<IWorkspaceStore, PostgresWorkspaceStore>();
+    builder.Services.AddSingleton<ICollaborationStore, PostgresCollaborationStore>();
     builder.Services.AddSingleton<PostgresOutboxEventStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<PostgresOutboxEventStore>());
@@ -190,7 +194,7 @@ app.Use((context, next) =>
     {
         context.Response.Headers.XContentTypeOptions = "nosniff";
         context.Response.Headers.Append("Referrer-Policy", "no-referrer");
-        context.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+        context.Response.Headers.Append("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
         var policy = context.Request.Path.StartsWithSegments("/api") ||
                      context.Request.Path.StartsWithSegments("/health")
             ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
@@ -202,6 +206,7 @@ app.Use((context, next) =>
     return next();
 });
 app.UseRateLimiter();
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 app.UseMiddleware<SessionMiddleware>();
 app.UseDefaultFiles();
 app.UseStaticFiles();

@@ -247,6 +247,153 @@ function Add-DemoMediaPreview {
     Invoke-DemoApi -Method Post -Path "/api/v1/attachment-uploads/$($upload.id)/complete" -Headers $csrfHeaders | Out-Null
 }
 
+function Add-DemoCollaborationContent {
+    param(
+        [Parameter(Mandatory = $true)][object]$Project,
+        [Parameter(Mandatory = $true)][hashtable]$LabelIds
+    )
+
+    $resourceDefinitions = @(
+        @{
+            Type = "document"; Name = "Brief — Vertical Slice"; Folder = $null
+            Body = "# Nebula Station — Vertical Slice`n`n## Objectif`nLivrer une expérience jouable de quinze minutes dans le hangar orbital.`n`n## Critères de revue`n- Gameplay lisible`n- Direction artistique cohérente`n- Build Windows reproductible`n- Budget GPU respecté"
+        },
+        @{
+            Type = "document"; Name = "Guide d’intégration des assets"; Folder = "Art"
+            Body = "# Guide d’intégration`n`n## Nommage`nUtiliser le préfixe NEB_ et préciser le type d’asset.`n`n## Validation`n1. UV et texel density`n2. Collisions`n3. LOD`n4. Capture dans la tâche liée"
+        },
+        @{
+            Type = "document"; Name = "Plan de validation QA"; Folder = "QA & Validation"
+            Body = "# Plan QA`n`n- Smoke test à chaque build`n- Parcours complet du hangar`n- Vérification des interactions`n- Rapport de performances`n- Revue des régressions bloquantes"
+        },
+        @{
+            Type = "canvas"; Name = "Moodboard du hangar"; Folder = "Environment"
+            Body = '{"version":1,"objects":[{"id":"demo-title","kind":"text","x":130,"y":100,"width":350,"height":150,"color":"#7CF2C4","text":"Moodboard — Hangar orbital"},{"id":"demo-note","kind":"text","x":540,"y":280,"width":320,"height":180,"color":"#F2C27C","text":"Contraste froid / balises chaudes\nLisibilité des circulations\nMatériaux industriels"}],"strokes":[]}'
+        },
+        @{
+            Type = "canvas"; Name = "Flux de la revue hebdomadaire"; Folder = "Build"
+            Body = '{"version":1,"objects":[{"id":"review-a","kind":"rectangle","x":130,"y":160,"width":240,"height":130,"color":"#8FB7FF","text":"Collecte"},{"id":"review-b","kind":"rectangle","x":500,"y":160,"width":240,"height":130,"color":"#7CF2C4","text":"Revue"},{"id":"review-c","kind":"rectangle","x":870,"y":160,"width":240,"height":130,"color":"#F2C27C","text":"Décision"}],"strokes":[]}'
+        }
+    )
+
+    $resourceResponse = Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($Project.id)/resources"
+    $resources = @($resourceResponse)
+    $resourcesByName = @{}
+    foreach ($resource in $resources) {
+        if ($null -eq $resource -or [string]::IsNullOrWhiteSpace([string]$resource.name)) { continue }
+        $resourcesByName[$resource.name] = $resource
+    }
+    foreach ($definition in $resourceDefinitions) {
+        if ($resourcesByName.ContainsKey($definition.Name)) {
+            continue
+        }
+        $folderLabelId = $null
+        if ($null -ne $definition.Folder -and $LabelIds.ContainsKey($definition.Folder)) {
+            $folderLabelId = $LabelIds[$definition.Folder]
+        }
+        $resource = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($Project.id)/resources" -Headers $csrfHeaders -Body @{
+            resourceType = $definition.Type
+            name = $definition.Name
+            body = $definition.Body
+            folderLabelId = $folderLabelId
+        }
+        $resourcesByName[$resource.name] = $resource
+    }
+
+    $spacePreviewName = "cytask-nebula-logo.png"
+    if (!$resourcesByName.ContainsKey($spacePreviewName)) {
+        $previewPath = Join-Path (Split-Path $PSScriptRoot -Parent) "assets/branding/cytask-logo.png"
+        $previewBytes = [IO.File]::ReadAllBytes($previewPath)
+        $previewHash = [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData($previewBytes)).ToLowerInvariant()
+        $previewFolderId = if ($LabelIds.ContainsKey("Art")) { $LabelIds["Art"] } else { $null }
+        $previewUpload = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($Project.id)/resource-uploads" -Headers $csrfHeaders -Body @{
+            fileName = $spacePreviewName
+            contentType = "image/png"
+            sizeBytes = $previewBytes.Length
+            sha256 = $previewHash
+            folderLabelId = $previewFolderId
+        }
+        $previewChunkRequest = @{
+            Uri = "$ApiBaseUrl/api/v1/resource-uploads/$($previewUpload.id)/chunks/0"
+            Method = "Put"
+            ContentType = "application/octet-stream"
+            Body = $previewBytes
+            Headers = @{
+                "X-CSRF-Token" = $authentication.csrfToken
+                "X-Chunk-SHA256" = $previewHash
+            }
+            WebSession = $ownerSession
+        }
+        Invoke-RestMethod @previewChunkRequest | Out-Null
+        $spacePreview = Invoke-DemoApi -Method Post -Path "/api/v1/resource-uploads/$($previewUpload.id)/complete" -Headers $csrfHeaders
+        $resourcesByName[$spacePreview.name] = $spacePreview
+    }
+
+    $channelDefinitions = @(
+        @{ Name = "général"; Topic = "Coordination quotidienne de l’équipe" },
+        @{ Name = "art-et-design"; Topic = "Références, captures et validations artistiques" },
+        @{ Name = "build-et-qa"; Topic = "Builds, tests, blocages et comptes rendus" },
+        @{ Name = "revue-hebdo"; Topic = "Préparation et suivi de la revue du vendredi" }
+    )
+    $channelResponse = Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($Project.id)/chat/channels"
+    $channels = @($channelResponse)
+    $channelsByName = @{}
+    foreach ($channel in $channels) {
+        if ($null -eq $channel -or [string]::IsNullOrWhiteSpace([string]$channel.name)) { continue }
+        $channelsByName[$channel.name] = $channel
+    }
+    foreach ($definition in $channelDefinitions) {
+        if ($channelsByName.ContainsKey($definition.Name)) {
+            continue
+        }
+        $channel = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($Project.id)/chat/channels" -Headers $csrfHeaders -Body $definition
+        $channelsByName[$channel.name] = $channel
+    }
+
+    $general = $channelsByName["général"]
+    $messageResponse = Invoke-DemoApi -Method Get -Path "/api/v1/chat/channels/$($general.id)/messages?limit=10"
+    $existingMessages = @($messageResponse)
+    if ($existingMessages.Count -eq 0) {
+        $brief = $resourcesByName["Brief — Vertical Slice"]
+        $moodboard = $resourcesByName["Moodboard du hangar"]
+        $spacePreview = $resourcesByName[$spacePreviewName]
+        $demoMessages = @(
+            @{
+                body = "Bienvenue dans l’espace Nebula. Le brief du projet est joint à ce salon."
+                resourceIds = @($brief.id, $spacePreview.id); mentionedUserIds = @()
+            },
+            @{
+                body = "@Alice Moreau peux-tu valider les références du moodboard avant la revue ?"
+                resourceIds = @($moodboard.id); mentionedUserIds = @($memberIds["alice@cytask.local"])
+            },
+            @{
+                body = "@Noah Bernard la build de ce soir doit inclure la dernière passe de collisions."
+                resourceIds = @(); mentionedUserIds = @($memberIds["noah@cytask.local"])
+            },
+            @{
+                body = "Le salon vocal est prêt pour le point d’équipe. Le partage d’écran utilise une connexion directe sécurisée."
+                resourceIds = @(); mentionedUserIds = @()
+            }
+        )
+        foreach ($message in $demoMessages) {
+            Invoke-DemoApi -Method Post -Path "/api/v1/chat/channels/$($general.id)/messages" -Headers $csrfHeaders -Body $message | Out-Null
+        }
+    }
+    else {
+        $spacePreview = $resourcesByName[$spacePreviewName]
+        $hasPreviewMessage = $existingMessages | Where-Object {
+            $_.resources.id -contains $spacePreview.id
+        }
+        if (!$hasPreviewMessage) {
+            Invoke-DemoApi -Method Post -Path "/api/v1/chat/channels/$($general.id)/messages" -Headers $csrfHeaders -Body @{
+                body = "Le logo de l’espace est maintenant disponible dans la bibliothèque partagée."
+                resourceIds = @($spacePreview.id); mentionedUserIds = @()
+            } | Out-Null
+        }
+    }
+}
+
 $projects = Invoke-DemoApi -Method Get -Path "/api/v1/projects"
 $project = $projects | Where-Object { $_.key -eq "NEB" } | Select-Object -First 1
 if ($null -ne $project) {
@@ -264,6 +411,7 @@ if ($null -ne $project) {
     if ($previewTaskPage.items.Count -gt 0) {
         Add-DemoMediaPreview -TaskId $previewTaskPage.items[0].id
     }
+    Add-DemoCollaborationContent -Project $project -LabelIds $labelIdsByName
 
     Write-Host "Le projet de démonstration NEB a été vérifié : $finalTaskCount tâches disponibles."
     Write-Host "Connexion : $OwnerEmail / $Password"
@@ -511,7 +659,8 @@ foreach ($reference in $references) {
 }
 
 Add-DemoMediaPreview -TaskId $createdTasks["art-direction"].id
+Add-DemoCollaborationContent -Project $project -LabelIds $labelIdsByName
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "220 tâches de charge, 10 relations parentales, 9 éléments de checklist, 10 dossiers dont 4 sous-dossiers, 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
+Write-Host "220 tâches, 10 dossiers, 6 contenus d’espace, 4 salons, 4 membres, 9 dépendances et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
+using CyTask.Api.Collaboration;
 using CyTask.Api.Domain;
 using CyTask.Api.Media;
 using Microsoft.Extensions.Options;
@@ -109,6 +110,24 @@ public sealed class LocalMediaStorage
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public Task<AssembledBlob> AssembleResourceInQuarantineAsync(
+        Guid organizationId,
+        ProjectResourceUpload upload,
+        CancellationToken cancellationToken)
+    {
+        var resource = upload.Resource;
+        var attachment = new Attachment(
+            resource.Id, resource.OrganizationId, Guid.Empty, resource.Name,
+            resource.DeclaredContentType ?? MediaInspection.GenericContentType, null,
+            resource.SizeBytes, resource.Sha256 ?? string.Empty, resource.Status, false,
+            resource.CreatedBy, resource.CreatedAt);
+        var adapter = new AttachmentUpload(
+            upload.Id, attachment, upload.ChunkSizeBytes, upload.ExpiresAt, upload.Status,
+            upload.Chunks.Select(chunk => new UploadChunk(
+                chunk.Index, chunk.SizeBytes, chunk.Sha256, chunk.CreatedAt)).ToArray());
+        return AssembleInQuarantineAsync(organizationId, adapter, cancellationToken);
     }
 
     public async Task<AssembledBlob> AssembleInQuarantineAsync(
