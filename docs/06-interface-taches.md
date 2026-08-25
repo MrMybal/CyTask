@@ -61,6 +61,12 @@ contributeurs de les attribuer ou de créer celles du projet. Les administrateur
 peuvent supprimer une définition pour tout le projet. Les affectations sont
 idempotentes, limitées au projet et synchronisées en temps réel.
 
+L'onglet **Fichiers** affiche les sessions d'envoi interrompues de l'utilisateur,
+leur progression et leur expiration. Après rechargement ou fermeture de l'onglet,
+resélectionner le même fichier recalcule son SHA-256, retrouve la session correspondante
+et reprend au premier bloc manquant. Aucun bloc d'un autre membre n'est visible ou
+modifiable.
+
 La section **Hiérarchie** relie chaque sous-tâche à un parent du même projet. Elle
 affiche le parent et les enfants, permet de naviguer entre eux, de détacher la tâche
 ou de créer directement une nouvelle sous-tâche. Les relations sont visibles dans

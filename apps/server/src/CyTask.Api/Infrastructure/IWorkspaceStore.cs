@@ -132,6 +132,12 @@ public interface IWorkspaceStore
         Guid taskId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<AttachmentUpload>?> ListAttachmentUploadsAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        CancellationToken cancellationToken);
+
     Task<AttachmentUpload?> CreateAttachmentUploadAsync(
         Guid organizationId,
         Guid taskId,

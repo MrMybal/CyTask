@@ -13,6 +13,7 @@ import {
   api,
   type ActivityEntry,
   type Attachment,
+  type AttachmentUpload,
   type ExternalReference,
   type OrganizationMember,
   type Project,
@@ -74,7 +75,13 @@ type TaskDueFilter = TaskFilterSnapshot["due"];
 type TaskLabelFilter = TaskFilterSnapshot["label"];
 type DetailTab = "overview" | "dependencies" | "files" | "git" | "activity";
 type TaskSort = TaskFilterSnapshot["sort"];
-type DetailBundle = [TaskDetails, Attachment[], ExternalReference[], TaskDependencyOverview];
+type DetailBundle = [
+  TaskDetails,
+  Attachment[],
+  AttachmentUpload[],
+  ExternalReference[],
+  TaskDependencyOverview
+];
 
 export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -94,6 +101,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [activeUploads, setActiveUploads] = useState<AttachmentUpload[]>([]);
   const [externalReferences, setExternalReferences] = useState<ExternalReference[]>([]);
   const [searchHits, setSearchHits] = useState<SearchHit[]>();
   const [invitationLink, setInvitationLink] = useState("");
@@ -340,6 +348,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const fetchDetailBundle = useCallback((taskId: string): Promise<DetailBundle> => Promise.all([
     api.task(taskId),
     api.attachments(taskId),
+    api.attachmentUploads(taskId),
     api.externalReferences(taskId),
     api.taskDependencies(taskId)
   ]), []);
@@ -364,10 +373,17 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       const cached = detailPrefetch.current.get(taskId);
       const usable = cached && Date.now() - cached.at < 15000 ? cached.load : fetchDetailBundle(taskId);
       detailPrefetch.current.delete(taskId);
-      const [nextDetails, nextAttachments, nextReferences, nextDependencies] = await usable;
+      const [
+        nextDetails,
+        nextAttachments,
+        nextUploads,
+        nextReferences,
+        nextDependencies
+      ] = await usable;
       if (request !== detailRequestSequence.current) return;
       setDetails(nextDetails);
       setAttachments(nextAttachments);
+      setActiveUploads(nextUploads);
       setExternalReferences(nextReferences);
       setDependencies(nextDependencies);
       setSelectedProjectId((current) => current === nextDetails.task.projectId
@@ -1173,6 +1189,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   async function uploadAttachment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!details || uploadProgress) return;
+    const taskId = details.task.id;
     const form = event.currentTarget;
     const data = new FormData(form);
     const file = data.get("file");
@@ -1186,16 +1203,57 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           percent: Math.round((bytesRead / file.size) * 100)
         });
       });
-      const upload = await api.createAttachmentUpload(details.task.id, {
-        fileName: file.name,
-        contentType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        sha256: fullSha256,
-        optimizedLocally: data.get("optimizedLocally") === "on"
-      });
 
-      let index = 0;
-      let sent = 0;
+      let upload = activeUploads.find((candidate) =>
+        candidate.attachment.fileName === file.name
+        && candidate.attachment.sizeBytes === file.size
+        && candidate.attachment.sha256 === fullSha256
+      );
+      if (upload) {
+        try {
+          upload = await api.attachmentUpload(upload.id);
+        } catch (reason) {
+          if (reason instanceof ApiError && reason.status === 404) {
+            upload = undefined;
+          } else {
+            throw reason;
+          }
+        }
+      }
+
+      if (upload) {
+        const receivedBytes = upload.chunks.reduce((total, chunk) => total + chunk.sizeBytes, 0);
+        notify(
+          "info",
+          `Reprise de ${file.name} à ${Math.round((receivedBytes / file.size) * 100)} %.`
+        );
+      } else {
+        upload = await api.createAttachmentUpload(taskId, {
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          sha256: fullSha256,
+          optimizedLocally: data.get("optimizedLocally") === "on"
+        });
+      }
+
+      let index = upload.chunks.length;
+      let sent = upload.chunks.reduce((total, chunk) => total + chunk.sizeBytes, 0);
+      const chunksAreContiguous = upload.chunks.every((chunk, chunkIndex) =>
+        chunk.index === chunkIndex
+        && chunk.sizeBytes === Math.min(upload.chunkSizeBytes, file.size - chunkIndex * upload.chunkSizeBytes)
+      );
+      if (!chunksAreContiguous || sent > file.size) {
+        throw new ApiError("La session de reprise contient des blocs incohérents.", 409);
+      }
+
+      if (sent > 0) {
+        setUploadProgress({
+          label: `Reprise à ${formatBytes(sent)} / ${formatBytes(file.size)}`,
+          percent: Math.round((sent / file.size) * 100)
+        });
+      }
+
       while (sent < file.size) {
         const chunk = file.slice(sent, Math.min(sent + upload.chunkSizeBytes, file.size));
         const chunkSha256 = await sha256(chunk);
@@ -1211,10 +1269,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       setUploadProgress({ label: "Vérification serveur…", percent: 100 });
       await api.completeAttachmentUpload(upload.id);
       notify("success", `${file.name} envoyé, analyse en cours.`);
-      await loadDetails(details.task.id);
+      detailPrefetch.current.delete(taskId);
+      await loadDetails(taskId);
       form.reset();
     } catch (reason) {
       setError(messageFor(reason));
+      if (selectedTaskId === taskId) {
+        detailPrefetch.current.delete(taskId);
+        await loadDetails(taskId).catch(() => undefined);
+      }
     } finally {
       setUploadProgress(undefined);
     }
@@ -2456,6 +2519,36 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               {attachments.length === 0 && <p className="empty-note">Aucun fichier lié à cette tâche.</p>}
               {canContribute && (
                 <form className="attachment-form" onSubmit={uploadAttachment}>
+                  {activeUploads.length > 0 && (
+                    <div className="upload-resume-list" role="status">
+                      <strong>Envois en cours ou à reprendre</strong>
+                      {activeUploads.map((upload) => {
+                        const received = upload.chunks.reduce(
+                          (total, chunk) => total + chunk.sizeBytes,
+                          0
+                        );
+                        return (
+                          <span className="upload-resume-item" key={upload.id}>
+                            <span>
+                              <b>{upload.attachment.fileName}</b>
+                              <small>
+                                {formatBytes(received)} / {formatBytes(upload.attachment.sizeBytes)}
+                                {" · "}expire le {new Date(upload.expiresAt).toLocaleString("fr-FR")}
+                              </small>
+                            </span>
+                            <progress
+                              max={upload.attachment.sizeBytes}
+                              value={received}
+                              aria-label={`Progression de ${upload.attachment.fileName}`}
+                            />
+                          </span>
+                        );
+                      })}
+                      <small>
+                        Resélectionnez le même fichier : son empreinte sera vérifiée avant la reprise.
+                      </small>
+                    </div>
+                  )}
                   <label className="file-picker">
                     Ajouter une image, une vidéo ou un fichier
                     <input name="file" type="file" required disabled={Boolean(uploadProgress)} />

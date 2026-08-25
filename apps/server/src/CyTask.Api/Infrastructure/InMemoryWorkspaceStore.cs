@@ -683,6 +683,32 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         }
     }
 
+    public Task<IReadOnlyList<AttachmentUpload>?> ListAttachmentUploadsAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_tasks.TryGetValue(taskId, out var task) || task.OrganizationId != organizationId)
+            {
+                return Task.FromResult<IReadOnlyList<AttachmentUpload>?>(null);
+            }
+
+            IReadOnlyList<AttachmentUpload> uploads = _attachmentUploads.Values
+                .Where(upload =>
+                    upload.Attachment.OrganizationId == organizationId &&
+                    upload.Attachment.TaskId == taskId &&
+                    upload.Attachment.CreatedBy == userId &&
+                    upload.Status == "active" &&
+                    upload.ExpiresAt > DateTimeOffset.UtcNow)
+                .OrderBy(upload => upload.Attachment.CreatedAt)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<AttachmentUpload>?>(uploads);
+        }
+    }
+
     public Task<AttachmentUpload?> CreateAttachmentUploadAsync(
         Guid organizationId,
         Guid taskId,

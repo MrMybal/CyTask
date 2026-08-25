@@ -727,6 +727,16 @@
       }
     },
     "/api/v1/tasks/{taskId}/attachment-uploads": {
+      "get": {
+        "tags": ["fichiers"],
+        "summary": "Lister ses sessions d'envoi actives pour une tâche",
+        "description": "Retourne uniquement les sessions non expirées créées par l'utilisateur authentifié, avec les blocs déjà reçus. Cette liste permet de reprendre après une fermeture du client.",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Sessions reprenables", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AttachmentUpload" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
       "post": {
         "tags": ["fichiers"],
         "summary": "Ouvrir une session d'envoi par blocs",
@@ -761,6 +771,7 @@
       "get": {
         "tags": ["fichiers"],
         "summary": "État d'une session d'envoi",
+        "description": "Accessible uniquement au créateur de la session. Les blocs reçus permettent de calculer l'offset de reprise.",
         "parameters": [{ "$ref": "#/components/parameters/uploadId" }],
         "responses": {
           "200": { "description": "Session et blocs reçus", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AttachmentUpload" } } } },

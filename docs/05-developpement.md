@@ -121,6 +121,7 @@ d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.ex
 - le worker d'analyse tourne dans le processus serveur ; son isolement dans un processus dédié reste à faire ;
 - le hachage Web est incrémental et lit le fichier par tranches de 8 Mio ; il plafonne à
   environ 50 Mio/s, ce qui reste le poste le plus long d'un envoi volumineux ;
-- l'envoi ne reprend toujours pas après une fermeture d'onglet : la session d'envoi survit
-  côté serveur, mais le client ne sait pas encore la retrouver ;
-- le futur client installé devra fournir une conversion locale et une reprise réelle.
+- après une fermeture d'onglet, le Web retrouve les sessions d'envoi pendant leur
+  durée de validité mais demande de resélectionner le même fichier pour récupérer
+  ses octets ; un client installé pourra conserver un accès autorisé au fichier et
+  reprendre automatiquement, en plus de fournir la conversion locale.
