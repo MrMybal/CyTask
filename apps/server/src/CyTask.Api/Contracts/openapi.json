@@ -349,6 +349,18 @@
       }
     },
 
+    "/api/v1/projects/{projectId}/task-hierarchy": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "Hiérarchie des tâches d'un projet",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "responses": {
+          "200": { "description": "Relations parent-enfant", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectTaskHierarchy" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
     "/api/v1/projects/{projectId}/tasks": {
       "get": {
         "tags": ["tâches"],
@@ -552,6 +564,42 @@
         ],
         "responses": {
           "204": { "description": "Label retiré" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
+    "/api/v1/tasks/{taskId}/parent/{parentTaskId}": {
+      "put": {
+        "tags": ["tâches"],
+        "summary": "Définir la tâche parente",
+        "description": "Opération idempotente. Les deux tâches doivent appartenir au même projet. Les cycles sont refusés.",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          {
+            "name": "parentTaskId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Parent défini ou déjà présent",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskParentAssignment" } } }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "description": "Auto-parenté ou cycle détecté" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/parent": {
+      "delete": {
+        "tags": ["tâches"],
+        "summary": "Détacher une sous-tâche de son parent",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "204": { "description": "Relation parentale supprimée" },
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
@@ -845,6 +893,24 @@
         "properties": {
           "labels": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectLabel" } },
           "assignments": { "type": "array", "items": { "$ref": "#/components/schemas/TaskLabelAssignment" } }
+        }
+      },
+
+      "TaskParentAssignment": {
+        "type": "object",
+        "required": ["taskId", "parentTaskId", "linkedBy", "linkedAt"],
+        "properties": {
+          "taskId": { "type": "string", "format": "uuid" },
+          "parentTaskId": { "type": "string", "format": "uuid" },
+          "linkedBy": { "type": "string", "format": "uuid" },
+          "linkedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ProjectTaskHierarchy": {
+        "type": "object",
+        "required": ["relations"],
+        "properties": {
+          "relations": { "type": "array", "items": { "$ref": "#/components/schemas/TaskParentAssignment" } }
         }
       },
 

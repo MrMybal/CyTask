@@ -54,6 +54,13 @@ contributeurs de les attribuer ou de créer celles du projet. Les administrateur
 peuvent supprimer une définition pour tout le projet. Les affectations sont
 idempotentes, limitées au projet et synchronisées en temps réel.
 
+La section **Hiérarchie** relie chaque sous-tâche à un parent du même projet. Elle
+affiche le parent et les enfants, permet de naviguer entre eux, de détacher la tâche
+ou de créer directement une nouvelle sous-tâche. Les relations sont visibles dans
+la liste et le Kanban. Le serveur refuse l'auto-parenté et les cycles transitifs ;
+PostgreSQL sérialise les écritures du graphe par organisation pour conserver cette
+garantie sous concurrence.
+
 L'onglet **Relations** distingue les tâches dont la sélection dépend et celles
 qu'elle bloque. L'ajout est idempotent, limité à l'organisation et protégé contre
 les auto-dépendances et les cycles transitifs. PostgreSQL sérialise la vérification

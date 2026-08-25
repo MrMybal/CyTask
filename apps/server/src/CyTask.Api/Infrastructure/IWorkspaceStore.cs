@@ -247,8 +247,26 @@ public interface IWorkspaceStore
         Guid labelId,
         Guid userId,
         CancellationToken cancellationToken);
-    Task<IReadOnlyList<WorkItem>?> ListTasksAsync(
 
+    Task<ProjectTaskHierarchy?> GetProjectTaskHierarchyAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken);
+
+    Task<SetTaskParentResult> SetTaskParentAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid parentTaskId,
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<bool> RemoveTaskParentAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<WorkItem>?> ListTasksAsync(
         Guid organizationId,
         Guid projectId,
         CancellationToken cancellationToken);

@@ -17,6 +17,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private readonly Dictionary<Guid, ProjectLabel> _projectLabels = [];
     private readonly Dictionary<(Guid TaskId, Guid LabelId), TaskLabelAssignment> _taskLabelAssignments = [];
     private readonly Dictionary<Guid, WorkItem> _tasks = [];
+    private readonly Dictionary<Guid, TaskParentAssignment> _taskParents = [];
     private readonly Dictionary<Guid, Comment> _comments = [];
     private readonly Dictionary<string, InvitationEntry> _invitations = new(StringComparer.Ordinal);
     private readonly List<ActivityEntry> _activities = [];
@@ -646,12 +647,19 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 .OrderBy(assignment => assignment.TaskId)
                 .ThenBy(assignment => assignment.LabelId)
                 .ToArray();
+            var taskParents = _taskParents.Values
+                .Where(relation =>
+                    _tasks.TryGetValue(relation.TaskId, out var task)
+                    && task.OrganizationId == organizationId)
+                .OrderBy(relation => relation.TaskId)
+                .ToArray();
+
             var activity = _activities.Where(entry => entry.OrganizationId == organizationId).ToArray();
             var attachments = _attachments.Values
                 .Where(attachment => attachment.OrganizationId == organizationId)
                 .ToArray();
             return Task.FromResult<WorkspaceExport?>(new(
-                3, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, projectLabels, taskLabels, activity, attachments));
+                4, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, projectLabels, taskLabels, taskParents, activity, attachments));
         }
     }
 
@@ -1192,6 +1200,118 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 organizationId, "task.label_removed", "task", taskId,
                 userId, _users[userId].DisplayName,
                 $"Label « {label.Name} » retiré de {task.Key}", now);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<ProjectTaskHierarchy?> GetProjectTaskHierarchyAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<ProjectTaskHierarchy?>(null);
+            }
+
+            IReadOnlyList<TaskParentAssignment> relations = _taskParents.Values
+                .Where(relation =>
+                    _tasks.TryGetValue(relation.TaskId, out var task)
+                    && task.OrganizationId == organizationId
+                    && task.ProjectId == projectId)
+                .OrderBy(relation => relation.TaskId)
+                .ToArray();
+            return Task.FromResult<ProjectTaskHierarchy?>(new(relations));
+        }
+    }
+
+    public Task<SetTaskParentResult> SetTaskParentAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid parentTaskId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_tasks.TryGetValue(taskId, out var task)
+                || task.OrganizationId != organizationId
+                || !_tasks.TryGetValue(parentTaskId, out var parent)
+                || parent.OrganizationId != organizationId
+                || parent.ProjectId != task.ProjectId)
+            {
+                return Task.FromResult(new SetTaskParentResult(SetTaskParentStatus.NotFound, null));
+            }
+
+            if (taskId == parentTaskId)
+            {
+                return Task.FromResult(new SetTaskParentResult(SetTaskParentStatus.SelfParent, null));
+            }
+
+            if (_taskParents.TryGetValue(taskId, out var existing)
+                && existing.ParentTaskId == parentTaskId)
+            {
+                return Task.FromResult(new SetTaskParentResult(
+                    SetTaskParentStatus.AlreadySet,
+                    existing));
+            }
+
+            var visited = new HashSet<Guid>();
+            var ancestorId = parentTaskId;
+            while (visited.Add(ancestorId) && _taskParents.TryGetValue(ancestorId, out var ancestor))
+            {
+                ancestorId = ancestor.ParentTaskId;
+                if (ancestorId == taskId)
+                {
+                    return Task.FromResult(new SetTaskParentResult(SetTaskParentStatus.Cycle, null));
+                }
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var relation = new TaskParentAssignment(taskId, parentTaskId, userId, now);
+            _taskParents[taskId] = relation;
+            _tasks[taskId] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+            AddActivity(
+                organizationId, "task.parent_set", "task", taskId,
+                userId, _users[userId].DisplayName,
+                $"{task.Key} est maintenant une sous-tâche de {parent.Key}", now);
+            return Task.FromResult(new SetTaskParentResult(SetTaskParentStatus.Updated, relation));
+        }
+    }
+
+    public Task<bool> RemoveTaskParentAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_tasks.TryGetValue(taskId, out var task)
+                || task.OrganizationId != organizationId
+                || !_taskParents.Remove(taskId, out var relation))
+            {
+                return Task.FromResult(false);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            _tasks[taskId] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+            var parentKey = _tasks.TryGetValue(relation.ParentTaskId, out var parent)
+                ? parent.Key
+                : relation.ParentTaskId.ToString();
+            AddActivity(
+                organizationId, "task.parent_removed", "task", taskId,
+                userId, _users[userId].DisplayName,
+                $"{task.Key} n’est plus une sous-tâche de {parentKey}", now);
             return Task.FromResult(true);
         }
     }

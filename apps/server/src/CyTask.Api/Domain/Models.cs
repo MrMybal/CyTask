@@ -106,6 +106,28 @@ public sealed record AddTaskLabelResult(
     AddTaskLabelStatus Status,
     TaskLabelAssignment? Assignment);
 
+public sealed record TaskParentAssignment(
+    Guid TaskId,
+    Guid ParentTaskId,
+    Guid LinkedBy,
+    DateTimeOffset LinkedAt);
+
+public sealed record ProjectTaskHierarchy(
+    IReadOnlyList<TaskParentAssignment> Relations);
+
+public enum SetTaskParentStatus
+{
+    Updated,
+    AlreadySet,
+    NotFound,
+    SelfParent,
+    Cycle
+}
+
+public sealed record SetTaskParentResult(
+    SetTaskParentStatus Status,
+    TaskParentAssignment? Relation);
+
 public sealed record OrganizationMember(
     Guid UserId,
     string Email,
@@ -156,6 +178,7 @@ public sealed record WorkspaceExport(
     IReadOnlyList<TaskChecklistItem> Checklist,
     IReadOnlyList<ProjectLabel> ProjectLabels,
     IReadOnlyList<TaskLabelAssignment> TaskLabels,
+    IReadOnlyList<TaskParentAssignment> TaskParents,
     IReadOnlyList<ActivityEntry> Activity,
     IReadOnlyList<Attachment> Attachments);
 
