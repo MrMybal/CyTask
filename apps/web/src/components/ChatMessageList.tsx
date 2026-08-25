@@ -9,7 +9,9 @@ interface Props {
 
 export function ChatMessageList({ messages, members, currentUserId }: Props) {
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [messages]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [messages]);
   const membersById = new Map(members.map((member) => [member.userId, member]));
   return (
     <div className="chat-message-list" aria-live="polite">
