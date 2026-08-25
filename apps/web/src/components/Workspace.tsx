@@ -75,6 +75,7 @@ type TaskDueFilter = TaskFilterSnapshot["due"];
 type TaskLabelFilter = TaskFilterSnapshot["label"];
 type DetailTab = "overview" | "dependencies" | "files" | "git" | "activity";
 type TaskSort = TaskFilterSnapshot["sort"];
+type SidebarSection = "project" | "inbox" | "mine" | "today" | "later" | "completed";
 type DetailBundle = [
   TaskDetails,
   Attachment[],
@@ -147,6 +148,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   );
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [showTokens, setShowTokens] = useState(false);
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>("project");
   const taskRequestSequence = useRef(0);
   const taskSupportRequestSequence = useRef(0);
   const detailRequestSequence = useRef(0);
@@ -160,6 +162,25 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     () => projects.find((project) => project.id === selectedProjectId),
     [projects, selectedProjectId]
   );
+  const labelCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const assignment of projectLabels.assignments) {
+      counts.set(assignment.labelId, (counts.get(assignment.labelId) ?? 0) + 1);
+    }
+    return counts;
+  }, [projectLabels.assignments]);
+  const selectedFolder = taskLabelFilter === "all" || taskLabelFilter === "none"
+    ? undefined
+    : projectLabels.labels.find((label) => label.id === taskLabelFilter);
+  const workspaceTitle = selectedFolder?.name ?? (sidebarSection === "project"
+    ? selectedProject?.name
+    : {
+        inbox: "Boîte de réception",
+        mine: "Mes tâches",
+        today: "Aujourd’hui",
+        later: "Plus tard",
+        completed: "Terminées"
+      }[sidebarSection]);
   const taskViewsStorageKey = selectedProjectId
     ? savedTaskViewsStorageKey(session.organizationId, session.userId, selectedProjectId)
     : undefined;
@@ -649,6 +670,34 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       sort: taskSort,
       view: taskView
     }));
+  }
+
+  function selectSidebarSection(section: SidebarSection, labelId?: string) {
+    closeTask();
+    setShowTeam(false);
+    setShowActivity(false);
+    setShowTokens(false);
+    setSearchHits(undefined);
+    setSidebarSection(section);
+    setActiveTaskViewId(undefined);
+
+    const filters = createTaskFilterSnapshot({ view: "list", sort: "updated" });
+    if (section === "inbox") filters.status = "todo";
+    if (section === "mine") {
+      filters.assignee = session.userId;
+      filters.sort = "due";
+    }
+    if (section === "today") {
+      filters.due = "today";
+      filters.sort = "due";
+    }
+    if (section === "later") {
+      filters.due = "week";
+      filters.sort = "due";
+    }
+    if (section === "completed") filters.status = "done";
+    if (labelId) filters.label = labelId;
+    applyTaskFilters(filters);
   }
 
   function selectTaskView(viewId?: string) {
@@ -1496,27 +1545,98 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </form>
         )}
 
-        <nav className="project-list" aria-label="Projets">
-          <p className="nav-label">Projets</p>
-          {projects.map((project) => (
+        <div className="sidebar-scroll">
+          <nav className="sidebar-home" aria-label="Accueil">
+            <p className="nav-label">Accueil</p>
             <button
-              className={project.id === selectedProjectId ? "project-link active" : "project-link"}
-              key={project.id}
-              title={project.name}
-              onClick={() => {
-                closeTask();
-                setShowTeam(false);
-                setShowActivity(false);
-                setSelectedProjectId(project.id);
-                setSearchHits(undefined);
-              }}
+              className={sidebarSection === "inbox" ? "sidebar-nav-link active" : "sidebar-nav-link"}
+              type="button"
+              title="Boîte de réception"
+              onClick={() => selectSidebarSection("inbox")}
             >
-              <span className="project-avatar">{project.key.slice(0, 2)}</span>
-              <span>{project.name}</span>
+              <span className="sidebar-nav-icon">▣</span>
+              <span className="sidebar-nav-copy">Boîte de réception</span>
+              <span className="nav-count">{taskCounts.todo}</span>
             </button>
-          ))}
-          {projects.length === 0 && <p className="empty-note">Créez votre premier projet.</p>}
-        </nav>
+            <button
+              className={sidebarSection === "mine" ? "sidebar-nav-link active" : "sidebar-nav-link"}
+              type="button"
+              title="Mes tâches"
+              onClick={() => selectSidebarSection("mine")}
+            >
+              <span className="sidebar-nav-icon">◎</span>
+              <span className="sidebar-nav-copy">Mes tâches</span>
+            </button>
+            <button
+              className={sidebarSection === "today" ? "sidebar-nav-link active" : "sidebar-nav-link"}
+              type="button"
+              title="Aujourd’hui"
+              onClick={() => selectSidebarSection("today")}
+            >
+              <span className="sidebar-nav-icon">◷</span>
+              <span className="sidebar-nav-copy">Aujourd’hui</span>
+            </button>
+            <button
+              className={sidebarSection === "later" ? "sidebar-nav-link active" : "sidebar-nav-link"}
+              type="button"
+              title="Plus tard"
+              onClick={() => selectSidebarSection("later")}
+            >
+              <span className="sidebar-nav-icon">↗</span>
+              <span className="sidebar-nav-copy">Plus tard</span>
+            </button>
+            <button
+              className={sidebarSection === "completed" ? "sidebar-nav-link active" : "sidebar-nav-link"}
+              type="button"
+              title="Terminées"
+              onClick={() => selectSidebarSection("completed")}
+            >
+              <span className="sidebar-nav-icon">✓</span>
+              <span className="sidebar-nav-copy">Terminées</span>
+              <span className="nav-count">{taskCounts.done}</span>
+            </button>
+          </nav>
+
+          <nav className="project-list" aria-label="Espaces et dossiers">
+            <p className="nav-label">Espaces</p>
+            {projects.map((project) => (
+              <div className="project-tree" key={project.id}>
+                <button
+                  className={project.id === selectedProjectId && sidebarSection === "project" && !selectedFolder
+                    ? "project-link active"
+                    : "project-link"}
+                  title={project.name}
+                  onClick={() => {
+                    setSelectedProjectId(project.id);
+                    selectSidebarSection("project");
+                  }}
+                >
+                  <span className="project-avatar">{project.key.slice(0, 2)}</span>
+                  <span>{project.name}</span>
+                </button>
+                {project.id === selectedProjectId && projectLabels.labels.length > 0 && (
+                  <div className="space-tree" aria-label={"Dossiers de " + project.name}>
+                    <span className="space-tree-label">Dossiers</span>
+                    {projectLabels.labels.map((label) => (
+                      <button
+                        className={taskLabelFilter === label.id ? "folder-link active" : "folder-link"}
+                        type="button"
+                        key={label.id}
+                        title={label.name + " · " + (labelCounts.get(label.id) ?? 0) + " tâches"}
+                        onClick={() => selectSidebarSection("project", label.id)}
+                      >
+                        <span className="folder-icon" style={{ color: label.color }}>▰</span>
+                        <span>{label.name}</span>
+                        <small>{labelCounts.get(label.id) ?? 0}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {projects.length === 0 && <p className="empty-note">Créez votre premier projet.</p>}
+          </nav>
+        </div>
 
         <button className="team-link" title="Équipe" onClick={() => void openTeam()}>
           <span className="project-avatar">EQ</span>
@@ -1550,10 +1670,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         <header className="pane-header">
           <div>
             <p className="eyebrow">{selectedProject?.key ?? "ESPACE"}</p>
-            <h1>{selectedProject?.name ?? "Bienvenue dans CyTask"}</h1>
+            <h1>{workspaceTitle ?? "Bienvenue dans CyTask"}</h1>
             {selectedProject && (
               <p className="project-summary">
-                {`${taskOptions.length} tâche${taskOptions.length === 1 ? "" : "s"} · ${taskCounts.in_progress} en cours`}
+                {`${taskTotalCount} affichée${taskTotalCount === 1 ? "" : "s"} sur ${taskOptions.length} tâches · ${taskCounts.in_progress} en cours`}
               </p>
             )}
           </div>
@@ -2091,7 +2211,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       )}
 
       {!details && detailsLoading && !showTeam && !showActivity && !showTokens && (
-        <aside className="detail-pane" aria-busy="true">
+        <aside className="detail-pane task-detail-pane" aria-busy="true">
           <div className="detail-skeleton" aria-hidden="true">
             <span className="skeleton-line wide" />
             <span className="skeleton-line" />
@@ -2103,7 +2223,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       )}
 
       {details && !showTeam && !showActivity && !showTokens && (
-        <aside className="detail-pane" aria-busy={detailsLoading}>
+        <aside className="detail-pane task-detail-pane" aria-busy={detailsLoading}>
           <header className="detail-header">
             <span className="task-key">{details.task.key}</span>
             <div className="detail-actions">
@@ -2164,7 +2284,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
             {detailTab === "overview" && (isEditing ? (
               <form className="edit-task-form" key={`${details.task.id}-${details.task.revision}`} onSubmit={updateTask}>
-                <label>
+                <label className="edit-field-title">
                   Titre
                   <input name="title" defaultValue={details.task.title} maxLength={240} required autoFocus />
                 </label>
@@ -2201,7 +2321,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     ))}
                   </select>
                 </label>
-                <label>
+                <label className="edit-field-description">
                   Description
                   <textarea name="description" defaultValue={details.task.description} maxLength={20000} rows={6} />
                 </label>
@@ -2209,7 +2329,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               </form>
             ) : (
               <>
-                <h2>{details.task.title}</h2>
+                <h2>
+                  {canContribute ? (
+                    <button
+                      className="editable-task-title"
+                      type="button"
+                      title="Cliquer pour modifier le titre"
+                      onClick={() => setIsEditing(true)}
+                    >{details.task.title}</button>
+                  ) : details.task.title}
+                </h2>
                 <div className="quick-status">
                   <span className="quick-status-badges">
                     <span className={`status status-${details.task.status}`}>{statusLabels[details.task.status]}</span>
@@ -2243,9 +2372,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   onCreate={createProjectLabel}
                   onDelete={deleteProjectLabel}
                 />
-                <p className={details.task.description ? "description" : "description muted"}>
-                  {details.task.description || "Aucune description."}
-                </p>
+                {canContribute ? (
+                  <button
+                    className={details.task.description ? "description editable-description" : "description editable-description muted"}
+                    type="button"
+                    title="Cliquer pour modifier la description"
+                    onClick={() => setIsEditing(true)}
+                  >{details.task.description || "Ajouter une description…"}</button>
+                ) : (
+                  <p className={details.task.description ? "description" : "description muted"}>
+                    {details.task.description || "Aucune description."}
+                  </p>
+                )}
                 <dl className="task-facts">
                   <div><dt>Créée</dt><dd title={fullDate(details.task.createdAt)}>{relativeDate(details.task.createdAt)}</dd></div>
                   <div><dt>Mise à jour</dt><dd title={fullDate(details.task.updatedAt)}>{relativeDate(details.task.updatedAt)}</dd></div>
