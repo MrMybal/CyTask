@@ -683,6 +683,45 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         }
     }
 
+    public Task<IReadOnlyList<Attachment>?> ListProjectMediaPreviewsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<IReadOnlyList<Attachment>?>(null);
+            }
+
+            var taskIds = _tasks.Values
+                .Where(task => task.OrganizationId == organizationId && task.ProjectId == projectId)
+                .Select(task => task.Id)
+                .ToHashSet();
+            IReadOnlyList<Attachment> result = _attachments.Values
+                .Where(attachment =>
+                {
+                    var contentType = attachment.DetectedContentType ?? attachment.DeclaredContentType;
+                    return attachment.OrganizationId == organizationId
+                        && taskIds.Contains(attachment.TaskId)
+                        && attachment.Status == "available"
+                        && (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                            || contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase));
+                })
+                .GroupBy(attachment => attachment.TaskId)
+                .SelectMany(group => group
+                    .OrderBy(attachment => attachment.CreatedAt)
+                    .ThenBy(attachment => attachment.Id)
+                    .Take(4))
+                .OrderBy(attachment => attachment.TaskId)
+                .ThenBy(attachment => attachment.CreatedAt)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<Attachment>?>(result);
+        }
+    }
+
     public Task<IReadOnlyList<AttachmentUpload>?> ListAttachmentUploadsAsync(
         Guid organizationId,
         Guid taskId,

@@ -1388,6 +1388,7 @@ public sealed class CyTaskApiTests
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/task-hierarchy", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/task-page", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/task-options", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/media-previews", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}/parent/{parentTaskId}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tokens", out _));
     }
@@ -1417,6 +1418,22 @@ public sealed class CyTaskApiTests
         Assert.Equal("available", reviewed.GetProperty("status").GetString());
         Assert.Equal("image/png", reviewed.GetProperty("detectedContentType").GetString());
         Assert.Equal(1, reviewed.GetProperty("width").GetInt32());
+        using var projectsResponse = await client.GetAsync(
+            new Uri("/api/v1/projects", UriKind.Relative), TestContext.Current.CancellationToken);
+        var projects = await ReadJsonAsync(projectsResponse);
+        var projectId = projects.EnumerateArray()
+            .Single(project => project.GetProperty("key").GetString() == "MEDIA")
+            .GetProperty("id")
+            .GetGuid();
+        using var previewsResponse = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/media-previews", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, previewsResponse.StatusCode);
+        var previews = await ReadJsonAsync(previewsResponse);
+        var preview = Assert.Single(previews.EnumerateArray());
+        Assert.Equal(attachmentId, preview.GetProperty("id").GetGuid());
+        Assert.Equal(taskId, preview.GetProperty("taskId").GetGuid());
+
         Assert.Equal(1, reviewed.GetProperty("height").GetInt32());
 
         using var download = await client.GetAsync(

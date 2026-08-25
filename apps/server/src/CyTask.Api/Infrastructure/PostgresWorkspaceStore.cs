@@ -1033,6 +1033,57 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         return result;
     }
 
+    public async Task<IReadOnlyList<Attachment>?> ListProjectMediaPreviewsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            WITH ranked AS (
+                SELECT a.id, a.organization_id, a.task_id, a.file_name, a.declared_content_type,
+                       a.detected_content_type, a.size_bytes, a.sha256, a.status, a.optimized_locally,
+                       a.created_by, a.created_at, a.rejection_reason, a.width, a.height, a.reviewed_at,
+                       a.duration_seconds,
+                       row_number() OVER (
+                           PARTITION BY a.task_id
+                           ORDER BY a.created_at, a.id) AS media_rank
+                FROM attachments a
+                JOIN tasks t
+                  ON t.id = a.task_id
+                 AND t.organization_id = a.organization_id
+                WHERE a.organization_id = @organization_id
+                  AND t.project_id = @project_id
+                  AND a.status = 'available'
+                  AND (
+                    lower(coalesce(a.detected_content_type, a.declared_content_type)) LIKE 'image/%'
+                    OR lower(coalesce(a.detected_content_type, a.declared_content_type)) LIKE 'video/%'
+                  )
+            )
+            SELECT id, organization_id, task_id, file_name, declared_content_type,
+                   detected_content_type, size_bytes, sha256, status, optimized_locally,
+                   created_by, created_at, rejection_reason, width, height, reviewed_at,
+                   duration_seconds
+            FROM ranked
+            WHERE media_rank <= 4
+            ORDER BY task_id, created_at, id;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<Attachment>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(ReadAttachment(reader));
+        }
+
+        if (result.Count == 0 && !await ProjectExistsAsync(organizationId, projectId, cancellationToken))
+        {
+            return null;
+        }
+
+        return result;
+    }
+
     public async Task<IReadOnlyList<AttachmentUpload>?> ListAttachmentUploadsAsync(
         Guid organizationId,
         Guid taskId,

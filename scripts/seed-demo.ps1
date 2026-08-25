@@ -213,6 +213,40 @@ function Add-DemoSubfolders {
     }
 }
 
+function Add-DemoMediaPreview {
+    param([Parameter(Mandatory = $true)][string]$TaskId)
+
+    $existing = @(Invoke-DemoApi -Method Get -Path "/api/v1/tasks/$TaskId/attachments")
+    if ($existing | Where-Object { $_.fileName -eq "canvas-preview.png" }) {
+        return
+    }
+
+    $bytes = [Convert]::FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+    $sha256 = [Convert]::ToHexString(
+        [Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+    $upload = Invoke-DemoApi -Method Post -Path "/api/v1/tasks/$TaskId/attachment-uploads" -Headers $csrfHeaders -Body @{
+        fileName = "canvas-preview.png"
+        contentType = "image/png"
+        sizeBytes = $bytes.Length
+        sha256 = $sha256
+        optimizedLocally = $false
+    }
+    $chunkRequest = @{
+        Uri = "$ApiBaseUrl/api/v1/attachment-uploads/$($upload.id)/chunks/0"
+        Method = "Put"
+        ContentType = "application/octet-stream"
+        Body = $bytes
+        Headers = @{
+            "X-CSRF-Token" = $authentication.csrfToken
+            "X-Chunk-SHA256" = $sha256
+        }
+        WebSession = $ownerSession
+    }
+    Invoke-RestMethod @chunkRequest | Out-Null
+    Invoke-DemoApi -Method Post -Path "/api/v1/attachment-uploads/$($upload.id)/complete" -Headers $csrfHeaders | Out-Null
+}
+
 $projects = Invoke-DemoApi -Method Get -Path "/api/v1/projects"
 $project = $projects | Where-Object { $_.key -eq "NEB" } | Select-Object -First 1
 if ($null -ne $project) {
@@ -226,6 +260,10 @@ if ($null -ne $project) {
     Add-DemoSubfolders -Project $project -LabelIds $labelIdsByName
     $addedTaskCount = Add-PerformanceTasks -Project $project -ExistingCount $existingTaskCount -LabelIds $labelIdsByName
     $finalTaskCount = $existingTaskCount + $addedTaskCount
+    $previewTaskPage = Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($project.id)/task-page?query=&status=all&priority=all&assignee=all&due=all&label=all&sort=key&limit=1&utcOffsetMinutes=0"
+    if ($previewTaskPage.items.Count -gt 0) {
+        Add-DemoMediaPreview -TaskId $previewTaskPage.items[0].id
+    }
 
     Write-Host "Le projet de démonstration NEB a été vérifié : $finalTaskCount tâches disponibles."
     Write-Host "Connexion : $OwnerEmail / $Password"
@@ -472,6 +510,7 @@ foreach ($reference in $references) {
     } | Out-Null
 }
 
+Add-DemoMediaPreview -TaskId $createdTasks["art-direction"].id
 Write-Host "Projet de démonstration créé : $($project.name)"
 Write-Host "220 tâches de charge, 10 relations parentales, 9 éléments de checklist, 10 dossiers dont 4 sous-dossiers, 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"

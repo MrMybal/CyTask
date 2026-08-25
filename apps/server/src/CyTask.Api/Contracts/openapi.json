@@ -410,6 +410,19 @@
       }
     },
 
+    "/api/v1/projects/{projectId}/media-previews": {
+      "get": {
+        "tags": ["fichiers"],
+        "summary": "Prévisualisations médias du projet",
+        "description": "Retourne au maximum quatre images ou vidéos disponibles par tâche, en une seule requête optimisée pour le Kanban et le Canvas.",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "responses": {
+          "200": { "description": "Médias groupés par tâche", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Attachment" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
 
     "/api/v1/projects/{projectId}/tasks": {
       "get": {

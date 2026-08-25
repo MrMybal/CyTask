@@ -132,6 +132,11 @@ public interface IWorkspaceStore
         Guid taskId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<Attachment>?> ListProjectMediaPreviewsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<AttachmentUpload>?> ListAttachmentUploadsAsync(
         Guid organizationId,
         Guid taskId,
