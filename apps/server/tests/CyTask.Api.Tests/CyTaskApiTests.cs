@@ -265,6 +265,139 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task TaskPagesUseStableCursorsAndServerSideFilters()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Pagination", key = "PAGE" });
+        var projectId = project.GetProperty("id").GetGuid();
+
+        var created = new List<JsonElement>();
+        foreach (var (title, priority) in new[]
+                 {
+                     ("Alpha", "normal"),
+                     ("Beta", "low"),
+                     ("Gamma", "high"),
+                     ("Delta", "urgent"),
+                     ("Epsilon", "low")
+                 })
+        {
+            created.Add(await PostAndReadAsync(
+                client,
+                $"/api/v1/projects/{projectId}/tasks",
+                new { title, description = $"Description {title}", priority }));
+        }
+
+        var label = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/labels",
+            new { name = "Gameplay", color = "#34AADC" });
+        var labelId = label.GetProperty("id").GetGuid();
+        using var assignment = await client.PutAsync(
+            new Uri(
+                $"/api/v1/tasks/{created[2].GetProperty("id").GetGuid()}/labels/{labelId}",
+                UriKind.Relative),
+            content: null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, assignment.StatusCode);
+
+        using var firstResponse = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?sort=key&limit=2",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        var first = await ReadJsonAsync(firstResponse);
+        Assert.Equal(5, first.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            ["PAGE-1", "PAGE-2"],
+            first.GetProperty("items").EnumerateArray()
+                .Select(task => task.GetProperty("key").GetString()!)
+                .ToArray());
+        var firstCursor = first.GetProperty("nextCursor").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(firstCursor));
+
+        using var secondResponse = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?sort=key&limit=2&cursor={Uri.EscapeDataString(firstCursor!)}",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        var second = await ReadJsonAsync(secondResponse);
+        Assert.Equal(
+            ["PAGE-3", "PAGE-4"],
+            second.GetProperty("items").EnumerateArray()
+                .Select(task => task.GetProperty("key").GetString()!)
+                .ToArray());
+        var secondCursor = second.GetProperty("nextCursor").GetString();
+
+        using var thirdResponse = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?sort=key&limit=2&cursor={Uri.EscapeDataString(secondCursor!)}",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, thirdResponse.StatusCode);
+        var third = await ReadJsonAsync(thirdResponse);
+        Assert.Equal(
+            ["PAGE-5"],
+            third.GetProperty("items").EnumerateArray()
+                .Select(task => task.GetProperty("key").GetString()!)
+                .ToArray());
+        Assert.Equal(JsonValueKind.Null, third.GetProperty("nextCursor").ValueKind);
+
+        using var filteredResponse = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?query=description%20gamma&priority=high&label={labelId}",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, filteredResponse.StatusCode);
+        var filtered = await ReadJsonAsync(filteredResponse);
+        Assert.Equal(1, filtered.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            "PAGE-3",
+            Assert.Single(filtered.GetProperty("items").EnumerateArray())
+                .GetProperty("key").GetString());
+
+        using var withoutLabelResponse = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?label=none",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var withoutLabel = await ReadJsonAsync(withoutLabelResponse);
+        Assert.Equal(4, withoutLabel.GetProperty("totalCount").GetInt32());
+
+        using var optionsResponse = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-options",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, optionsResponse.StatusCode);
+        var options = await ReadJsonAsync(optionsResponse);
+        Assert.Equal(5, options.GetArrayLength());
+        Assert.Equal("PAGE-1", options[0].GetProperty("key").GetString());
+        Assert.False(options[0].TryGetProperty("description", out _));
+
+        using var invalidCursor = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?sort=key&cursor=not-a-cursor",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidCursor.StatusCode);
+        using var invalidLimit = await client.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?limit=101",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidLimit.StatusCode);
+    }
+
+
+    [Fact]
     public async Task InvitationIsSingleUseAndRolesAreEnforced()
     {
         await using var factory = new CyTaskApiFactory();
@@ -1103,6 +1236,8 @@ public sealed class CyTaskApiTests
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/labels", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}/labels/{labelId}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/task-hierarchy", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/task-page", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/projects/{projectId}/task-options", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}/parent/{parentTaskId}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tokens", out _));
     }

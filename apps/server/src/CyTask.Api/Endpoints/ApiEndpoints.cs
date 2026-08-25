@@ -88,6 +88,8 @@ public static class ApiEndpoints
         authenticated.MapDelete("/tasks/{taskId:guid}/parent", RemoveTaskParentAsync)
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapGet("/projects/{projectId:guid}/task-page", GetTaskPageAsync);
+        authenticated.MapGet("/projects/{projectId:guid}/task-options", ListTaskOptionsAsync);
         authenticated.MapGet("/projects/{projectId:guid}/tasks", ListTasksAsync);
         authenticated.MapPost("/projects/{projectId:guid}/tasks", CreateTaskAsync)
             .AddEndpointFilter<CsrfFilter>()
@@ -832,6 +834,180 @@ public static class ApiEndpoints
 
         events.Publish(user.OrganizationId, "task.parent_removed", taskId);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetTaskPageAsync(
+        Guid projectId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var parameters = context.Request.Query;
+        var query = parameters["query"].ToString().Trim();
+        var rawStatus = parameters["status"].ToString().Trim().ToLowerInvariant();
+        var rawPriority = parameters["priority"].ToString().Trim().ToLowerInvariant();
+        var rawAssignee = parameters["assignee"].ToString().Trim().ToLowerInvariant();
+        var due = parameters["due"].ToString().Trim().ToLowerInvariant();
+        var rawLabel = parameters["label"].ToString().Trim().ToLowerInvariant();
+        var sort = parameters["sort"].ToString().Trim().ToLowerInvariant();
+        var rawCursor = parameters["cursor"].ToString().Trim();
+        var rawLimit = parameters["limit"].ToString().Trim();
+        var rawUtcOffset = parameters["utcOffsetMinutes"].ToString().Trim();
+
+        string? status = rawStatus is "" or "all" ? null : rawStatus;
+        string? priority = rawPriority is "" or "all" ? null : rawPriority;
+        due = due.Length == 0 ? "all" : due;
+        sort = sort.Length == 0 ? "updated" : sort;
+
+        var errors = new Dictionary<string, string[]>();
+        if (query.Length > 240)
+        {
+            errors["query"] = ["La recherche ne peut pas dépasser 240 caractères."];
+        }
+
+        if (status is not null
+            && status is not ("todo" or "in_progress" or "blocked" or "done" or "cancelled"))
+        {
+            errors["status"] = ["Le statut est invalide."];
+        }
+
+        if (priority is not null && priority is not ("low" or "normal" or "high" or "urgent"))
+        {
+            errors["priority"] = ["La priorité est invalide."];
+        }
+
+        Guid? assigneeId = null;
+        var unassigned = false;
+        if (rawAssignee is not ("" or "all"))
+        {
+            if (rawAssignee == "unassigned")
+            {
+                unassigned = true;
+            }
+            else if (Guid.TryParse(rawAssignee, out var parsedAssigneeId))
+            {
+                assigneeId = parsedAssigneeId;
+            }
+            else
+            {
+                errors["assignee"] = ["La personne assignée est invalide."];
+            }
+        }
+
+        if (due is not ("all" or "overdue" or "today" or "week" or "none"))
+        {
+            errors["due"] = ["Le filtre d’échéance est invalide."];
+        }
+
+        Guid? labelId = null;
+        var withoutLabel = false;
+        if (rawLabel is not ("" or "all"))
+        {
+            if (rawLabel == "none")
+            {
+                withoutLabel = true;
+            }
+            else if (Guid.TryParse(rawLabel, out var parsedLabelId))
+            {
+                labelId = parsedLabelId;
+            }
+            else
+            {
+                errors["label"] = ["Le label est invalide."];
+            }
+        }
+
+        if (sort is not ("updated" or "created" or "due" or "key" or "title"))
+        {
+            errors["sort"] = ["Le tri est invalide."];
+        }
+
+        var limit = 50;
+        if (rawLimit.Length > 0 && (!int.TryParse(rawLimit, out limit) || limit is < 1 or > 100))
+        {
+            errors["limit"] = ["La limite doit être comprise entre 1 et 100."];
+        }
+
+        var utcOffsetMinutes = 0;
+        if (rawUtcOffset.Length > 0
+            && (!int.TryParse(rawUtcOffset, out utcOffsetMinutes)
+                || utcOffsetMinutes is < -840 or > 840))
+        {
+            errors["utcOffsetMinutes"] = ["Le décalage horaire est invalide."];
+        }
+
+        TaskPageCursor? cursor = null;
+        if (rawCursor.Length > 0 && !TaskPageCursorCodec.TryDecode(rawCursor, sort, out cursor))
+        {
+            errors["cursor"] = ["Le curseur est invalide ou ne correspond plus au tri."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors, statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset? dueStart = null;
+        DateTimeOffset? dueEnd = null;
+        if (due is "today" or "week")
+        {
+            var clientOffset = TimeSpan.FromMinutes(-utcOffsetMinutes);
+            var clientNow = now.ToOffset(clientOffset);
+            dueStart = new DateTimeOffset(
+                clientNow.Year,
+                clientNow.Month,
+                clientNow.Day,
+                0,
+                0,
+                0,
+                clientOffset).ToUniversalTime();
+            dueEnd = dueStart.Value.AddDays(due == "today" ? 1 : 8);
+        }
+
+        var user = context.GetUser()!;
+        var page = await store.GetTaskPageAsync(
+            user.OrganizationId,
+            projectId,
+            new TaskPageRequest(
+                limit,
+                query,
+                status,
+                priority,
+                assigneeId,
+                unassigned,
+                due,
+                now,
+                dueStart,
+                dueEnd,
+                labelId,
+                withoutLabel,
+                sort,
+                cursor),
+            cancellationToken);
+        if (page is null)
+        {
+            return Results.NotFound();
+        }
+
+        var nextCursor = page.HasMore && page.Items.Count > 0
+            ? TaskPageCursorCodec.Encode(page.Items[^1], sort)
+            : null;
+        return Results.Ok(new TaskPageResponse(page.Items, page.TotalCount, nextCursor));
+    }
+
+    private static async Task<IResult> ListTaskOptionsAsync(
+        Guid projectId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var tasks = await store.ListTaskOptionsAsync(
+            user.OrganizationId,
+            projectId,
+            cancellationToken);
+        return tasks is null ? Results.NotFound() : Results.Ok(tasks);
     }
 
     private static async Task<IResult> ListTasksAsync(

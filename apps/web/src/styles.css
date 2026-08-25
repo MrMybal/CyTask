@@ -182,6 +182,7 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
 .task-skeleton { display: grid; gap: 9px; padding: 16px 40px 60px; }
 .task-skeleton span { height: 58px; border: 1px solid var(--line-soft); border-radius: 9px; background: linear-gradient(90deg, #101720, #151f29, #101720); background-size: 220% 100%; animation: skeleton-shift 1.5s ease-in-out infinite; }
 @keyframes skeleton-shift { 50% { background-position: 100% 0; } }
+.task-pagination { display: flex; justify-content: center; margin-top: -40px; padding: 0 40px 40px; }
 .filter-empty { display: grid; justify-items: center; margin: 30px 40px 60px; border: 1px dashed var(--line); border-radius: 12px; padding: 42px 20px; color: var(--muted); text-align: center; }
 .filter-empty > span { margin-bottom: 12px; color: var(--accent); font-size: 28px; }
 .filter-empty h2 { margin-bottom: 7px; color: var(--text); font-size: 17px; }

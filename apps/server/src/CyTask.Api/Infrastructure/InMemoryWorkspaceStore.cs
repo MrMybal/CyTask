@@ -1316,6 +1316,74 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         }
     }
 
+    public Task<TaskPageSlice?> GetTaskPageAsync(
+        Guid organizationId,
+        Guid projectId,
+        TaskPageRequest request,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<TaskPageSlice?>(null);
+            }
+
+            var matching = _tasks.Values
+                .Where(task => task.OrganizationId == organizationId && task.ProjectId == projectId)
+                .Where(task => MatchesTaskPageRequest(task, request))
+                .Where(task =>
+                {
+                    var labels = _taskLabelAssignments.Keys
+                        .Where(key => key.TaskId == task.Id)
+                        .Select(key => key.LabelId);
+                    if (request.WithoutLabel)
+                    {
+                        return !labels.Any();
+                    }
+
+                    return request.LabelId is not Guid labelId || labels.Contains(labelId);
+                })
+                .ToArray();
+            var totalCount = matching.Length;
+            var ordered = OrderTaskPage(matching, request.Sort)
+                .Where(task => request.Cursor is null || IsAfterTaskCursor(task, request))
+                .Take(request.Limit + 1)
+                .ToArray();
+            var hasMore = ordered.Length > request.Limit;
+            IReadOnlyList<WorkItem> items = hasMore ? ordered[..request.Limit] : ordered;
+            return Task.FromResult<TaskPageSlice?>(new(items, totalCount, hasMore));
+        }
+    }
+
+    public Task<IReadOnlyList<TaskOption>?> ListTaskOptionsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<IReadOnlyList<TaskOption>?>(null);
+            }
+
+            IReadOnlyList<TaskOption> result = _tasks.Values
+                .Where(task => task.OrganizationId == organizationId && task.ProjectId == projectId)
+                .OrderBy(task => task.Number)
+                .Select(task => new TaskOption(
+                    task.Id,
+                    task.ProjectId,
+                    task.Key,
+                    task.Title,
+                    task.Status))
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<TaskOption>?>(result);
+        }
+    }
+
     public Task<IReadOnlyList<WorkItem>?> ListTasksAsync(
         Guid organizationId,
         Guid projectId,
@@ -1749,6 +1817,95 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 authorId, author.DisplayName, $"Commentaire ajouté à {task.Key}", comment.CreatedAt);
             return Task.FromResult<Comment?>(comment);
         }
+    }
+
+    private static bool MatchesTaskPageRequest(WorkItem task, TaskPageRequest request)
+    {
+        if (request.Status is not null && task.Status != request.Status)
+        {
+            return false;
+        }
+
+        if (request.Priority is not null && task.Priority != request.Priority)
+        {
+            return false;
+        }
+
+        if (request.Unassigned && task.AssigneeId is not null)
+        {
+            return false;
+        }
+
+        if (request.AssigneeId is Guid assigneeId && task.AssigneeId != assigneeId)
+        {
+            return false;
+        }
+
+        if (!MatchesTaskDueFilter(task, request))
+        {
+            return false;
+        }
+
+        if (request.Query.Length == 0)
+        {
+            return true;
+        }
+
+        return task.Key.Contains(request.Query, StringComparison.OrdinalIgnoreCase)
+            || task.Title.Contains(request.Query, StringComparison.OrdinalIgnoreCase)
+            || task.Description.Contains(request.Query, StringComparison.OrdinalIgnoreCase)
+            || (task.AssigneeName?.Contains(request.Query, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static bool MatchesTaskDueFilter(WorkItem task, TaskPageRequest request) =>
+        request.DueFilter switch
+        {
+            "all" => true,
+            "none" => task.DueAt is null,
+            "overdue" => task.DueAt is DateTimeOffset dueAt
+                && dueAt < request.Now
+                && task.Status is not ("done" or "cancelled"),
+            "today" or "week" => task.DueAt is DateTimeOffset dueAt
+                && request.DueStart is DateTimeOffset dueStart
+                && request.DueEnd is DateTimeOffset dueEnd
+                && dueAt >= dueStart
+                && dueAt < dueEnd,
+            _ => false
+        };
+
+    private static IOrderedEnumerable<WorkItem> OrderTaskPage(
+        IEnumerable<WorkItem> tasks,
+        string sort) => sort switch
+        {
+            "created" => tasks.OrderByDescending(task => task.CreatedAt).ThenBy(task => task.Id),
+            "due" => tasks.OrderBy(task => task.DueAt is null).ThenBy(task => task.DueAt).ThenBy(task => task.Id),
+            "key" => tasks.OrderBy(task => task.Number).ThenBy(task => task.Id),
+            "title" => tasks.OrderBy(task => task.Title, StringComparer.Ordinal).ThenBy(task => task.Id),
+            _ => tasks.OrderByDescending(task => task.UpdatedAt).ThenBy(task => task.Id)
+        };
+
+    private static bool IsAfterTaskCursor(WorkItem task, TaskPageRequest request)
+    {
+        var cursor = request.Cursor!;
+        var idIsAfter = task.Id.CompareTo(cursor.TaskId) > 0;
+        var timestamp = cursor.Timestamp.GetValueOrDefault();
+        var number = cursor.Number.GetValueOrDefault();
+        return request.Sort switch
+        {
+            "updated" => task.UpdatedAt < timestamp
+                || (task.UpdatedAt == timestamp && idIsAfter),
+            "created" => task.CreatedAt < timestamp
+                || (task.CreatedAt == timestamp && idIsAfter),
+            "due" when cursor.IsNull => task.DueAt is null && idIsAfter,
+            "due" => task.DueAt is null
+                || task.DueAt > timestamp
+                || (task.DueAt == timestamp && idIsAfter),
+            "key" => task.Number > number
+                || (task.Number == number && idIsAfter),
+            "title" => string.CompareOrdinal(task.Title, cursor.Text) > 0
+                || (task.Title == cursor.Text && idIsAfter),
+            _ => false
+        };
     }
 
     private void AddActivity(

@@ -361,6 +361,46 @@
       }
     },
 
+    "/api/v1/projects/{projectId}/task-page": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "Page filtrée de tâches",
+        "description": "Pagination stable par curseur opaque pour les interfaces interactives. La route historique /tasks reste disponible pour les intégrations qui ont besoin d'un export complet.",
+        "parameters": [
+          { "$ref": "#/components/parameters/projectId" },
+          { "name": "query", "in": "query", "schema": { "type": "string", "maxLength": 240 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["all", "todo", "in_progress", "blocked", "done", "cancelled"], "default": "all" } },
+          { "name": "priority", "in": "query", "schema": { "type": "string", "enum": ["all", "low", "normal", "high", "urgent"], "default": "all" } },
+          { "name": "assignee", "in": "query", "description": "all, unassigned ou identifiant utilisateur UUID.", "schema": { "type": "string", "default": "all" } },
+          { "name": "due", "in": "query", "schema": { "type": "string", "enum": ["all", "overdue", "today", "week", "none"], "default": "all" } },
+          { "name": "label", "in": "query", "description": "all, none ou identifiant de label UUID.", "schema": { "type": "string", "default": "all" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["updated", "created", "due", "key", "title"], "default": "updated" } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string", "maxLength": 1024 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 } },
+          { "name": "utcOffsetMinutes", "in": "query", "description": "Valeur JavaScript Date.getTimezoneOffset(), utilisée pour les filtres today et week.", "schema": { "type": "integer", "minimum": -840, "maximum": 840, "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Page de tâches", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskPage" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+
+    "/api/v1/projects/{projectId}/task-options": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "Options légères de tâches d'un projet",
+        "description": "Retourne uniquement les champs nécessaires aux compteurs, hiérarchies et sélecteurs de relations.",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "responses": {
+          "200": { "description": "Options de tâches", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TaskOption" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
+
     "/api/v1/projects/{projectId}/tasks": {
       "get": {
         "tags": ["tâches"],
@@ -913,6 +953,28 @@
           "relations": { "type": "array", "items": { "$ref": "#/components/schemas/TaskParentAssignment" } }
         }
       },
+
+      "TaskOption": {
+        "type": "object",
+        "required": ["id", "projectId", "key", "title", "status"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "key": { "type": "string", "examples": ["NEB-12"] },
+          "title": { "type": "string" },
+          "status": { "type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"] }
+        }
+      },
+      "TaskPage": {
+        "type": "object",
+        "required": ["items", "totalCount", "nextCursor"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/WorkItem" } },
+          "totalCount": { "type": "integer", "minimum": 0 },
+          "nextCursor": { "type": ["string", "null"] }
+        }
+      },
+
 
       "WorkItem": {
         "type": "object",

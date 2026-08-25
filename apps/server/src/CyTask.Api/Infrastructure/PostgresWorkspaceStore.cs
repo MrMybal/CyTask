@@ -2171,6 +2171,269 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         return true;
     }
 
+    public async Task<TaskPageSlice?> GetTaskPageAsync(
+        Guid organizationId,
+        Guid projectId,
+        TaskPageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken))
+        {
+            return null;
+        }
+
+        var countSql = $"""
+            SELECT COUNT(*)
+            FROM tasks t
+            JOIN projects p ON p.id = t.project_id AND p.organization_id = t.organization_id
+            LEFT JOIN users au ON au.id = t.assignee_id
+            {BuildTaskPageWhere(request, includeCursor: false)};
+            """;
+        await using var countCommand = dataSource.CreateCommand(countSql);
+        AddTaskPageParameters(countCommand, organizationId, projectId, request, includeCursor: false);
+        var totalCount = checked((int)(long)(await countCommand.ExecuteScalarAsync(cancellationToken) ?? 0L));
+
+        var orderBy = request.Sort switch
+        {
+            "created" => "t.created_at DESC, t.id",
+            "due" => "t.due_at ASC NULLS LAST, t.id",
+            "key" => "t.task_number, t.id",
+            "title" => "t.title COLLATE \"C\", t.id",
+            _ => "t.updated_at DESC, t.id"
+        };
+        var pageSql = $"""
+            SELECT t.id, t.organization_id, t.project_id, t.task_number, p.project_key,
+                   t.title, t.description, t.status, t.priority, t.due_at,
+                   t.assignee_id, au.display_name,
+                   t.revision, t.created_by, t.created_at, t.updated_at
+            FROM tasks t
+            JOIN projects p ON p.id = t.project_id AND p.organization_id = t.organization_id
+            LEFT JOIN users au ON au.id = t.assignee_id
+            {BuildTaskPageWhere(request, includeCursor: true)}
+            ORDER BY {orderBy}
+            LIMIT @take;
+            """;
+        await using var pageCommand = dataSource.CreateCommand(pageSql);
+        AddTaskPageParameters(pageCommand, organizationId, projectId, request, includeCursor: true);
+        pageCommand.Parameters.AddWithValue("take", request.Limit + 1);
+        await using var reader = await pageCommand.ExecuteReaderAsync(cancellationToken);
+        var items = new List<WorkItem>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(ReadTask(reader));
+        }
+
+        var hasMore = items.Count > request.Limit;
+        if (hasMore)
+        {
+            items.RemoveAt(items.Count - 1);
+        }
+
+        return new TaskPageSlice(items, totalCount, hasMore);
+    }
+
+    public async Task<IReadOnlyList<TaskOption>?> ListTaskOptionsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken))
+        {
+            return null;
+        }
+
+        await using var command = dataSource.CreateCommand("""
+            SELECT t.id, t.project_id, p.project_key, t.task_number, t.title, t.status
+            FROM tasks t
+            JOIN projects p ON p.id = t.project_id AND p.organization_id = t.organization_id
+            WHERE t.organization_id = @organization_id AND t.project_id = @project_id
+            ORDER BY t.task_number, t.id;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<TaskOption>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new TaskOption(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                $"{reader.GetString(2)}-{reader.GetInt32(3)}",
+                reader.GetString(4),
+                reader.GetString(5)));
+        }
+
+        return result;
+    }
+
+    private static string BuildTaskPageWhere(TaskPageRequest request, bool includeCursor)
+    {
+        var clauses = new List<string>
+        {
+            "t.organization_id = @organization_id",
+            "t.project_id = @project_id"
+        };
+        if (request.Query.Length > 0)
+        {
+            clauses.Add("""
+                (
+                    (p.project_key || '-' || t.task_number::text) ILIKE @query ESCAPE '\'
+                    OR t.title ILIKE @query ESCAPE '\'
+                    OR t.description ILIKE @query ESCAPE '\'
+                    OR COALESCE(au.display_name, '') ILIKE @query ESCAPE '\'
+                )
+                """);
+        }
+
+        if (request.Status is not null)
+        {
+            clauses.Add("t.status = @status");
+        }
+
+        if (request.Priority is not null)
+        {
+            clauses.Add("t.priority = @priority");
+        }
+
+        if (request.Unassigned)
+        {
+            clauses.Add("t.assignee_id IS NULL");
+        }
+        else if (request.AssigneeId is not null)
+        {
+            clauses.Add("t.assignee_id = @assignee_id");
+        }
+
+        clauses.Add(request.DueFilter switch
+        {
+            "none" => "t.due_at IS NULL",
+            "overdue" => "t.due_at < @now AND t.status NOT IN ('done', 'cancelled')",
+            "today" or "week" => "t.due_at >= @due_start AND t.due_at < @due_end",
+            _ => "TRUE"
+        });
+
+        if (request.WithoutLabel)
+        {
+            clauses.Add("""
+                NOT EXISTS (
+                    SELECT 1 FROM task_labels tl
+                    WHERE tl.organization_id = t.organization_id AND tl.task_id = t.id
+                )
+                """);
+        }
+        else if (request.LabelId is not null)
+        {
+            clauses.Add("""
+                EXISTS (
+                    SELECT 1 FROM task_labels tl
+                    WHERE tl.organization_id = t.organization_id
+                      AND tl.task_id = t.id
+                      AND tl.label_id = @label_id
+                )
+                """);
+        }
+
+        if (includeCursor && request.Cursor is not null)
+        {
+            clauses.Add(request.Sort switch
+            {
+                "updated" => """
+                    (t.updated_at < @cursor_timestamp
+                     OR (t.updated_at = @cursor_timestamp AND t.id > @cursor_id))
+                    """,
+                "created" => """
+                    (t.created_at < @cursor_timestamp
+                     OR (t.created_at = @cursor_timestamp AND t.id > @cursor_id))
+                    """,
+                "due" when request.Cursor.IsNull => "t.due_at IS NULL AND t.id > @cursor_id",
+                "due" => """
+                    (t.due_at > @cursor_timestamp
+                     OR t.due_at IS NULL
+                     OR (t.due_at = @cursor_timestamp AND t.id > @cursor_id))
+                    """,
+                "key" => """
+                    (t.task_number > @cursor_number
+                     OR (t.task_number = @cursor_number AND t.id > @cursor_id))
+                    """,
+                "title" => """
+                    ((t.title COLLATE "C") > (@cursor_text COLLATE "C")
+                     OR (t.title = @cursor_text AND t.id > @cursor_id))
+                    """,
+                _ => "FALSE"
+            });
+        }
+
+        return $"WHERE {string.Join(Environment.NewLine + " AND ", clauses)}";
+    }
+
+    private static void AddTaskPageParameters(
+        NpgsqlCommand command,
+        Guid organizationId,
+        Guid projectId,
+        TaskPageRequest request,
+        bool includeCursor)
+    {
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        if (request.Query.Length > 0)
+        {
+            command.Parameters.AddWithValue("query", $"%{EscapeLikePattern(request.Query)}%");
+        }
+
+        if (request.Status is not null)
+        {
+            command.Parameters.AddWithValue("status", request.Status);
+        }
+
+        if (request.Priority is not null)
+        {
+            command.Parameters.AddWithValue("priority", request.Priority);
+        }
+
+        if (!request.Unassigned && request.AssigneeId is Guid assigneeId)
+        {
+            command.Parameters.AddWithValue("assignee_id", assigneeId);
+        }
+
+        if (request.DueFilter == "overdue")
+        {
+            command.Parameters.AddWithValue("now", request.Now);
+        }
+        else if (request.DueFilter is "today" or "week")
+        {
+            command.Parameters.AddWithValue("due_start", request.DueStart!.Value);
+            command.Parameters.AddWithValue("due_end", request.DueEnd!.Value);
+        }
+
+        if (!request.WithoutLabel && request.LabelId is Guid labelId)
+        {
+            command.Parameters.AddWithValue("label_id", labelId);
+        }
+
+        if (!includeCursor || request.Cursor is null)
+        {
+            return;
+        }
+
+        command.Parameters.AddWithValue("cursor_id", request.Cursor.TaskId);
+        switch (request.Sort)
+        {
+            case "updated":
+            case "created":
+                command.Parameters.AddWithValue("cursor_timestamp", request.Cursor.Timestamp!.Value);
+                break;
+            case "due" when !request.Cursor.IsNull:
+                command.Parameters.AddWithValue("cursor_timestamp", request.Cursor.Timestamp!.Value);
+                break;
+            case "key":
+                command.Parameters.AddWithValue("cursor_number", request.Cursor.Number!.Value);
+                break;
+            case "title":
+                command.Parameters.AddWithValue("cursor_text", request.Cursor.Text!);
+                break;
+        }
+    }
+
     public async Task<IReadOnlyList<WorkItem>?> ListTasksAsync(
         Guid organizationId,
         Guid projectId,

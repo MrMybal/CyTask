@@ -115,8 +115,9 @@ dimensions ni durée.
 
 ## Limites connues
 
-- pas encore de pagination à curseur : les listes sont bornées par projet ou par
-  tâche, et la recherche est plafonnée à 50 résultats ;
+- `GET /projects/{projectId}/task-page` fournit filtres et pagination à curseur ;
+  la route historique `/tasks` reste complète pour les intégrations, tandis que
+  la recherche globale demeure plafonnée à 50 résultats ;
 - pas encore de webhooks sortants ; le flux SSE est le seul mécanisme de poussée ;
 - pas encore de clé d'idempotence sur la création, seule la mise à jour de tâche
   est protégée par sa révision ;

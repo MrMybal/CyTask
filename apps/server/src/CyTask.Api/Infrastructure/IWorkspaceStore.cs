@@ -266,6 +266,17 @@ public interface IWorkspaceStore
         Guid userId,
         CancellationToken cancellationToken);
 
+    Task<TaskPageSlice?> GetTaskPageAsync(
+        Guid organizationId,
+        Guid projectId,
+        TaskPageRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<TaskOption>?> ListTaskOptionsAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<WorkItem>?> ListTasksAsync(
         Guid organizationId,
         Guid projectId,
