@@ -269,6 +269,129 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task ProjectResourcesAndChatStayConnectedToTheirSpace()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+
+        using var membersResponse = await client.GetAsync(
+            new Uri("/api/v1/members", UriKind.Relative), TestContext.Current.CancellationToken);
+        var members = await ReadJsonAsync(membersResponse);
+        var ownerId = Assert.Single(members.EnumerateArray()).GetProperty("userId").GetGuid();
+
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Espace collaboratif", key = "COLLAB" });
+        var projectId = project.GetProperty("id").GetGuid();
+
+        var document = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/resources",
+            new
+            {
+                resourceType = "document",
+                name = "Guide de revue",
+                body = "# Première revue",
+                folderLabelId = (Guid?)null
+            });
+        var canvas = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/resources",
+            new
+            {
+                resourceType = "canvas",
+                name = "Moodboard",
+                body = "{\"version\":1,\"items\":[]}",
+                folderLabelId = (Guid?)null
+            });
+
+        var imageBytes = SinglePixelPng();
+        var imageHash = Sha256(imageBytes);
+        var imageUpload = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/resource-uploads",
+            new
+            {
+                fileName = "direction-artistique.png",
+                contentType = "image/png",
+                sizeBytes = imageBytes.Length,
+                sha256 = imageHash,
+                folderLabelId = (Guid?)null
+            });
+        var imageUploadId = imageUpload.GetProperty("id").GetGuid();
+        using (var chunkRequest = new HttpRequestMessage(
+                   HttpMethod.Put, $"/api/v1/resource-uploads/{imageUploadId}/chunks/0"))
+        {
+            chunkRequest.Headers.Add("X-Chunk-SHA256", imageHash);
+            chunkRequest.Content = new ByteArrayContent(imageBytes);
+            chunkRequest.Content.Headers.ContentType =
+                new MediaTypeHeaderValue("application/octet-stream");
+            using var chunkResponse = await client.SendAsync(
+                chunkRequest, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, chunkResponse.StatusCode);
+        }
+        using var completeResponse = await client.PostAsync(
+            new Uri($"/api/v1/resource-uploads/{imageUploadId}/complete", UriKind.Relative),
+            null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        var uploadedImage = await ReadJsonAsync(completeResponse);
+        Assert.Equal("available", uploadedImage.GetProperty("status").GetString());
+        Assert.Equal("image/png", uploadedImage.GetProperty("detectedContentType").GetString());
+
+        using var resourcesResponse = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/resources", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, resourcesResponse.StatusCode);
+        var resources = await ReadJsonAsync(resourcesResponse);
+        Assert.Equal(3, resources.GetArrayLength());
+        Assert.Contains(resources.EnumerateArray(), item =>
+            item.GetProperty("id").GetGuid() == canvas.GetProperty("id").GetGuid()
+            && item.GetProperty("resourceType").GetString() == "canvas");
+
+        using var updateResponse = await client.PatchAsJsonAsync(
+            new Uri($"/api/v1/resources/{document.GetProperty("id").GetGuid()}", UriKind.Relative),
+            new
+            {
+                name = "Guide de revue v2",
+                body = "# Revue validée",
+                folderLabelId = (Guid?)null,
+                expectedRevision = document.GetProperty("revision").GetInt64()
+            }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updatedDocument = await ReadJsonAsync(updateResponse);
+        Assert.Equal(2, updatedDocument.GetProperty("revision").GetInt64());
+
+        var channel = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/chat/channels",
+            new { name = "Général", topic = "Coordination de l’équipe" });
+        var message = await PostAndReadAsync(
+            client,
+            $"/api/v1/chat/channels/{channel.GetProperty("id").GetGuid()}/messages",
+            new
+            {
+                body = "@CyTask Owner voici le guide de revue.",
+                resourceIds = new[] { document.GetProperty("id").GetGuid(), uploadedImage.GetProperty("id").GetGuid() },
+                mentionedUserIds = new[] { ownerId }
+            });
+        Assert.Equal("CyTask Owner", message.GetProperty("authorName").GetString());
+        Assert.Equal(2, message.GetProperty("resources").GetArrayLength());
+        Assert.Equal(ownerId,
+            Assert.Single(message.GetProperty("mentionedUserIds").EnumerateArray()).GetGuid());
+
+        using var messagesResponse = await client.GetAsync(
+            new Uri($"/api/v1/chat/channels/{channel.GetProperty("id").GetGuid()}/messages",
+                UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, messagesResponse.StatusCode);
+        var messages = await ReadJsonAsync(messagesResponse);
+        Assert.Equal(message.GetProperty("id").GetGuid(),
+            Assert.Single(messages.EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task TaskPagesUseStableCursorsAndServerSideFilters()
     {
         await using var factory = new CyTaskApiFactory();

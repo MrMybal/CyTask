@@ -209,6 +209,67 @@ export interface AttachmentUpload {
   chunks: UploadChunk[];
 }
 
+export interface ProjectResource {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  folderLabelId: string | null;
+  resourceType: "document" | "canvas" | "file";
+  name: string;
+  body: string;
+  declaredContentType: string | null;
+  detectedContentType: string | null;
+  sizeBytes: number;
+  sha256: string | null;
+  status: "ready" | "uploading" | "available" | "rejected";
+  rejectionReason: string | null;
+  revision: number;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResourceUploadChunk {
+  index: number;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
+export interface ProjectResourceUpload {
+  id: string;
+  resource: ProjectResource;
+  chunkSizeBytes: number;
+  expiresAt: string;
+  status: "active" | "completed" | "rejected" | "expired";
+  chunks: ResourceUploadChunk[];
+}
+
+export interface ChatChannel {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  name: string;
+  slug: string;
+  topic: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  organizationId: string;
+  channelId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  resources: ProjectResource[];
+  mentionedUserIds: string[];
+}
+
 export interface ExternalReference {
   id: string;
   taskId: string;
@@ -390,6 +451,53 @@ export const api = {
     request<TaskOption[]>(`/api/v1/projects/${projectId}/task-options`),
   projectMediaPreviews: (projectId: string) =>
     request<Attachment[]>(`/api/v1/projects/${projectId}/media-previews`),
+
+  projectResources: (projectId: string) =>
+    request<ProjectResource[]>(`/api/v1/projects/${projectId}/resources`),
+  projectResource: (resourceId: string) =>
+    request<ProjectResource>(`/api/v1/resources/${resourceId}`),
+  createProjectResource: (projectId: string, body: {
+    resourceType: "document" | "canvas"; name: string; body: string; folderLabelId: string | null;
+  }) => request<ProjectResource>(`/api/v1/projects/${projectId}/resources`, {
+    method: "POST", body: JSON.stringify(body)
+  }),
+  updateProjectResource: (resourceId: string, body: {
+    name: string; body: string; folderLabelId: string | null; expectedRevision: number;
+  }) => request<ProjectResource>(`/api/v1/resources/${resourceId}`, {
+    method: "PATCH", body: JSON.stringify(body)
+  }),
+  resourceContentUrl: (resourceId: string) => `/api/v1/resources/${resourceId}/content`,
+  resourceUpload: (uploadId: string) =>
+    request<ProjectResourceUpload>(`/api/v1/resource-uploads/${uploadId}`),
+  createResourceUpload: (projectId: string, body: {
+    fileName: string; contentType: string; sizeBytes: number; sha256: string;
+    folderLabelId: string | null;
+  }) => request<ProjectResourceUpload>(`/api/v1/projects/${projectId}/resource-uploads`, {
+    method: "POST", body: JSON.stringify(body)
+  }),
+  uploadResourceChunk: (uploadId: string, index: number, chunk: Blob, sha256Value: string) =>
+    request<ResourceUploadChunk>(`/api/v1/resource-uploads/${uploadId}/chunks/${index}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream", "X-Chunk-SHA256": sha256Value },
+      body: chunk
+    }),
+  completeResourceUpload: (uploadId: string) =>
+    request<ProjectResource>(`/api/v1/resource-uploads/${uploadId}/complete`, { method: "POST" }),
+  chatChannels: (projectId: string) =>
+    request<ChatChannel[]>(`/api/v1/projects/${projectId}/chat/channels`),
+  createChatChannel: (projectId: string, body: { name: string; topic: string }) =>
+    request<ChatChannel>(`/api/v1/projects/${projectId}/chat/channels`, {
+      method: "POST", body: JSON.stringify(body)
+    }),
+  chatMessages: (channelId: string, before?: string) =>
+    request<ChatMessage[]>(`/api/v1/chat/channels/${channelId}/messages${
+      before ? `?before=${encodeURIComponent(before)}` : ""
+    }`),
+  createChatMessage: (channelId: string, body: {
+    body: string; resourceIds: string[]; mentionedUserIds: string[];
+  }) => request<ChatMessage>(`/api/v1/chat/channels/${channelId}/messages`, {
+    method: "POST", body: JSON.stringify(body)
+  }),
 
   tasks: (projectId: string) => request<WorkItem[]>(`/api/v1/projects/${projectId}/tasks`),
   createTask: (projectId: string, body: {

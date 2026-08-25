@@ -37,6 +37,8 @@ import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
 import { ProjectFolderTree } from "./ProjectFolderTree";
 import { ProjectCanvas } from "./ProjectCanvas";
 import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
+import { ProjectContentPane } from "./ProjectContentPane";
+import { TeamChatPane } from "./TeamChatPane";
 import {
   parseSavedTaskViews,
   savedTaskViewsStorageKey,
@@ -79,6 +81,7 @@ type TaskLabelFilter = TaskFilterSnapshot["label"];
 type DetailTab = "overview" | "dependencies" | "files" | "git" | "activity";
 type TaskSort = TaskFilterSnapshot["sort"];
 type SidebarSection = "project" | "inbox" | "mine" | "today" | "later" | "completed";
+type WorkspaceArea = "tasks" | "contents" | "chat";
 type DetailBundle = [
   TaskDetails,
   Attachment[],
@@ -156,6 +159,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     window.localStorage.getItem("cytask.sidebarCollapsed") === "true"
   );
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [workspaceArea, setWorkspaceArea] = useState<WorkspaceArea>("tasks");
   const [showTokens, setShowTokens] = useState(false);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("project");
   const [themeMode, setThemeMode] = useState<"dark" | "light">(() =>
@@ -193,6 +197,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const selectedFolder = taskLabelFilter === "all" || taskLabelFilter === "none"
     ? undefined
     : projectLabels.labels.find((label) => label.id === taskLabelFilter);
+  const workspaceAreaTitle = workspaceArea === "contents"
+    ? (selectedFolder ? "Contenus · " + selectedFolder.name : "Contenus de l’espace")
+    : workspaceArea === "chat" ? "Discussion d’équipe" : undefined;
   const workspaceTitle = selectedFolder?.name ?? (sidebarSection === "project"
     ? selectedProject?.name
     : {
@@ -716,6 +723,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setShowActivity(false);
     setShowTokens(false);
     setSearchHits(undefined);
+    setWorkspaceArea("tasks");
     setSidebarSection(section);
     setActiveTaskViewId(undefined);
 
@@ -1709,7 +1717,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             {projects.map((project) => (
               <div className="project-tree" key={project.id}>
                 <button
-                  className={project.id === selectedProjectId && sidebarSection === "project" && !selectedFolder
+                  className={project.id === selectedProjectId && sidebarSection === "project" && !selectedFolder && workspaceArea === "tasks"
                     ? "project-link active"
                     : "project-link"}
                   title={project.name}
@@ -1722,17 +1730,35 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <span>{project.name}</span>
                 </button>
                 {project.id === selectedProjectId && (
-                  <ProjectFolderTree
-                    labels={projectLabels.labels}
-                    counts={labelCounts}
-                    selectedLabelId={selectedFolder?.id}
-                    editorParentId={folderEditorParentId}
-                    canCreate={canContribute}
-                    onSelect={(labelId) => selectSidebarSection("project", labelId)}
-                    onStartCreate={setFolderEditorParentId}
-                    onCancelCreate={() => setFolderEditorParentId(undefined)}
-                    onCreate={(event) => void createProjectFolder(event)}
-                  />
+                  <>
+                    <ProjectFolderTree
+                      labels={projectLabels.labels}
+                      counts={labelCounts}
+                      selectedLabelId={selectedFolder?.id}
+                      editorParentId={folderEditorParentId}
+                      canCreate={canContribute}
+                      onSelect={(labelId) => selectSidebarSection("project", labelId)}
+                      onStartCreate={setFolderEditorParentId}
+                      onCancelCreate={() => setFolderEditorParentId(undefined)}
+                      onCreate={(event) => void createProjectFolder(event)}
+                    />
+                    <div className="space-resource-links">
+                      <button className={workspaceArea === "contents" ? "active" : ""} type="button"
+                        onClick={() => {
+                          closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                          setWorkspaceArea("contents"); setSidebarSection("project");
+                        }}>
+                        <span>◇</span><span>Contenus & fichiers</span>
+                      </button>
+                      <button className={workspaceArea === "chat" ? "active" : ""} type="button"
+                        onClick={() => {
+                          closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                          setWorkspaceArea("chat"); setSidebarSection("project");
+                        }}>
+                        <span>#</span><span>Chat d’équipe</span>
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             ))}
@@ -1782,8 +1808,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         <header className="pane-header">
           <div>
             <p className="eyebrow">{selectedProject?.key ?? "ESPACE"}</p>
-            <h1>{workspaceTitle ?? "Bienvenue dans CyTask"}</h1>
-            {selectedProject && (
+            <h1>{workspaceAreaTitle ?? workspaceTitle ?? "Bienvenue dans CyTask"}</h1>
+            {selectedProject && workspaceArea === "tasks" && (
               <p className="project-summary">
                 {`${taskTotalCount} affichée${taskTotalCount === 1 ? "" : "s"} sur ${taskOptions.length} tâches · ${taskCounts.in_progress} en cours`}
               </p>
@@ -1810,7 +1836,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               <input name="query" aria-label="Rechercher" placeholder="Rechercher…" minLength={2} maxLength={100} required />
               <button type="submit" aria-label="Lancer la recherche">⌕</button>
             </form>
-            {selectedProject && canContribute && (
+            {selectedProject && canContribute && workspaceArea === "tasks" && (
               <button
                 className="primary-button small"
                 title="Nouvelle tâche (N)"
@@ -1820,7 +1846,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </div>
         </header>
 
-        {showTaskForm && selectedProject && (
+        {showTaskForm && selectedProject && workspaceArea === "tasks" && (
           <form className="task-form" onSubmit={createTask}>
             <input name="title" placeholder="Que faut-il accomplir ?" maxLength={240} required autoFocus />
             <textarea name="description" placeholder="Description optionnelle" maxLength={20000} rows={3} />
@@ -1854,7 +1880,27 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </form>
         )}
 
-        {searchHits ? (
+        {workspaceArea === "contents" && selectedProject ? (
+          <ProjectContentPane
+            projectId={selectedProject.id}
+            labels={projectLabels.labels}
+            tasks={taskOptions}
+            selectedFolderId={selectedFolder?.id}
+            canContribute={canContribute}
+            onOpenTask={openTask}
+            onError={setError}
+            onNotice={(message) => notify("success", message)}
+          />
+        ) : workspaceArea === "chat" && selectedProject ? (
+          <TeamChatPane
+            projectId={selectedProject.id}
+            currentUserId={session.userId}
+            members={members}
+            canContribute={canContribute}
+            onError={setError}
+            onNotice={(message) => notify("success", message)}
+          />
+        ) : searchHits ? (
           <section className="search-results" aria-label="Résultats de recherche">
             <div className="search-title">
               <h2>Résultats</h2>

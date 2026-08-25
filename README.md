@@ -51,7 +51,17 @@ clients et le plugin Unreal. Son interface de tâches propose maintenant cinq vu
 Liste, Compacte en colonnes, Kanban, Canvas libre multimédia et graphe relationnel.
 Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
 des labels colorés, priorités, échéances, assignation aux membres, vues rapides et filtres nommés mémorisés localement,
-vignettes et téléchargement des fichiers validés, motif affiché pour les fichiers refusés,
+ainsi que le tri direct par chaque colonne de la vue compacte.
+Chaque espace possède une bibliothèque commune où documents, canvas et fichiers serveur
+peuvent être rangés dans les mêmes dossiers que les tâches, filtrés, regroupés et triés
+par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même passage en
+quarantaine que les pièces jointes de tâches.
+La discussion d’équipe fournit des salons par projet, messages, mentions, images, vidéos
+et fichiers issus de cette bibliothèque. Le vocal et le partage d’écran reposent sur WebRTC
+avec une signalisation WebSocket authentifiée. Le mode actuel est pair-à-pair direct ;
+un relais TURN privé sera nécessaire pour les déploiements dont les membres sont séparés
+par des NAT ou pare-feu stricts.
+Elle propose aussi des vignettes et le téléchargement des fichiers validés, un motif pour les fichiers refusés,
 drag-and-drop multi-fichier sur toute la fenêtre de tâche, galerie intégrée aux détails
 et jusqu'à quatre aperçus image/vidéo par carte Kanban. Le Canvas permet d'ajouter
 et déplacer des textes, formes, tâches, images et vidéos, ainsi que de dessiner à main
@@ -85,7 +95,8 @@ pwsh ./scripts/seed-demo.ps1
 
 Le script crée une équipe et un jeu de charge de **220 tâches** réalistes avec états, priorités,
 échéances, responsables, dossiers et sous-dossiers, ainsi que des sous-tâches, checklists, commentaires,
-références Git et dépendances. Il est idempotent : une nouvelle exécution complète seulement les tâches
+références Git et dépendances. Il ajoute aussi **6 contenus d’espace**, **4 salons** et
+une conversation d’exemple avec mentions et documents joints. Il est idempotent : une nouvelle exécution complète seulement les tâches
 manquantes. Les identifiants de démonstration sont affichés à la fin de son exécution.
 
 L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :

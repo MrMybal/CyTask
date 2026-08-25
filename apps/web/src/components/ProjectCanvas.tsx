@@ -45,6 +45,9 @@ interface ProjectCanvasProps {
   projectId: string;
   tasks: TaskOption[];
   onOpenTask: (taskId: string) => void;
+  storageId?: string;
+  initialState?: string;
+  onBoardChange?: (serialized: string) => void;
 }
 
 interface DragState {
@@ -61,9 +64,16 @@ const canvasWidth = 2400;
 const canvasHeight = 1600;
 const colors = ["#7CF2C4", "#F2C27C", "#8FB7FF", "#FF9FA4", "#C3A6FF"];
 
-export function ProjectCanvas({ projectId, tasks, onOpenTask }: ProjectCanvasProps) {
-  const storageKey = `cytask.canvas.v1.${projectId}`;
-  const [board, setBoard] = useState<CanvasBoardState>(() => readBoard(storageKey));
+export function ProjectCanvas({
+  projectId,
+  tasks,
+  onOpenTask,
+  storageId,
+  initialState,
+  onBoardChange
+}: ProjectCanvasProps) {
+  const storageKey = `cytask.canvas.v1.${storageId ?? projectId}`;
+  const [board, setBoard] = useState<CanvasBoardState>(() => readBoard(storageKey, initialState));
   const [viewport, setViewport] = useState({ x: 34, y: 34, scale: 0.9 });
   const [tool, setTool] = useState<CanvasTool>("select");
   const [selectedTaskId, setSelectedTaskId] = useState("");
@@ -76,13 +86,16 @@ export function ProjectCanvas({ projectId, tasks, onOpenTask }: ProjectCanvasPro
     .join("|");
 
   useEffect(() => {
-    setBoard(readBoard(storageKey));
+    setBoard(readBoard(storageKey, initialState));
     setViewport({ x: 34, y: 34, scale: 0.9 });
+    // initialState is applied only when the selected canvas changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
   useEffect(() => {
     window.localStorage.setItem(storageKey, JSON.stringify(board));
-  }, [board, storageKey]);
+    onBoardChange?.(JSON.stringify(board));
+  }, [board, onBoardChange, storageKey]);
 
   useEffect(() => {
     let active = true;
@@ -466,16 +479,17 @@ export function ProjectCanvas({ projectId, tasks, onOpenTask }: ProjectCanvasPro
       <footer className="project-canvas-status">
         <span>{board.objects.length} objets · {board.strokes.length} dessins</span>
         <span>Déposez directement des images ou vidéos dans l’espace.</span>
-        <span>Le contenu est conservé localement sur cet appareil.</span>
+        <span>{onBoardChange ? "Enregistrez pour partager le canvas à l’équipe." : "Le contenu est conservé localement sur cet appareil."}</span>
       </footer>
     </section>
   );
 }
 
-function readBoard(storageKey: string): CanvasBoardState {
+function readBoard(storageKey: string, initialState?: string): CanvasBoardState {
   const empty: CanvasBoardState = { version: 1, objects: [], strokes: [] };
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? "null") as Partial<CanvasBoardState> | null;
+    const source = initialState?.trim() || window.localStorage.getItem(storageKey) || "null";
+    const parsed = JSON.parse(source) as Partial<CanvasBoardState> | null;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.objects) || !Array.isArray(parsed.strokes)) return empty;
     return { version: 1, objects: parsed.objects, strokes: parsed.strokes };
   } catch {

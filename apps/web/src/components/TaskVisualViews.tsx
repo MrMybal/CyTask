@@ -35,12 +35,16 @@ interface CompactTaskTableProps {
   onOpenTask: (taskId: string) => void;
 }
 
+type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder";
+
 export function CompactTaskTable({
   tasks,
   labelsByTask,
   selectedTaskId,
   onOpenTask
 }: CompactTaskTableProps) {
+  const [sortColumn, setSortColumn] = useState<CompactSort>("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const groups = useMemo(() => {
     const grouped = new Map<string, { label?: ProjectLabel; tasks: WorkItem[] }>();
     for (const task of tasks) {
@@ -51,13 +55,37 @@ export function CompactTaskTable({
       group.tasks.push(task);
       grouped.set(key, group);
     }
-    return [...grouped.values()].sort((left, right) =>
+    const result = [...grouped.values()].sort((left, right) =>
       (left.label?.name ?? "Sans dossier").localeCompare(
         right.label?.name ?? "Sans dossier",
         "fr"
       )
     );
-  }, [labelsByTask, tasks]);
+    const priorityOrder = { low: 0, normal: 1, high: 2, urgent: 3 };
+    const statusOrder = { todo: 0, in_progress: 1, blocked: 2, done: 3, cancelled: 4 };
+    const direction = sortDirection === "asc" ? 1 : -1;
+    for (const group of result) {
+      group.tasks.sort((left, right) => {
+        const comparison = sortColumn === "name" ? left.title.localeCompare(right.title, "fr")
+          : sortColumn === "assignee" ? (left.assigneeName ?? "").localeCompare(right.assigneeName ?? "", "fr")
+          : sortColumn === "due" ? (left.dueAt ? Date.parse(left.dueAt) : Number.MAX_SAFE_INTEGER)
+            - (right.dueAt ? Date.parse(right.dueAt) : Number.MAX_SAFE_INTEGER)
+          : sortColumn === "priority" ? priorityOrder[left.priority] - priorityOrder[right.priority]
+          : sortColumn === "status" ? statusOrder[left.status] - statusOrder[right.status]
+          : 0;
+        return comparison * direction;
+      });
+    }
+    return result;
+  }, [labelsByTask, sortColumn, sortDirection, tasks]);
+
+  function sort(column: CompactSort) {
+    if (column === sortColumn) setSortDirection((current) => current === "asc" ? "desc" : "asc");
+    else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  }
 
   return (
     <section className="compact-table" aria-label="Tâches en tableau compact">
@@ -72,13 +100,19 @@ export function CompactTaskTable({
             <strong>{group.label?.name ?? "Sans dossier"}</strong>
             <span>{group.tasks.length}</span>
           </header>
-          <div className="compact-columns" aria-hidden="true">
-            <span>Nom</span>
-            <span>Assignée</span>
-            <span>Échéance</span>
-            <span>Priorité</span>
-            <span>Statut</span>
-            <span>Dossier</span>
+          <div className="compact-columns" aria-label="Trier les tâches par colonne">
+            {([
+              ["name", "Nom"],
+              ["assignee", "Assignée"],
+              ["due", "Échéance"],
+              ["priority", "Priorité"],
+              ["status", "Statut"],
+              ["folder", "Dossier"]
+            ] as const).map(([column, label]) => (
+              <button type="button" key={column} onClick={() => sort(column)}>
+                {label}{sortColumn === column ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
+              </button>
+            ))}
           </div>
           {group.tasks.map((task) => (
             <button

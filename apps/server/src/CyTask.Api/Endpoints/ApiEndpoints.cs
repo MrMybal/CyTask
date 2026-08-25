@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text;
+using CyTask.Api.Collaboration;
 using CyTask.Api.Configuration;
 using CyTask.Api.Domain;
 using CyTask.Api.Infrastructure;
@@ -145,6 +146,7 @@ public static class ApiEndpoints
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
 
+        authenticated.MapCollaborationEndpoints();
         return endpoints;
     }
 
