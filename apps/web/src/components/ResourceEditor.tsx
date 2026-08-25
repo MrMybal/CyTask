@@ -27,7 +27,9 @@ export function ResourceEditor({
 }: Props) {
   const [draftBody, setDraftBody] = useState(resource.body);
   const [saving, setSaving] = useState(false);
-  useEffect(() => setDraftBody(resource.body), [resource.id, resource.body]);
+  useEffect(() => {
+    setDraftBody(resource.body);
+  }, [resource.id, resource.body]);
   const canvasChanged = useCallback((value: string) => setDraftBody(value), []);
 
   async function save(event: FormEvent<HTMLFormElement>) {
