@@ -77,9 +77,10 @@ un second terminal pendant que le mode développement fonctionne :
 pwsh ./scripts/seed-demo.ps1
 ```
 
-Le script crée une équipe, treize tâches réalistes organisées en sous-tâches, des échéances,
-labels, checklists, commentaires, références Git et dépendances. Les identifiants de démonstration sont affichés à
-la fin de son exécution.
+Le script crée une équipe et un jeu de charge de **220 tâches** réalistes avec états, priorités,
+échéances, responsables et dossiers par labels, ainsi que des sous-tâches, checklists, commentaires,
+références Git et dépendances. Il est idempotent : une nouvelle exécution complète seulement les tâches
+manquantes. Les identifiants de démonstration sont affichés à la fin de son exécution.
 
 L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :
 un jeton personnel `cytask_pat_…` se crée depuis la section **API** du client Web,
