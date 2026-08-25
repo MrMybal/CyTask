@@ -42,9 +42,22 @@ export interface Comment {
   createdAt: string;
 }
 
+export interface TaskChecklistItem {
+  id: string;
+  taskId: string;
+  title: string;
+  isCompleted: boolean;
+  position: number;
+  revision: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TaskDetails {
   task: WorkItem;
   comments: Comment[];
+  checklist: TaskChecklistItem[];
 }
 
 export interface TaskRelation {
@@ -343,5 +356,23 @@ export const api = {
     request<Comment>(`/api/v1/tasks/${taskId}/comments`, {
       method: "POST",
       body: JSON.stringify({ body })
-    })
+    }),
+  createChecklistItem: (taskId: string, title: string) =>
+    request<TaskChecklistItem>(`/api/v1/tasks/${taskId}/checklist`, {
+      method: "POST",
+      body: JSON.stringify({ title })
+    }),
+  updateChecklistItem: (
+    taskId: string,
+    itemId: string,
+    body: Pick<TaskChecklistItem, "title" | "isCompleted"> & { expectedRevision: number }
+  ) => request<TaskChecklistItem>(`/api/v1/tasks/${taskId}/checklist/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  }),
+  deleteChecklistItem: (taskId: string, itemId: string, expectedRevision: number) =>
+    request<void>(
+      `/api/v1/tasks/${taskId}/checklist/${itemId}?expectedRevision=${expectedRevision}`,
+      { method: "DELETE" }
+    )
 };

@@ -232,6 +232,31 @@ public interface IWorkspaceStore
 
     Task<TaskDetails?> GetTaskAsync(Guid organizationId, Guid taskId, CancellationToken cancellationToken);
 
+    Task<TaskChecklistItem?> CreateChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        string title,
+        CancellationToken cancellationToken);
+
+    Task<UpdateChecklistItemResult> UpdateChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid itemId,
+        Guid userId,
+        string title,
+        bool isCompleted,
+        long expectedRevision,
+        CancellationToken cancellationToken);
+
+    Task<UpdateChecklistItemStatus> DeleteChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid itemId,
+        Guid userId,
+        long expectedRevision,
+        CancellationToken cancellationToken);
+
     Task<TaskDependencyOverview?> GetTaskDependenciesAsync(
         Guid organizationId,
         Guid taskId,

@@ -413,7 +413,7 @@ public sealed class CyTaskApiTests
         Assert.Equal("no-store", exportResponse.Headers.CacheControl?.ToString());
         Assert.StartsWith("cytask-export-", exportResponse.Content.Headers.ContentDisposition?.FileName);
         var export = await ReadJsonAsync(exportResponse);
-        Assert.Equal(1, export.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(2, export.GetProperty("formatVersion").GetInt32());
         Assert.Single(export.GetProperty("projects").EnumerateArray());
         Assert.Single(export.GetProperty("tasks").EnumerateArray());
     }
@@ -539,6 +539,105 @@ public sealed class CyTaskApiTests
         var conflict = await ReadJsonAsync(stale);
         Assert.Equal(4, conflict.GetProperty("task").GetProperty("revision").GetInt64());
     }
+
+    [Fact]
+    public async Task ChecklistItemsSupportCompletionConcurrencyAndTaskScoping()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Checklist", key = "CHECK" });
+        var projectId = project.GetProperty("id").GetGuid();
+        var task = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Préparer la livraison", description = "" });
+        var otherTask = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Autre tâche", description = "" });
+        var taskId = task.GetProperty("id").GetGuid();
+
+        var item = await PostAndReadAsync(
+            client,
+            $"/api/v1/tasks/{taskId}/checklist",
+            new { title = "Valider les tests" });
+        var itemId = item.GetProperty("id").GetGuid();
+        Assert.False(item.GetProperty("isCompleted").GetBoolean());
+        Assert.Equal(0, item.GetProperty("position").GetInt32());
+        Assert.Equal(1, item.GetProperty("revision").GetInt64());
+
+        using var detailsResponse = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, detailsResponse.StatusCode);
+        var details = await ReadJsonAsync(detailsResponse);
+        Assert.Equal(2, details.GetProperty("task").GetProperty("revision").GetInt64());
+        Assert.Equal(
+            "Valider les tests",
+            Assert.Single(details.GetProperty("checklist").EnumerateArray()).GetProperty("title").GetString());
+
+        using var update = await client.PatchAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/checklist/{itemId}", UriKind.Relative),
+            new { title = "Valider tous les tests", isCompleted = true, expectedRevision = 1 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        var updated = await ReadJsonAsync(update);
+        Assert.True(updated.GetProperty("isCompleted").GetBoolean());
+        Assert.Equal(2, updated.GetProperty("revision").GetInt64());
+
+        using var stale = await client.PatchAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/checklist/{itemId}", UriKind.Relative),
+            new { title = "Écraser", isCompleted = false, expectedRevision = 1 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        var conflict = await ReadJsonAsync(stale);
+        Assert.Equal(2, conflict.GetProperty("item").GetProperty("revision").GetInt64());
+
+        using var wrongTask = await client.PatchAsJsonAsync(
+            new Uri(
+                $"/api/v1/tasks/{otherTask.GetProperty("id").GetGuid()}/checklist/{itemId}",
+                UriKind.Relative),
+            new { title = "Changer de tâche", isCompleted = false, expectedRevision = 2 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, wrongTask.StatusCode);
+
+        using var exportResponse = await client.GetAsync(
+            new Uri("/api/v1/export", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, exportResponse.StatusCode);
+        var export = await ReadJsonAsync(exportResponse);
+        Assert.Equal(2, export.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(
+            itemId,
+            Assert.Single(export.GetProperty("checklist").EnumerateArray()).GetProperty("id").GetGuid());
+
+        using var staleDelete = await client.DeleteAsync(
+            new Uri(
+                $"/api/v1/tasks/{taskId}/checklist/{itemId}?expectedRevision=1",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, staleDelete.StatusCode);
+
+        using var delete = await client.DeleteAsync(
+            new Uri(
+                $"/api/v1/tasks/{taskId}/checklist/{itemId}?expectedRevision=2",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+
+        using var finalDetailsResponse = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var finalDetails = await ReadJsonAsync(finalDetailsResponse);
+        Assert.Empty(finalDetails.GetProperty("checklist").EnumerateArray());
+        Assert.Equal(4, finalDetails.GetProperty("task").GetProperty("revision").GetInt64());
+    }
+
 
     [Fact]
     public async Task TaskDependenciesRejectSelfReferencesAndCycles()
@@ -757,6 +856,7 @@ public sealed class CyTaskApiTests
         var document = await ReadJsonAsync(response);
         Assert.Equal("3.1.0", document.GetProperty("openapi").GetString());
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tasks/{taskId}/checklist", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/tokens", out _));
     }
 

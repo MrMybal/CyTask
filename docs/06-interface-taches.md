@@ -44,6 +44,11 @@ réseau précédente afin qu'une réponse lente ne remplace jamais la sélection
 Le commentaire accepte `Ctrl/⌘ + Entrée`, tandis que `/`, `N`, `B` et `Échap`
 accélèrent respectivement filtre, création, mode concentré et fermeture.
 
+La section **Checklist** vit directement dans **Détails** : elle affiche la progression,
+permet d'ajouter jusqu'à 200 étapes, de les valider et de les supprimer. Chaque
+élément possède sa propre révision optimiste ; en cas de modification concurrente,
+l'interface recharge la dernière version au lieu d'écraser le travail d'un collègue.
+
 L'onglet **Relations** distingue les tâches dont la sélection dépend et celles
 qu'elle bloque. L'ajout est idempotent, limité à l'organisation et protégé contre
 les auto-dépendances et les cycles transitifs. PostgreSQL sérialise la vérification

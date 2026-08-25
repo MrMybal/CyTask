@@ -27,7 +27,7 @@ cœur qui reste utilisable seul.
 
 La première tranche verticale est implémentée : amorçage sécurisé du premier
 compte, sessions, invitations à usage unique, rôles, organisation, projets,
-tâches éditables avec contrôle de révision, commentaires et événements temps réel.
+tâches éditables avec contrôle de révision, checklists, commentaires et événements temps réel.
 La recherche, le journal d’activité et l’export JSON sont également disponibles.
 Le pipeline de pièces jointes calcule les empreintes côté client, envoie les données
 par blocs vérifiés et conserve les originaux en quarantaine hors du Web. Un worker
@@ -53,7 +53,7 @@ vignettes et téléchargement des fichiers validés, motif affiché pour les fic
 palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
 au survol et notifications non bloquantes,
 déplacement optimiste avec contrôle de révision, détail en onglets et liens directs
-partageables. Les tâches peuvent aussi exprimer des dépendances acycliques et les
+partageables. Les tâches intègrent des checklists avec progression et peuvent exprimer des dépendances acycliques et les
 tâches qu'elles bloquent. PostgreSQL est la persistance cible ; un stockage
 mémoire explicite est disponible pour les tests et le développement rapide.
 
@@ -75,8 +75,8 @@ un second terminal pendant que le mode développement fonctionne :
 pwsh ./scripts/seed-demo.ps1
 ```
 
-Le script crée une équipe, treize tâches réalistes, des échéances, commentaires,
-références Git et dépendances. Les identifiants de démonstration sont affichés à
+Le script crée une équipe, treize tâches réalistes, des échéances, checklists,
+commentaires, références Git et dépendances. Les identifiants de démonstration sont affichés à
 la fin de son exécution.
 
 L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :

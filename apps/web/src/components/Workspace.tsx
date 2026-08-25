@@ -20,6 +20,7 @@ import {
   type SearchHit,
   type TaskDependencyOverview,
   type TaskDetails,
+  type TaskChecklistItem,
   type WorkItem
 } from "../api";
 import { sha256 } from "../sha256";
@@ -102,6 +103,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [draggedTaskId, setDraggedTaskId] = useState<string>();
   const [dragOverStatus, setDragOverStatus] = useState<WorkItem["status"]>();
   const [pendingTaskIds, setPendingTaskIds] = useState<Set<string>>(() => new Set());
+  const [pendingChecklistItemIds, setPendingChecklistItemIds] =
+    useState<Set<string>>(() => new Set());
+  const [checklistCreating, setChecklistCreating] = useState(false);
   const [taskLinkLabel, setTaskLinkLabel] = useState("Copier le lien");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     window.localStorage.getItem("cytask.sidebarCollapsed") === "true"
@@ -154,6 +158,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     task.id !== selectedTaskId
     && dependencies.dependsOn.every((dependency) => dependency.id !== task.id)
   ), [dependencies.dependsOn, selectedTaskId, tasks]);
+  const completedChecklistItems = details?.checklist.filter((item) => item.isCompleted).length ?? 0;
+  const checklistProgress = details?.checklist.length
+    ? Math.round((completedChecklistItems / details.checklist.length) * 100)
+    : 0;
 
   const loadProjects = useCallback(async () => {
     const nextProjects = await api.projects();
@@ -346,6 +354,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("task.dependency_added", refreshComment);
     stream.addEventListener("task.dependency_removed", refreshComment);
     stream.addEventListener("comment.created", refreshComment);
+    stream.addEventListener("task.checklist_item_created", refreshComment);
+    stream.addEventListener("task.checklist_item_updated", refreshComment);
+    stream.addEventListener("task.checklist_item_deleted", refreshComment);
     const refreshActivity = () => {
       if (showActivity) void loadActivity();
     };
@@ -353,6 +364,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("task.created", refreshActivity);
     stream.addEventListener("task.updated", refreshActivity);
     stream.addEventListener("comment.created", refreshActivity);
+    stream.addEventListener("task.checklist_item_created", refreshActivity);
+    stream.addEventListener("task.checklist_item_updated", refreshActivity);
+    stream.addEventListener("task.checklist_item_deleted", refreshActivity);
     stream.addEventListener("invitation.created", refreshActivity);
     const refreshAttachments = () => {
       if (selectedTaskId) void loadDetails(selectedTaskId);
@@ -462,6 +476,90 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       await loadDetails(details.task.id);
     } catch (reason) {
       setError(messageFor(reason));
+    }
+  }
+
+
+  async function createChecklistItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!details || checklistCreating) return;
+    const form = event.currentTarget;
+    const title = String(new FormData(form).get("title")).trim();
+    if (!title) return;
+    const taskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    setChecklistCreating(true);
+    try {
+      await api.createChecklistItem(taskId, title);
+      form.reset();
+      notify("success", "Élément ajouté à la checklist.");
+      await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
+    } catch (reason) {
+      setError(messageFor(reason));
+    } finally {
+      setChecklistCreating(false);
+    }
+  }
+
+  async function toggleChecklistItem(item: TaskChecklistItem, isCompleted: boolean) {
+    if (!details || pendingChecklistItemIds.has(item.id)) return;
+    const taskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    setPendingChecklistItemIds((current) => new Set(current).add(item.id));
+    setDetails((current) => current?.task.id === taskId
+      ? {
+        ...current,
+        checklist: current.checklist.map((candidate) =>
+          candidate.id === item.id ? { ...candidate, isCompleted } : candidate)
+      }
+      : current);
+    try {
+      await api.updateChecklistItem(taskId, item.id, {
+        title: item.title,
+        isCompleted,
+        expectedRevision: item.revision
+      });
+      await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
+    } catch (reason) {
+      await loadDetails(taskId).catch(() => undefined);
+      setError(reason instanceof ApiError && reason.status === 409
+        ? "La checklist a changé. Sa dernière version a été rechargée."
+        : messageFor(reason));
+    } finally {
+      setPendingChecklistItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  async function deleteChecklistItem(item: TaskChecklistItem) {
+    if (!details || pendingChecklistItemIds.has(item.id)) return;
+    if (!window.confirm(`Supprimer « ${item.title} » de la checklist ?`)) return;
+    const taskId = details.task.id;
+    const projectId = details.task.projectId;
+    setError("");
+    setPendingChecklistItemIds((current) => new Set(current).add(item.id));
+    try {
+      await api.deleteChecklistItem(taskId, item.id, item.revision);
+      notify("success", "Élément supprimé de la checklist.");
+      await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 409) {
+        await loadDetails(taskId).catch(() => undefined);
+        setError("La checklist a changé. Sa dernière version a été rechargée.");
+      } else {
+        setError(messageFor(reason));
+      }
+    } finally {
+      setPendingChecklistItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
     }
   }
 
@@ -1582,6 +1680,73 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <div><dt>Assignée à</dt><dd>{details.task.assigneeName ?? "Personne"}</dd></div>
                   <div><dt>Révision</dt><dd>#{details.task.revision}</dd></div>
                 </dl>
+
+                <section className="task-checklist" aria-labelledby="task-checklist-title">
+                  <div className="checklist-heading">
+                    <div>
+                      <h3 id="task-checklist-title">Checklist</h3>
+                      <p>{completedChecklistItems} sur {details.checklist.length} terminés</p>
+                    </div>
+                    <strong>{checklistProgress}%</strong>
+                  </div>
+                  <progress
+                    className="checklist-progress"
+                    value={completedChecklistItems}
+                    max={Math.max(details.checklist.length, 1)}
+                    aria-label={`Progression de la checklist : ${checklistProgress}%`}
+                  />
+                  <div className="checklist-items">
+                    {details.checklist.map((item) => {
+                      const pending = pendingChecklistItemIds.has(item.id);
+                      return (
+                        <div
+                          className={item.isCompleted ? "checklist-item completed" : "checklist-item"}
+                          key={item.id}
+                        >
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={item.isCompleted}
+                              disabled={!canContribute || pending}
+                              onChange={(event) =>
+                                void toggleChecklistItem(item, event.currentTarget.checked)}
+                            />
+                            <span>{item.title}</span>
+                          </label>
+                          {canContribute && (
+                            <button
+                              className="icon-button quiet checklist-remove"
+                              type="button"
+                              disabled={pending}
+                              aria-label={`Supprimer « ${item.title} » de la checklist`}
+                              onClick={() => void deleteChecklistItem(item)}
+                            >×</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {details.checklist.length === 0 && (
+                      <p className="empty-note">Ajoutez les étapes nécessaires pour terminer cette tâche.</p>
+                    )}
+                  </div>
+                  {canContribute && (
+                    <form className="checklist-form" onSubmit={createChecklistItem}>
+                      <input
+                        name="title"
+                        maxLength={500}
+                        placeholder="Ajouter une étape…"
+                        aria-label="Nouvel élément de checklist"
+                        disabled={checklistCreating || details.checklist.length >= 200}
+                        required
+                      />
+                      <button
+                        className="primary-button small"
+                        type="submit"
+                        disabled={checklistCreating || details.checklist.length >= 200}
+                      >{checklistCreating ? "Ajout…" : "Ajouter"}</button>
+                    </form>
+                  )}
+                </section>
               </>
             ))}
 

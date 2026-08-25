@@ -204,6 +204,50 @@ foreach ($dependency in $dependencyDefinitions) {
     } | Out-Null
 }
 
+$checklistDefinitions = @(
+    @{
+        Task = "hangar-blockout"
+        Items = @(
+            @{ Title = "Tester les circulations joueur"; Completed = $true },
+            @{ Title = "Valider les axes caméra"; Completed = $true },
+            @{ Title = "Nettoyer les volumes temporaires"; Completed = $false }
+        )
+    },
+    @{
+        Task = "trailer-capture"
+        Items = @(
+            @{ Title = "Verrouiller les cinq plans Sequencer"; Completed = $false },
+            @{ Title = "Vérifier les sous-titres de revue"; Completed = $false },
+            @{ Title = "Exporter la version 1440p"; Completed = $false }
+        )
+    },
+    @{
+        Task = "review-build"
+        Items = @(
+            @{ Title = "Compiler la configuration Shipping"; Completed = $true },
+            @{ Title = "Joindre les symboles et les logs"; Completed = $false },
+            @{ Title = "Tester sur une machine propre"; Completed = $false }
+        )
+    }
+)
+
+foreach ($checklist in $checklistDefinitions) {
+    $taskId = $createdTasks[$checklist.Task].id
+    foreach ($definition in $checklist.Items) {
+        $item = Invoke-DemoApi -Method Post -Path "/api/v1/tasks/$taskId/checklist" -Headers $csrfHeaders -Body @{
+            title = $definition.Title
+        }
+        if ($definition.Completed) {
+            Invoke-DemoApi -Method Patch -Path "/api/v1/tasks/$taskId/checklist/$($item.id)" -Headers $csrfHeaders -Body @{
+                title = $item.title
+                isCompleted = $true
+                expectedRevision = $item.revision
+            } | Out-Null
+        }
+    }
+}
+
+
 $comments = @(
     @{ Task = "hangar-blockout"; Body = "Le passage côté baie vitrée est maintenant assez large pour la caméra et le gameplay." },
     @{ Task = "shader-optimization"; Body = "Le profil GPU montre encore deux matériaux maîtres trop coûteux sur les plateformes." },
@@ -235,6 +279,6 @@ foreach ($reference in $references) {
 }
 
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "13 tâches, 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
+Write-Host "13 tâches, 9 éléments de checklist, 4 membres, 9 dépendances, 4 commentaires et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

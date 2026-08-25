@@ -38,6 +38,13 @@ public sealed record CreateCommentRequest(string Body);
 
 public sealed record CreateTaskDependencyRequest(Guid DependsOnTaskId);
 
+public sealed record CreateChecklistItemRequest(string Title);
+
+public sealed record UpdateChecklistItemRequest(
+    string Title,
+    bool IsCompleted,
+    long ExpectedRevision);
+
 public sealed class UpdateTaskRequest
 {
     private string? priority;

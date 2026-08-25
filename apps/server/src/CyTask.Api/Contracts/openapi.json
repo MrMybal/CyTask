@@ -337,7 +337,7 @@
     "/api/v1/tasks/{taskId}": {
       "get": {
         "tags": ["tâches"],
-        "summary": "Détail d'une tâche et ses commentaires",
+        "summary": "Détail d'une tâche, ses commentaires et sa checklist",
         "parameters": [{ "$ref": "#/components/parameters/taskId" }],
         "responses": {
           "200": { "description": "Détail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDetails" } } } },
@@ -397,6 +397,80 @@
         "responses": {
           "201": { "description": "Commentaire créé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Comment" } } } },
           "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/checklist": {
+      "post": {
+        "tags": ["tâches"],
+        "summary": "Ajouter un élément à la checklist",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 500 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Élément créé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskChecklistItem" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "description": "Limite de 200 éléments atteinte" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/checklist/{itemId}": {
+      "patch": {
+        "tags": ["tâches"],
+        "summary": "Modifier ou valider un élément de checklist",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "name": "itemId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "isCompleted", "expectedRevision"],
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+                  "isCompleted": { "type": "boolean" },
+                  "expectedRevision": { "type": "integer", "format": "int64", "minimum": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Élément mis à jour", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskChecklistItem" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "description": "Révision dépassée" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      },
+      "delete": {
+        "tags": ["tâches"],
+        "summary": "Supprimer un élément de checklist",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "name": "itemId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "expectedRevision", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64", "minimum": 1 } }
+        ],
+        "responses": {
+          "204": { "description": "Élément supprimé" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "description": "Révision dépassée" },
+          "422": { "$ref": "#/components/responses/Validation" }
         }
       }
     },
@@ -691,11 +765,27 @@
           "createdAt": { "type": "string", "format": "date-time" }
         }
       },
+      "TaskChecklistItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "taskId": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "isCompleted": { "type": "boolean" },
+          "position": { "type": "integer" },
+          "revision": { "type": "integer", "format": "int64" },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
       "TaskDetails": {
         "type": "object",
         "properties": {
           "task": { "$ref": "#/components/schemas/WorkItem" },
-          "comments": { "type": "array", "items": { "$ref": "#/components/schemas/Comment" } }
+          "comments": { "type": "array", "items": { "$ref": "#/components/schemas/Comment" } },
+          "checklist": { "type": "array", "items": { "$ref": "#/components/schemas/TaskChecklistItem" } }
         }
       },
       "TaskRelation": {

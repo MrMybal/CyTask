@@ -23,6 +23,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private readonly Dictionary<Guid, (int Attempts, DateTimeOffset LeasedUntil)> _attachmentReviewLeases = [];
     private readonly Dictionary<Guid, ExternalReference> _externalReferences = [];
     private readonly Dictionary<(Guid TaskId, Guid DependsOnTaskId), TaskDependencyEntry> _taskDependencies = [];
+    private readonly Dictionary<Guid, TaskChecklistItem> _checklistItems = [];
 
     public Task<bool> IsReadyAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 
@@ -625,12 +626,18 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             var projects = _projects.Values.Where(project => project.OrganizationId == organizationId).ToArray();
             var tasks = _tasks.Values.Where(task => task.OrganizationId == organizationId).ToArray();
             var comments = _comments.Values.Where(comment => comment.OrganizationId == organizationId).ToArray();
+            var checklist = _checklistItems.Values
+                .Where(item => item.OrganizationId == organizationId)
+                .OrderBy(item => item.TaskId)
+                .ThenBy(item => item.Position)
+                .ThenBy(item => item.Id)
+                .ToArray();
             var activity = _activities.Where(entry => entry.OrganizationId == organizationId).ToArray();
             var attachments = _attachments.Values
                 .Where(attachment => attachment.OrganizationId == organizationId)
                 .ToArray();
             return Task.FromResult<WorkspaceExport?>(new(
-                1, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, activity, attachments));
+                2, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, activity, attachments));
         }
     }
 
@@ -1076,7 +1083,148 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 .Where(comment => comment.OrganizationId == organizationId && comment.TaskId == taskId)
                 .OrderBy(comment => comment.CreatedAt)
                 .ToArray();
-            return Task.FromResult<TaskDetails?>(new(task, comments));
+            IReadOnlyList<TaskChecklistItem> checklist = _checklistItems.Values
+                .Where(item => item.OrganizationId == organizationId && item.TaskId == taskId)
+                .OrderBy(item => item.Position)
+                .ThenBy(item => item.Id)
+                .ToArray();
+            return Task.FromResult<TaskDetails?>(new(task, comments, checklist));
+        }
+    }
+
+
+    public Task<TaskChecklistItem?> CreateChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid userId,
+        string title,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_tasks.TryGetValue(taskId, out var task)
+                || task.OrganizationId != organizationId
+                || _checklistItems.Values.Count(item =>
+                    item.OrganizationId == organizationId && item.TaskId == taskId) >= 200)
+            {
+                return Task.FromResult<TaskChecklistItem?>(null);
+            }
+
+            var position = _checklistItems.Values
+                .Where(item => item.OrganizationId == organizationId && item.TaskId == taskId)
+                .Select(item => item.Position)
+                .DefaultIfEmpty(-1)
+                .Max() + 1;
+            var now = DateTimeOffset.UtcNow;
+            var item = new TaskChecklistItem(
+                Guid.CreateVersion7(),
+                organizationId,
+                taskId,
+                title,
+                false,
+                position,
+                1,
+                userId,
+                now,
+                now);
+            _checklistItems.Add(item.Id, item);
+            _tasks[taskId] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+            AddActivity(
+                organizationId, "task.checklist_item_created", "task", taskId,
+                userId, _users[userId].DisplayName,
+                $"Élément ajouté à la checklist de {task.Key}", now);
+            return Task.FromResult<TaskChecklistItem?>(item);
+        }
+    }
+
+    public Task<UpdateChecklistItemResult> UpdateChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid itemId,
+        Guid userId,
+        string title,
+        bool isCompleted,
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_tasks.TryGetValue(taskId, out var task)
+                || task.OrganizationId != organizationId
+                || !_checklistItems.TryGetValue(itemId, out var item)
+                || item.OrganizationId != organizationId
+                || item.TaskId != taskId)
+            {
+                return Task.FromResult(new UpdateChecklistItemResult(
+                    UpdateChecklistItemStatus.NotFound, null));
+            }
+
+            if (item.Revision != expectedRevision)
+            {
+                return Task.FromResult(new UpdateChecklistItemResult(
+                    UpdateChecklistItemStatus.RevisionConflict, item));
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var updated = item with
+            {
+                Title = title,
+                IsCompleted = isCompleted,
+                Revision = item.Revision + 1,
+                UpdatedAt = now
+            };
+            _checklistItems[itemId] = updated;
+            _tasks[taskId] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+            AddActivity(
+                organizationId, "task.checklist_item_updated", "task", taskId,
+                userId, _users[userId].DisplayName,
+                $"Checklist de {task.Key} mise à jour", now);
+            return Task.FromResult(new UpdateChecklistItemResult(
+                UpdateChecklistItemStatus.Updated, updated));
+        }
+    }
+
+    public Task<UpdateChecklistItemStatus> DeleteChecklistItemAsync(
+        Guid organizationId,
+        Guid taskId,
+        Guid itemId,
+        Guid userId,
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role == "viewer"
+                || !_tasks.TryGetValue(taskId, out var task)
+                || task.OrganizationId != organizationId
+                || !_checklistItems.TryGetValue(itemId, out var item)
+                || item.OrganizationId != organizationId
+                || item.TaskId != taskId)
+            {
+                return Task.FromResult(UpdateChecklistItemStatus.NotFound);
+            }
+
+            if (item.Revision != expectedRevision)
+            {
+                return Task.FromResult(UpdateChecklistItemStatus.RevisionConflict);
+            }
+
+            _checklistItems.Remove(itemId);
+            var now = DateTimeOffset.UtcNow;
+            _tasks[taskId] = task with { Revision = task.Revision + 1, UpdatedAt = now };
+            AddActivity(
+                organizationId, "task.checklist_item_deleted", "task", taskId,
+                userId, _users[userId].DisplayName,
+                $"Élément supprimé de la checklist de {task.Key}", now);
+            return Task.FromResult(UpdateChecklistItemStatus.Updated);
         }
     }
 
