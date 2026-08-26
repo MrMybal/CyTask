@@ -39,7 +39,7 @@ durée, se lisent directement dans la tâche et se déplacent dans la timeline g
 requêtes de plage. Le réencodage et l'analyse antivirale restent à faire.
 Les tâches peuvent aussi recevoir des références Git manuelles génériques ; aucun
 dépôt ni secret n'est requis tant que le connecteur Git officiel n'est pas activé.
-Le premier plugin Unreal source est également présent : panneau Slate, connexion
+Le premier plugin Unreal source est également présent : panneau Slate, tâches personnelles et création auto-assignée, fichiers/assets historisés, connexion
 PKCE dans le navigateur système, consultation des projets et tâches, révocation du
 jeton, validateur strict et exécuteur confirmé de recettes d'assets. Le flux natif
 utilise un code unique et un jeton Bearer opaque révocable réservé au client

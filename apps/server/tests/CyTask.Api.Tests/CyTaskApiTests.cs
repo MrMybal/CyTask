@@ -2043,6 +2043,7 @@ public sealed class CyTaskApiTests
                     projectName = "Nebula",
                     mapPath = "/Game/Maps/Hangar",
                     assetPaths = new List<string> { "/Game/Props/Door" },
+                    filePaths = new List<string> { "Source/Nebula/DoorComponent.cpp" },
                     targetPlatform = "Win64",
                     reviewBuild = "VS-142",
                     notes = "Vérifier Lumen."
@@ -2054,11 +2055,49 @@ public sealed class CyTaskApiTests
         var saved = await ReadJsonAsync(save);
         Assert.Equal(1, saved.GetProperty("revision").GetInt64());
 
+        using var secondSave = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/data", UriKind.Relative),
+            new
+            {
+                data = new
+                {
+                    engineVersion = "5.5",
+                    projectName = "Nebula",
+                    mapPath = "/Game/Maps/Hangar",
+                    assetPaths = new List<string> { "/Game/Props/Door", "/Game/Props/Console" },
+                    filePaths = new List<string> { "Source/Nebula/DoorComponent.cpp", "Config/DefaultGame.ini" },
+                    targetPlatform = "Win64",
+                    reviewBuild = "VS-143",
+                    notes = "Console ajoutée à la revue."
+                },
+                expectedRevision = 1
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, secondSave.StatusCode);
+
+        using var historyResponse = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/history", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+        var history = await ReadJsonAsync(historyResponse);
+        Assert.Equal(2, history.GetArrayLength());
+        Assert.Equal(2, history[0].GetProperty("revision").GetInt64());
+        Assert.Equal(1, history[1].GetProperty("revision").GetInt64());
+        Assert.Equal(
+            "Config/DefaultGame.ini",
+            history[0].GetProperty("data").GetProperty("filePaths")[1].GetString());
+
         using var stale = await client.PutAsJsonAsync(
             new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/data", UriKind.Relative),
             new { data = new { engineVersion = "5.6" }, expectedRevision = 0 },
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+
+        using var invalidPath = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/data", UriKind.Relative),
+            new { data = new { filePaths = new List<string> { "../Secrets.txt" } }, expectedRevision = 2 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidPath.StatusCode);
 
         using var invalid = await client.PutAsJsonAsync(
             new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/data", UriKind.Relative),

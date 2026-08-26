@@ -62,6 +62,12 @@ public sealed record TaskPluginView(
     long Revision,
     DateTimeOffset? UpdatedAt);
 
+public sealed record TaskPluginHistoryView(
+    JsonElement Data,
+    long Revision,
+    Guid UpdatedBy,
+    DateTimeOffset UpdatedAt);
+
 public sealed record UpdateTaskPluginDataRequest(
     JsonElement Data,
     long ExpectedRevision);

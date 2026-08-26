@@ -21,6 +21,7 @@ public static class PluginEndpoints
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin"));
         authenticated.MapGet("/tasks/{taskId:guid}/plugins", ListTaskPluginsAsync);
         authenticated.MapGet("/tasks/{taskId:guid}/plugins/{pluginId}/data", GetTaskPluginDataAsync);
+        authenticated.MapGet("/tasks/{taskId:guid}/plugins/{pluginId}/history", ListTaskPluginDataHistoryAsync);
         authenticated.MapPut("/tasks/{taskId:guid}/plugins/{pluginId}/data", UpdateTaskPluginDataAsync)
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
@@ -162,6 +163,34 @@ public static class PluginEndpoints
             manifest, data?.Data ?? EmptyObject(), data?.Revision ?? 0, data?.UpdatedAt));
     }
 
+    private static async Task<IResult> ListTaskPluginDataHistoryAsync(
+        Guid taskId,
+        string pluginId,
+        HttpContext context,
+        PluginCatalog catalog,
+        IPluginStore plugins,
+        IWorkspaceStore workspace,
+        CancellationToken cancellationToken)
+    {
+        if (catalog.Find(pluginId) is null) return Results.NotFound();
+
+        var user = context.GetUser()!;
+        var task = await workspace.GetTaskAsync(user.OrganizationId, taskId, cancellationToken);
+        if (task is null) return Results.NotFound();
+        if (!await IsEnabledAsync(
+            plugins, user.OrganizationId, task.Task.ProjectId, pluginId, cancellationToken))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Le plugin n’est pas activé pour ce projet.");
+        }
+
+        var history = await plugins.ListTaskPluginDataHistoryAsync(
+            user.OrganizationId, taskId, pluginId, 100, cancellationToken);
+        return Results.Ok(history.Select(item => new TaskPluginHistoryView(
+            item.Data, item.Revision, item.UpdatedBy, item.UpdatedAt)));
+    }
+
     private static async Task<IResult> UpdateTaskPluginDataAsync(
         Guid taskId,
         string pluginId,
@@ -280,6 +309,10 @@ public static class PluginEndpoints
                 var text = item.GetString() ?? string.Empty;
                 if (text.Length > (field.MaxLength ?? 1024)) return "Un élément de la liste est trop long.";
                 if (field.Key == "assetPaths" && !IsUnrealPath(text)) return "Chaque asset doit utiliser /Game ou /Plugins.";
+                if (field.Key == "filePaths" && !IsProjectRelativePath(text))
+                {
+                    return "Chaque fichier doit utiliser un chemin relatif au projet, sans traversée.";
+                }
             }
             return null;
         }
@@ -297,6 +330,21 @@ public static class PluginEndpoints
             return "La valeur ne fait pas partie des options autorisées.";
         }
         return null;
+    }
+
+    private static bool IsProjectRelativePath(string value)
+    {
+        if (value.Length == 0) return true;
+        if (value.StartsWith('/') || value.StartsWith('\\')
+            || value.Contains('\\') || value.Contains(':') || value.Contains("//", StringComparison.Ordinal)
+            || value.Any(character => char.IsControl(character)))
+        {
+            return false;
+        }
+
+        var segments = value.Split('/', StringSplitOptions.None);
+        return segments.Length > 0
+            && segments.All(segment => segment.Length > 0 && segment is not "." and not "..");
     }
 
     private static bool IsUnrealPath(string value) =>

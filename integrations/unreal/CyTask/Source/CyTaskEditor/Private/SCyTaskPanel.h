@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "CyTaskApiClient.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Views/SListView.h"
 
@@ -25,45 +26,64 @@ private:
     FReply ConnectAccount();
     FReply DisconnectAccount();
     FReply RefreshProjectsClicked();
+    FReply CreateAssignedTask();
     FReply CaptureUnrealContext();
+    FReply AddSelectedAssets();
+    FReply AddProjectFiles();
     FReply SaveUnrealContext();
     FReply ValidateExampleRecipe();
     void RefreshProjects();
     void LoadSelectedProjectTasks();
+    void ApplyTaskFilter();
     void LoadSelectedTaskUnrealData();
+    void LoadSelectedTaskUnrealHistory();
     void OnTaskSelected(
         TSharedPtr<FCyTaskWorkItemSummary> Task,
         ESelectInfo::Type SelectionType);
     void OnProjectSelected(
         TSharedPtr<FCyTaskProjectSummary> Project,
         ESelectInfo::Type SelectionType);
+    void OnMyTasksCheckStateChanged(ECheckBoxState NewState);
+    ECheckBoxState GetMyTasksCheckState() const;
     TSharedRef<SWidget> GenerateProjectWidget(
         TSharedPtr<FCyTaskProjectSummary> Project) const;
     TSharedRef<ITableRow> GenerateTaskRow(
         TSharedPtr<FCyTaskWorkItemSummary> Task,
+        const TSharedRef<STableViewBase>& OwnerTable) const;
+    TSharedRef<ITableRow> GenerateHistoryRow(
+        TSharedPtr<FCyTaskUnrealHistoryEntry> Entry,
         const TSharedRef<STableViewBase>& OwnerTable) const;
 
     TSharedPtr<FCyTaskApiClient> ApiClient;
     TSharedPtr<FCyTaskNativeAuthorization> NativeAuthorization;
     TSharedPtr<SEditableTextBox> ServerUrlTextBox;
     TSharedPtr<STextBlock> ConnectionStatusText;
+    FString CurrentUserId;
     TArray<TSharedPtr<FCyTaskProjectSummary>> ProjectOptions;
     TSharedPtr<FCyTaskProjectSummary> SelectedProject;
     TSharedPtr<SComboBox<TSharedPtr<FCyTaskProjectSummary>>> ProjectComboBox;
     TSharedPtr<STextBlock> SelectedProjectText;
+    TArray<TSharedPtr<FCyTaskWorkItemSummary>> AllTaskItems;
     TArray<TSharedPtr<FCyTaskWorkItemSummary>> TaskItems;
     TSharedPtr<FCyTaskWorkItemSummary> SelectedTask;
     TSharedPtr<SListView<TSharedPtr<FCyTaskWorkItemSummary>>> TaskListView;
     TSharedPtr<STextBlock> TaskStatusText;
+    TSharedPtr<SEditableTextBox> NewTaskTitleTextBox;
+    TSharedPtr<SMultiLineEditableTextBox> NewTaskDescriptionTextBox;
     TSharedPtr<STextBlock> UnrealStatusText;
     TSharedPtr<SEditableTextBox> EngineVersionTextBox;
     TSharedPtr<SEditableTextBox> ProjectNameTextBox;
     TSharedPtr<SEditableTextBox> MapPathTextBox;
     TSharedPtr<SMultiLineEditableTextBox> AssetPathsTextBox;
+    TSharedPtr<SMultiLineEditableTextBox> FilePathsTextBox;
     TSharedPtr<SEditableTextBox> TargetPlatformTextBox;
     TSharedPtr<SEditableTextBox> ReviewBuildTextBox;
     TSharedPtr<SMultiLineEditableTextBox> UnrealNotesTextBox;
+    TArray<TSharedPtr<FCyTaskUnrealHistoryEntry>> HistoryItems;
+    TSharedPtr<SListView<TSharedPtr<FCyTaskUnrealHistoryEntry>>> HistoryListView;
+    TSharedPtr<STextBlock> HistoryStatusText;
     TSharedPtr<STextBlock> RecipeStatusText;
     int64 UnrealDataRevision = 0;
+    bool bMyTasksOnly = true;
     bool bAuthorizationPending = false;
 };

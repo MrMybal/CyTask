@@ -19,6 +19,10 @@ public interface IPluginStore
         Guid organizationId, Guid taskId, string pluginId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<TaskPluginData>> ListTaskPluginDataHistoryAsync(
+        Guid organizationId, Guid taskId, string pluginId, int limit,
+        CancellationToken cancellationToken);
+
     Task<TaskPluginData?> UpsertTaskPluginDataAsync(
         Guid organizationId, Guid projectId, Guid taskId, string pluginId,
         JsonElement data, long expectedRevision, Guid userId,
