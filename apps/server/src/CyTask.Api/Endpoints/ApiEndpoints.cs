@@ -5,6 +5,7 @@ using CyTask.Api.Collaboration;
 using CyTask.Api.Configuration;
 using CyTask.Api.Domain;
 using CyTask.Api.Infrastructure;
+using CyTask.Api.Plugins;
 using CyTask.Api.Realtime;
 using Microsoft.Net.Http.Headers;
 using CyTask.Api.Security;
@@ -155,6 +156,7 @@ public static class ApiEndpoints
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
 
         authenticated.MapCollaborationEndpoints();
+        authenticated.MapPluginEndpoints();
         return endpoints;
     }
 

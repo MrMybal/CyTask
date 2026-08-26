@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 1,
-  "VersionName": "0.1.0",
+  "Version": 2,
+  "VersionName": "0.2.0",
   "FriendlyName": "CyTask",
-  "Description": "Accès sécurisé aux tâches CyTask et recettes d'assets contrôlées.",
+  "Description": "Tickets CyTask, données Unreal synchronisées et recettes d'assets contrôlées.",
   "Category": "Productivity",
   "CreatedBy": "CyTask contributors",
   "CreatedByURL": "https://cytask.dev",

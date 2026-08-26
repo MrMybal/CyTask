@@ -20,6 +20,12 @@ Aucun mot de passe ou secret client n'est embarqué. Le Bearer opaque reste en
 mémoire, est écrasé à la fermeture et le bouton de déconnexion demande aussi sa
 révocation au serveur.
 
+Quand le plugin **Unreal Engine** est activé dans le projet CyTask, sélectionner un ticket
+charge son onglet Unreal partagé. **Capturer le contexte** relève la version du moteur, le nom
+du projet et la map ouverte ; les assets concernés, la plateforme, le build de revue et les
+notes peuvent ensuite être complétés puis enregistrés. La mise à jour utilise une révision
+optimiste : le panneau demande un rechargement si une autre personne a modifié ces données.
+
 ## Installation dans un projet
 
 1. Copier le dossier `CyTask` dans `<Projet>/Plugins/CyTask`.

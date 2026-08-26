@@ -54,6 +54,26 @@ struct CYTASKCORE_API FCyTaskWorkItemsResult
     FString Message;
 };
 
+struct CYTASKCORE_API FCyTaskUnrealData
+{
+    FString EngineVersion;
+    FString ProjectName;
+    FString MapPath;
+    TArray<FString> AssetPaths;
+    FString TargetPlatform;
+    FString ReviewBuild;
+    FString Notes;
+};
+
+struct CYTASKCORE_API FCyTaskUnrealDataResult
+{
+    bool bSucceeded = false;
+    int32 StatusCode = 0;
+    FCyTaskUnrealData Data;
+    int64 Revision = 0;
+    FString Message;
+};
+
 class CYTASKCORE_API FCyTaskApiClient : public TSharedFromThis<FCyTaskApiClient>
 {
 public:
@@ -61,6 +81,7 @@ public:
     using FIdentityCallback = TFunction<void(const FCyTaskIdentityResult&)>;
     using FProjectsCallback = TFunction<void(const FCyTaskProjectsResult&)>;
     using FWorkItemsCallback = TFunction<void(const FCyTaskWorkItemsResult&)>;
+    using FUnrealDataCallback = TFunction<void(const FCyTaskUnrealDataResult&)>;
 
     ~FCyTaskApiClient();
 
@@ -71,6 +92,12 @@ public:
     void GetCurrentIdentity(FIdentityCallback Callback) const;
     void ListProjects(FProjectsCallback Callback) const;
     void ListTasks(const FString& ProjectId, FWorkItemsCallback Callback) const;
+    void GetUnrealTaskData(const FString& TaskId, FUnrealDataCallback Callback) const;
+    void UpdateUnrealTaskData(
+        const FString& TaskId,
+        const FCyTaskUnrealData& Data,
+        int64 ExpectedRevision,
+        FUnrealDataCallback Callback) const;
     void RevokeAccessToken(FConnectionCallback Callback);
 
     void SetAccessToken(FString InAccessToken);

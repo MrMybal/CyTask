@@ -4,6 +4,7 @@ using CyTask.Api.Configuration;
 using CyTask.Api.Endpoints;
 using CyTask.Api.Infrastructure;
 using CyTask.Api.Media;
+using CyTask.Api.Plugins;
 using CyTask.Api.Realtime;
 using CyTask.Api.Security;
 using Microsoft.AspNetCore.Http.Json;
@@ -131,6 +132,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<OutboxDispatchSignal>();
 builder.Services.AddSingleton<WorkspaceEventHub>();
+builder.Services.AddSingleton<PluginCatalog>();
 builder.Services.AddSingleton<LocalMediaStorage>();
 builder.Services.AddSingleton<ChatSignalHub>();
 builder.Services.AddSingleton<RequireSessionFilter>();
@@ -144,6 +146,7 @@ if (cyTaskOptions.UseInMemoryStore)
 {
     builder.Services.AddSingleton<IWorkspaceStore, InMemoryWorkspaceStore>();
     builder.Services.AddSingleton<ICollaborationStore, InMemoryCollaborationStore>();
+    builder.Services.AddSingleton<IPluginStore, InMemoryPluginStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<WorkspaceEventHub>());
 }
@@ -165,6 +168,7 @@ else
     });
     builder.Services.AddSingleton<IWorkspaceStore, PostgresWorkspaceStore>();
     builder.Services.AddSingleton<ICollaborationStore, PostgresCollaborationStore>();
+    builder.Services.AddSingleton<IPluginStore, PostgresPluginStore>();
     builder.Services.AddSingleton<PostgresOutboxEventStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<PostgresOutboxEventStore>());

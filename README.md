@@ -8,7 +8,7 @@ CyTask est un gestionnaire de projets et de tâches open source, auto-hébergeab
 conçu pour les équipes de production numérique et les projets Unreal Engine.
 
 Le produit doit fonctionner avec ou sans dépôt Git. Git, Unreal Engine, les
-traitements médias et, plus tard, CyRevision sont des intégrations autour d'un
+traitements médias et CyRevision sont des intégrations autour d'un
 cœur qui reste utilisable seul.
 
 ## Objectifs
@@ -44,6 +44,13 @@ PKCE dans le navigateur système, consultation des projets et tâches, révocati
 jeton, validateur strict et exécuteur confirmé de recettes d'assets. Le flux natif
 utilise un code unique et un jeton Bearer opaque révocable réservé au client
 `cytask-unreal` ; le jeton reste uniquement en mémoire dans l'éditeur.
+
+La première plateforme de plugins déclaratifs est également disponible. Un administrateur
+active Git, AI Assistant, Unreal Engine ou CyRevision par projet depuis la page **Plugins** ; CyTask ajoute alors
+les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de
+révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
+et validés par le serveur sont rendus. Le connecteur compagnon CyRevision recherche les tickets,
+ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de fin après fusion.
 Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
 du moteur complète.
 Le client Web responsive et installable consomme la même API que les futurs
@@ -99,7 +106,8 @@ pwsh ./scripts/seed-demo.ps1
 
 Le script crée une équipe et un jeu de charge de **220 tâches** réalistes avec états, priorités,
 échéances, responsables, dossiers et sous-dossiers, ainsi que des sous-tâches, checklists, commentaires,
-références Git et dépendances. Il ajoute aussi **6 contenus d’espace**, **4 salons** et
+références Git et dépendances. Il active aussi les **4 plugins officiels** avec des données
+Git, AI Assistant, Unreal et CyRevision, puis ajoute **6 contenus d’espace**, **4 salons** et
 une conversation d’exemple avec mentions et documents joints. Il est idempotent : une nouvelle exécution complète seulement les tâches
 Le jeu de démonstration ajoute également un groupe privé et un lien de tâche prévisualisable.
 manquantes. Les identifiants de démonstration sont affichés à la fin de son exécution.

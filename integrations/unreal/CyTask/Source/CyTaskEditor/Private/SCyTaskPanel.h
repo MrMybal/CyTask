@@ -8,6 +8,7 @@
 
 class FCyTaskNativeAuthorization;
 class SEditableTextBox;
+class SMultiLineEditableTextBox;
 class STextBlock;
 
 class SCyTaskPanel final : public SCompoundWidget
@@ -24,9 +25,15 @@ private:
     FReply ConnectAccount();
     FReply DisconnectAccount();
     FReply RefreshProjectsClicked();
+    FReply CaptureUnrealContext();
+    FReply SaveUnrealContext();
     FReply ValidateExampleRecipe();
     void RefreshProjects();
     void LoadSelectedProjectTasks();
+    void LoadSelectedTaskUnrealData();
+    void OnTaskSelected(
+        TSharedPtr<FCyTaskWorkItemSummary> Task,
+        ESelectInfo::Type SelectionType);
     void OnProjectSelected(
         TSharedPtr<FCyTaskProjectSummary> Project,
         ESelectInfo::Type SelectionType);
@@ -45,8 +52,18 @@ private:
     TSharedPtr<SComboBox<TSharedPtr<FCyTaskProjectSummary>>> ProjectComboBox;
     TSharedPtr<STextBlock> SelectedProjectText;
     TArray<TSharedPtr<FCyTaskWorkItemSummary>> TaskItems;
+    TSharedPtr<FCyTaskWorkItemSummary> SelectedTask;
     TSharedPtr<SListView<TSharedPtr<FCyTaskWorkItemSummary>>> TaskListView;
     TSharedPtr<STextBlock> TaskStatusText;
+    TSharedPtr<STextBlock> UnrealStatusText;
+    TSharedPtr<SEditableTextBox> EngineVersionTextBox;
+    TSharedPtr<SEditableTextBox> ProjectNameTextBox;
+    TSharedPtr<SEditableTextBox> MapPathTextBox;
+    TSharedPtr<SMultiLineEditableTextBox> AssetPathsTextBox;
+    TSharedPtr<SEditableTextBox> TargetPlatformTextBox;
+    TSharedPtr<SEditableTextBox> ReviewBuildTextBox;
+    TSharedPtr<SMultiLineEditableTextBox> UnrealNotesTextBox;
     TSharedPtr<STextBlock> RecipeStatusText;
+    int64 UnrealDataRevision = 0;
     bool bAuthorizationPending = false;
 };

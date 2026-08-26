@@ -767,9 +767,70 @@ foreach ($reference in $references) {
     } | Out-Null
 }
 
+foreach ($pluginId in @("dev.cytask.git", "dev.cytask.ai-assistant", "dev.cytask.unreal", "dev.cytask.cyrevision")) {
+    Invoke-DemoApi -Method Put -Path "/api/v1/projects/$($project.id)/plugins/$pluginId" -Headers $csrfHeaders | Out-Null
+}
+
+$gitPlugin = Invoke-DemoApi -Method Get -Path "/api/v1/tasks/$($createdTasks["terminal-gameplay"].id)/plugins/dev.cytask.git/data"
+Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$($createdTasks["terminal-gameplay"].id)/plugins/dev.cytask.git/data" -Headers $csrfHeaders -Body @{
+    expectedRevision = $gitPlugin.revision
+    data = @{
+        provider = "GitHub"
+        repository = "northstar/nebula-station"
+        defaultBranch = "main"
+        remoteUrl = "https://github.com/northstar/nebula-station.git"
+        integrationMode = "Références manuelles"
+        autoLink = $true
+    }
+} | Out-Null
+
+$aiPlugin = Invoke-DemoApi -Method Get -Path "/api/v1/tasks/$($createdTasks["documentation"].id)/plugins/dev.cytask.ai-assistant/data"
+Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$($createdTasks["documentation"].id)/plugins/dev.cytask.ai-assistant/data" -Headers $csrfHeaders -Body @{
+    expectedRevision = $aiPlugin.revision
+    data = @{
+        provider = "Ollama"
+        model = "qwen3-coder"
+        goal = "Préparer une checklist de documentation technique à partir du ticket."
+        contextSources = @("Commentaires du ticket", "Pièces jointes validées", "README du projet")
+        includeAttachments = $true
+        outputMode = "Checklist"
+        instructions = "Ne jamais inventer de chemin d’asset et signaler les informations manquantes."
+        lastSummary = "Démonstration : contexte prêt, aucune clé API enregistrée dans le ticket."
+    }
+} | Out-Null
+
+$unrealPlugin = Invoke-DemoApi -Method Get -Path "/api/v1/tasks/$($createdTasks["hangar-blockout"].id)/plugins/dev.cytask.unreal/data"
+Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$($createdTasks["hangar-blockout"].id)/plugins/dev.cytask.unreal/data" -Headers $csrfHeaders -Body @{
+    expectedRevision = $unrealPlugin.revision
+    data = @{
+        engineVersion = "5.8"
+        projectName = "NebulaStation"
+        mapPath = "/Game/Maps/VerticalSlice/Hangar"
+        assetPaths = @("/Game/Environment/Hangar", "/Game/Gameplay/Interaction")
+        targetPlatform = "Win64"
+        reviewBuild = "VerticalSlice-Review-12"
+        notes = "Contexte capturé depuis le projet Unreal fictif de la démonstration."
+    }
+} | Out-Null
+
+$cyRevisionPlugin = Invoke-DemoApi -Method Get -Path "/api/v1/tasks/$($createdTasks["shader-optimization"].id)/plugins/dev.cytask.cyrevision/data"
+Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$($createdTasks["shader-optimization"].id)/plugins/dev.cytask.cyrevision/data" -Headers $csrfHeaders -Body @{
+    expectedRevision = $cyRevisionPlugin.revision
+    data = @{
+        repository = "northstar/nebula-station"
+        branch = "feature/NEB-shader-budget"
+        revisionId = "rev-nebula-0012"
+        commitSha = "7a31d9f"
+        revisionUrl = "cyrevision://revision/rev-nebula-0012"
+        changedFiles = @("Content/Materials/M_Hangar_Master.uasset", "Config/DefaultEngine.ini")
+        syncMode = "Git LFS"
+        summary = "Réduction des permutations shader et mise à jour du profil de build."
+    }
+} | Out-Null
+
 Add-DemoMediaPreview -TaskId $createdTasks["art-direction"].id
 Add-DemoCollaborationContent -Project $project -LabelIds $labelIdsByName
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "220 tâches, 7 états dont 2 personnalisés, responsables multiples, 10 dossiers, 6 contenus d’espace, 4 salons, 1 groupe privé, 4 membres, 9 dépendances et 3 références Git."
+Write-Host "220 tâches, 7 états dont 2 personnalisés, 4 plugins officiels, responsables multiples, 10 dossiers, 6 contenus d’espace, 4 salons, 1 groupe privé, 4 membres, 9 dépendances et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

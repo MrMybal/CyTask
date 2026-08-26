@@ -15,7 +15,8 @@
     { "name": "projets" },
     { "name": "tâches" },
     { "name": "fichiers", "description": "Envoi par blocs, quarantaine, validation et téléchargement" },
-    { "name": "git", "description": "Références externes génériques vers commits, branches et demandes de fusion" }
+    { "name": "git", "description": "Références externes génériques vers commits, branches et demandes de fusion" },
+    { "name": "plugins", "description": "Extensions déclaratives activées projet par projet" }
   ],
   "paths": {
     "/health/live": {
@@ -304,7 +305,54 @@
         }
       }
     },
-    "/api/v1/projects/{projectId}/statuses": {
+    "/api/v1/plugins/catalog": {
+      "get": {
+        "tags": ["plugins"],
+        "summary": "Catalogue des plugins officiels compatibles",
+        "responses": {
+          "200": { "description": "Manifestes disponibles", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PluginManifest" } } } } }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/plugins": {
+      "get": {
+        "tags": ["plugins"],
+        "summary": "Plugins disponibles et état d'activation du projet",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "responses": {
+          "200": { "description": "Plugins du projet", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectPlugin" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/plugins/{pluginId}": {
+      "put": {
+        "tags": ["plugins"],
+        "summary": "Activer un plugin pour le projet",
+        "description": "Rôles owner et admin.",
+        "parameters": [
+          { "$ref": "#/components/parameters/projectId" },
+          { "$ref": "#/components/parameters/pluginId" }
+        ],
+        "responses": {
+          "200": { "description": "Plugin activé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectPlugin" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["plugins"],
+        "summary": "Désactiver un plugin pour le projet",
+        "description": "Rôles owner et admin. Les données existantes sont conservées.",
+        "parameters": [
+          { "$ref": "#/components/parameters/projectId" },
+          { "$ref": "#/components/parameters/pluginId" }
+        ],
+        "responses": {
+          "204": { "description": "Plugin désactivé" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },    "/api/v1/projects/{projectId}/statuses": {
       "get": {
         "tags": ["tâches"],
         "summary": "États configurés pour le projet",
@@ -541,7 +589,61 @@
         }
       }
     },
-    "/api/v1/tasks/{taskId}": {
+    "/api/v1/tasks/{taskId}/plugins": {
+      "get": {
+        "tags": ["plugins"],
+        "summary": "Contributions actives et données d'un ticket",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Plugins actifs du ticket", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TaskPlugin" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/plugins/{pluginId}/data": {
+      "get": {
+        "tags": ["plugins"],
+        "summary": "Lire les données structurées d'un plugin",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "$ref": "#/components/parameters/pluginId" }
+        ],
+        "responses": {
+          "200": { "description": "Données du plugin", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskPlugin" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "put": {
+        "tags": ["plugins"],
+        "summary": "Écrire les données structurées avec contrôle de révision",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "$ref": "#/components/parameters/pluginId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["data", "expectedRevision"],
+                "properties": {
+                  "data": { "type": "object", "additionalProperties": true, "maxProperties": 100 },
+                  "expectedRevision": { "type": "integer", "format": "int64", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Données enregistrées", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskPlugin" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },    "/api/v1/tasks/{taskId}": {
       "get": {
         "tags": ["tâches"],
         "summary": "Détail d'une tâche, ses commentaires et sa checklist",
@@ -964,6 +1066,7 @@
     "parameters": {
       "projectId": { "name": "projectId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "taskId": { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "pluginId": { "name": "pluginId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$" } },
       "uploadId": { "name": "uploadId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "tokenId": { "name": "tokenId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
     },
@@ -975,7 +1078,57 @@
       "Validation": { "description": "Corps invalide, détails par champ dans `errors`" }
     },
     "schemas": {
-      "Session": {
+      "PluginManifest": {
+        "type": "object",
+        "required": ["schemaVersion", "id", "name", "version", "apiVersion", "runtime", "permissions", "contributes"],
+        "properties": {
+          "schemaVersion": { "type": "integer", "const": 1 },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "version": { "type": "string" },
+          "apiVersion": { "type": "string" },
+          "runtime": { "type": "string", "enum": ["sandbox", "ui-extension", "service-connector"] },
+          "permissions": { "type": "array", "items": { "type": "string" } },
+          "contributes": {
+            "type": "object",
+            "properties": {
+              "taskTabs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "icon": { "type": "string" },
+                    "fields": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+                  }
+                }
+              }
+            }
+          },
+          "homepage": { "type": ["string", "null"], "format": "uri" }
+        }
+      },
+      "ProjectPlugin": {
+        "type": "object",
+        "required": ["manifest", "enabled"],
+        "properties": {
+          "manifest": { "$ref": "#/components/schemas/PluginManifest" },
+          "enabled": { "type": "boolean" },
+          "enabledAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "TaskPlugin": {
+        "type": "object",
+        "required": ["manifest", "data", "revision"],
+        "properties": {
+          "manifest": { "$ref": "#/components/schemas/PluginManifest" },
+          "data": { "type": "object", "additionalProperties": true },
+          "revision": { "type": "integer", "format": "int64", "minimum": 0 },
+          "updatedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },      "Session": {
         "type": "object",
         "properties": {
           "userId": { "type": "string", "format": "uuid" },

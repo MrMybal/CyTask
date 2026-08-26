@@ -5,6 +5,7 @@ import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./styles.css";
 import "./content.css";
 import "./chat.css";
+import "./plugin.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

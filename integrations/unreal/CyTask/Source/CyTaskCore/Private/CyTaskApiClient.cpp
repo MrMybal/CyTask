@@ -9,7 +9,7 @@
 
 namespace
 {
-    void SecureReset(FString& Value)
+    void SecureResetApiSecret(FString& Value)
     {
         if (Value.GetAllocatedSize() > 0)
         {
@@ -36,9 +36,78 @@ namespace
 
     bool HasExpectedStatus(const FString& Status)
     {
-        return Status == TEXT("todo") || Status == TEXT("in_progress")
-            || Status == TEXT("blocked") || Status == TEXT("done")
-            || Status == TEXT("cancelled");
+        if (Status.Len() < 1 || Status.Len() > 40 || Status[0] < TEXT('a') || Status[0] > TEXT('z'))
+        {
+            return false;
+        }
+        for (const TCHAR Character : Status)
+        {
+            if (!((Character >= TEXT('a') && Character <= TEXT('z'))
+                || (Character >= TEXT('0') && Character <= TEXT('9'))
+                || Character == TEXT('_')))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool ReadOptionalString(const TSharedPtr<FJsonObject>& Json, const TCHAR* Field, FString& OutValue)
+    {
+        if (!Json.IsValid() || !Json->HasField(Field))
+        {
+            OutValue.Reset();
+            return true;
+        }
+        return Json->TryGetStringField(Field, OutValue);
+    }
+
+    bool ParseUnrealDataResponse(
+        const FString& Payload,
+        FCyTaskUnrealDataResult& OutResult)
+    {
+        TSharedPtr<FJsonObject> Root;
+        const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Payload);
+        if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+        {
+            return false;
+        }
+
+        const TSharedPtr<FJsonObject>* Data = nullptr;
+        double Revision = 0.0;
+        if (!Root->TryGetObjectField(TEXT("data"), Data) || Data == nullptr || !Data->IsValid()
+            || !Root->TryGetNumberField(TEXT("revision"), Revision) || Revision < 0.0)
+        {
+            return false;
+        }
+
+        if (!ReadOptionalString(*Data, TEXT("engineVersion"), OutResult.Data.EngineVersion)
+            || !ReadOptionalString(*Data, TEXT("projectName"), OutResult.Data.ProjectName)
+            || !ReadOptionalString(*Data, TEXT("mapPath"), OutResult.Data.MapPath)
+            || !ReadOptionalString(*Data, TEXT("targetPlatform"), OutResult.Data.TargetPlatform)
+            || !ReadOptionalString(*Data, TEXT("reviewBuild"), OutResult.Data.ReviewBuild)
+            || !ReadOptionalString(*Data, TEXT("notes"), OutResult.Data.Notes))
+        {
+            return false;
+        }
+
+        OutResult.Data.AssetPaths.Reset();
+        const TArray<TSharedPtr<FJsonValue>>* Assets = nullptr;
+        if ((*Data)->TryGetArrayField(TEXT("assetPaths"), Assets) && Assets != nullptr)
+        {
+            for (const TSharedPtr<FJsonValue>& Asset : *Assets)
+            {
+                FString Path;
+                if (!Asset.IsValid() || !Asset->TryGetString(Path))
+                {
+                    return false;
+                }
+                OutResult.Data.AssetPaths.Add(MoveTemp(Path));
+            }
+        }
+
+        OutResult.Revision = static_cast<int64>(Revision);
+        return true;
     }
 }
 
@@ -55,7 +124,7 @@ void FCyTaskApiClient::SetAccessToken(FString InAccessToken)
 
 void FCyTaskApiClient::ClearAccessToken()
 {
-    SecureReset(AccessToken);
+    SecureResetApiSecret(AccessToken);
 }
 
 bool FCyTaskApiClient::ValidateServerUrl(
@@ -356,6 +425,132 @@ void FCyTaskApiClient::ListTasks(const FString& ProjectId, FWorkItemsCallback Ca
     if (!Request->ProcessRequest())
     {
         Callback({ false, 0, {}, TEXT("La requête de tâches n'a pas pu être démarrée.") });
+    }
+}
+
+void FCyTaskApiClient::GetUnrealTaskData(
+    const FString& TaskId,
+    FUnrealDataCallback Callback) const
+{
+    if (ServerUrl.IsEmpty() || AccessToken.IsEmpty() || !IsGuid(TaskId))
+    {
+        Callback({ false, 0, {}, 0, TEXT("Tâche invalide ou compte CyTask non connecté.") });
+        return;
+    }
+
+    const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetVerb(TEXT("GET"));
+    Request->SetURL(ServerUrl + TEXT("/api/v1/tasks/") + TaskId
+        + TEXT("/plugins/dev.cytask.unreal/data"));
+    Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+    Request->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + AccessToken);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnectedSuccessfully)
+        {
+            FCyTaskUnrealDataResult Result;
+            Result.StatusCode = Response.IsValid() ? Response->GetResponseCode() : 0;
+            if (!bConnectedSuccessfully || Result.StatusCode < 200 || Result.StatusCode >= 300)
+            {
+                Result.Message = Result.StatusCode == 409
+                    ? TEXT("Activez d'abord le plugin Unreal dans ce projet sur CyTask.")
+                    : Result.StatusCode > 0
+                        ? FString::Printf(TEXT("Chargement Unreal refusé (HTTP %d)."), Result.StatusCode)
+                        : TEXT("Connexion au serveur impossible.");
+                Callback(Result);
+                return;
+            }
+
+            if (!ParseUnrealDataResponse(Response->GetContentAsString(), Result))
+            {
+                Result.Message = TEXT("Réponse du plugin Unreal invalide.");
+                Callback(Result);
+                return;
+            }
+
+            Result.bSucceeded = true;
+            Result.Message = TEXT("Contexte Unreal synchronisé.");
+            Callback(Result);
+        });
+
+    if (!Request->ProcessRequest())
+    {
+        Callback({ false, 0, {}, 0, TEXT("La requête Unreal n'a pas pu être démarrée.") });
+    }
+}
+
+void FCyTaskApiClient::UpdateUnrealTaskData(
+    const FString& TaskId,
+    const FCyTaskUnrealData& Data,
+    int64 ExpectedRevision,
+    FUnrealDataCallback Callback) const
+{
+    if (ServerUrl.IsEmpty() || AccessToken.IsEmpty() || !IsGuid(TaskId) || ExpectedRevision < 0)
+    {
+        Callback({ false, 0, {}, 0, TEXT("Tâche, révision ou compte CyTask invalide.") });
+        return;
+    }
+
+    const TSharedRef<FJsonObject> DataJson = MakeShared<FJsonObject>();
+    DataJson->SetStringField(TEXT("engineVersion"), Data.EngineVersion);
+    DataJson->SetStringField(TEXT("projectName"), Data.ProjectName);
+    DataJson->SetStringField(TEXT("mapPath"), Data.MapPath);
+    TArray<TSharedPtr<FJsonValue>> Assets;
+    Assets.Reserve(Data.AssetPaths.Num());
+    for (const FString& AssetPath : Data.AssetPaths)
+    {
+        Assets.Add(MakeShared<FJsonValueString>(AssetPath));
+    }
+    DataJson->SetArrayField(TEXT("assetPaths"), MoveTemp(Assets));
+    DataJson->SetStringField(TEXT("targetPlatform"), Data.TargetPlatform);
+    DataJson->SetStringField(TEXT("reviewBuild"), Data.ReviewBuild);
+    DataJson->SetStringField(TEXT("notes"), Data.Notes);
+
+    const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetObjectField(TEXT("data"), DataJson);
+    Root->SetNumberField(TEXT("expectedRevision"), static_cast<double>(ExpectedRevision));
+    FString Body;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetVerb(TEXT("PUT"));
+    Request->SetURL(ServerUrl + TEXT("/api/v1/tasks/") + TaskId
+        + TEXT("/plugins/dev.cytask.unreal/data"));
+    Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + AccessToken);
+    Request->SetContentAsString(Body);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnectedSuccessfully)
+        {
+            FCyTaskUnrealDataResult Result;
+            Result.StatusCode = Response.IsValid() ? Response->GetResponseCode() : 0;
+            if (!bConnectedSuccessfully || Result.StatusCode < 200 || Result.StatusCode >= 300)
+            {
+                Result.Message = Result.StatusCode == 409
+                    ? TEXT("Conflit de révision ou plugin Unreal inactif. Rechargez le ticket.")
+                    : Result.StatusCode > 0
+                        ? FString::Printf(TEXT("Enregistrement Unreal refusé (HTTP %d)."), Result.StatusCode)
+                        : TEXT("Connexion au serveur impossible.");
+                Callback(Result);
+                return;
+            }
+
+            if (!ParseUnrealDataResponse(Response->GetContentAsString(), Result))
+            {
+                Result.Message = TEXT("Réponse d'enregistrement Unreal invalide.");
+                Callback(Result);
+                return;
+            }
+
+            Result.bSucceeded = true;
+            Result.Message = TEXT("Contexte Unreal enregistré dans CyTask.");
+            Callback(Result);
+        });
+
+    if (!Request->ProcessRequest())
+    {
+        Callback({ false, 0, {}, 0, TEXT("La requête d'enregistrement Unreal n'a pas pu être démarrée.") });
     }
 }
 
