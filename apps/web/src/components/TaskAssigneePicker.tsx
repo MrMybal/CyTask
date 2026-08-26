@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OrganizationMember } from "../api";
 
 interface TaskAssigneePickerProps {
@@ -21,16 +21,51 @@ export function TaskAssigneePicker({
   onChange
 }: TaskAssigneePickerProps) {
   const [internalIds, setInternalIds] = useState(initialSelectedIds);
+  const [draftIds, setDraftIds] = useState(selectedIds ?? initialSelectedIds);
+  const [isOpen, setIsOpen] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const controlled = selectedIds !== undefined;
   const activeIds = selectedIds ?? internalIds;
   const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
+  const menuIds = controlled ? draftIds : activeIds;
+  const menuSet = useMemo(() => new Set(menuIds), [menuIds]);
   const selectedMembers = members.filter((member) => activeSet.has(member.userId));
+
+  useEffect(() => {
+    if (!isOpen && selectedIds !== undefined) setDraftIds(selectedIds);
+  }, [isOpen, selectedIds]);
+
+  useEffect(() => {
+    if (!disabled || !detailsRef.current?.open) return;
+    detailsRef.current.open = false;
+    setIsOpen(false);
+  }, [disabled]);
 
   function toggle(userId: string, checked: boolean) {
     const next = checked
-      ? [...activeIds, userId].filter((id, index, values) => values.indexOf(id) === index)
-      : activeIds.filter((id) => id !== userId);
-    if (selectedIds === undefined) setInternalIds(next);
+      ? [...menuIds, userId].filter((id, index, values) => values.indexOf(id) === index)
+      : menuIds.filter((id) => id !== userId);
+    if (controlled) {
+      setDraftIds(next);
+      return;
+    }
+    setInternalIds(next);
     onChange?.(next);
+  }
+
+  function closeMenu() {
+    if (detailsRef.current) detailsRef.current.open = false;
+    setIsOpen(false);
+  }
+
+  function cancelDraft() {
+    setDraftIds(activeIds);
+    closeMenu();
+  }
+
+  function applyDraft() {
+    if (!sameIds(activeIds, draftIds)) onChange?.(draftIds);
+    closeMenu();
   }
 
   return (
@@ -38,7 +73,14 @@ export function TaskAssigneePicker({
       {name && activeIds.map((userId) => (
         <input type="hidden" name={name} value={userId} key={userId} />
       ))}
-      <details>
+      <details
+        ref={detailsRef}
+        onToggle={(event) => {
+          const open = event.currentTarget.open;
+          if (open && controlled) setDraftIds(activeIds);
+          setIsOpen(open);
+        }}
+      >
         <summary aria-label="Modifier les responsables">
           <span className="assignee-picker-avatars" aria-hidden="true">
             {selectedMembers.slice(0, 3).map((member) => (
@@ -54,28 +96,41 @@ export function TaskAssigneePicker({
           </span>
           {!disabled && <b aria-hidden="true">＋</b>}
         </summary>
-        {!disabled && (
+        {isOpen && !disabled && (
           <div className="assignee-picker-menu">
             <header>
               <strong>Responsables</strong>
               <small>Plusieurs personnes possibles</small>
             </header>
+            {members.length === 0 && <p className="assignee-picker-empty">Aucun membre disponible.</p>}
             {members.map((member) => (
               <label key={member.userId}>
                 <input
                   type="checkbox"
-                  checked={activeSet.has(member.userId)}
+                  checked={menuSet.has(member.userId)}
                   onChange={(event) => toggle(member.userId, event.currentTarget.checked)}
                 />
                 <i aria-hidden="true">{initials(member.displayName)}</i>
                 <span>{member.displayName}<small>{member.email}</small></span>
               </label>
             ))}
+            {controlled && (
+              <footer className="assignee-picker-actions">
+                <button type="button" onClick={cancelDraft}>Annuler</button>
+                <button type="button" className="primary" onClick={applyDraft}>Appliquer</button>
+              </footer>
+            )}
           </div>
         )}
       </details>
     </div>
   );
+}
+
+function sameIds(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((id) => rightSet.has(id));
 }
 
 function initials(name: string) {
