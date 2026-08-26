@@ -27,6 +27,7 @@ import {
   type TaskDependencyOverview,
   type TaskDetails,
   type TaskChecklistItem,
+  type TaskLabelAssignment,
   type TaskOption,
   type TaskPlugin,
   type WorkItem
@@ -1440,28 +1441,49 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   async function changeTasksBulk(
     selectedTasks: WorkItem[],
-    changes: Partial<Pick<WorkItem, "status" | "priority">>
+    changes: Partial<Pick<WorkItem, "status" | "priority">> & { assigneeIds?: string[] }
   ): Promise<boolean> {
     if (!canContribute) return false;
     const eligible = selectedTasks.filter((task) =>
       !pendingTaskIds.has(task.id)
       && ((changes.status !== undefined && changes.status !== task.status)
-        || (changes.priority !== undefined && changes.priority !== task.priority))
+        || (changes.priority !== undefined && changes.priority !== task.priority)
+        || (changes.assigneeIds !== undefined
+          && !sameIdSet(taskAssigneeIds(task), changes.assigneeIds)))
     );
     if (eligible.length === 0) return true;
 
     const eligibleIds = new Set(eligible.map((task) => task.id));
     const originalById = new Map(eligible.map((task) => [task.id, task]));
-    const optimisticById = new Map(eligible.map((task) => [
-      task.id,
-      { ...task, ...changes }
-    ]));
+    const membersById = new Map(members.map((member) => [member.userId, member]));
+    const optimisticById = new Map<string, WorkItem>(eligible.map((task) => {
+      if (changes.assigneeIds === undefined) {
+        return [task.id, {
+          ...task,
+          status: changes.status ?? task.status,
+          priority: changes.priority ?? task.priority
+        }];
+      }
+      const assignees = changes.assigneeIds.flatMap((userId) => {
+        const member = membersById.get(userId);
+        return member ? [{ userId, displayName: member.displayName }] : [];
+      });
+      return [task.id, {
+        ...task,
+        status: changes.status ?? task.status,
+        priority: changes.priority ?? task.priority,
+        assigneeId: assignees[0]?.userId ?? null,
+        assigneeName: assignees[0]?.displayName ?? null,
+        assignees
+      }];
+    }));
     setError("");
     setPendingTaskIds((current) => new Set([...current, ...eligibleIds]));
     setTasks((current) => current.map((task) => optimisticById.get(task.id) ?? task));
     setDetails((current) => {
-      if (!current || !eligibleIds.has(current.task.id)) return current;
-      return { ...current, task: { ...current.task, ...changes } };
+      if (!current) return current;
+      const optimistic = optimisticById.get(current.task.id);
+      return optimistic ? { ...current, task: optimistic } : current;
     });
 
     const updatedTasks: WorkItem[] = [];
@@ -1480,7 +1502,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             status: optimistic.status,
             priority: optimistic.priority,
             dueAt: optimistic.dueAt,
-            assigneeIds: taskAssigneeIds(optimistic),
+            assigneeIds: changes.assigneeIds ?? taskAssigneeIds(optimistic),
             expectedRevision: task.revision
           }));
         } catch (reason) {
@@ -1520,6 +1542,95 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       notify(
         "error",
         updatedTasks.length + " tâche(s) mise(s) à jour, " + failures.length + " en conflit ou en erreur."
+      );
+      return false;
+    } finally {
+      setPendingTaskIds((current) => {
+        const next = new Set(current);
+        for (const taskId of eligibleIds) next.delete(taskId);
+        return next;
+      });
+    }
+  }
+
+  async function changeTaskLabelsBulk(
+    selectedTasks: WorkItem[],
+    labelId: string,
+    shouldAssign: boolean
+  ): Promise<boolean> {
+    if (!canContribute) return false;
+    const currentlyAssigned = new Set(
+      projectLabels.assignments
+        .filter((assignment) => assignment.labelId === labelId)
+        .map((assignment) => assignment.taskId)
+    );
+    const eligible = selectedTasks.filter((task) =>
+      !pendingTaskIds.has(task.id)
+      && (shouldAssign ? !currentlyAssigned.has(task.id) : currentlyAssigned.has(task.id))
+    );
+    if (eligible.length === 0) return true;
+
+    const eligibleIds = new Set(eligible.map((task) => task.id));
+    const createdAssignments: TaskLabelAssignment[] = [];
+    const successfulIds = new Set<string>();
+    const failures: unknown[] = [];
+    let cursor = 0;
+    setError("");
+    setPendingTaskIds((current) => new Set([...current, ...eligibleIds]));
+
+    async function worker() {
+      while (cursor < eligible.length) {
+        const task = eligible[cursor++];
+        if (!task) return;
+        try {
+          if (shouldAssign) {
+            createdAssignments.push(await api.addTaskLabel(task.id, labelId));
+          } else {
+            await api.removeTaskLabel(task.id, labelId);
+          }
+          successfulIds.add(task.id);
+        } catch (reason) {
+          failures.push(reason);
+        }
+      }
+    }
+
+    try {
+      await Promise.all(Array.from(
+        { length: Math.min(4, eligible.length) },
+        () => worker()
+      ));
+      setProjectLabels((current) => shouldAssign
+        ? {
+          ...current,
+          assignments: [
+            ...current.assignments,
+            ...createdAssignments.filter((assignment) =>
+              !current.assignments.some((candidate) =>
+                candidate.taskId === assignment.taskId && candidate.labelId === assignment.labelId
+              )
+            )
+          ]
+        }
+        : {
+          ...current,
+          assignments: current.assignments.filter((assignment) =>
+            assignment.labelId !== labelId || !successfulIds.has(assignment.taskId)
+          )
+        });
+
+      const projectId = selectedProjectId ?? eligible[0]?.projectId;
+      if (projectId) await loadTasks(projectId).catch(() => undefined);
+      if (failures.length === 0) {
+        notify(
+          "success",
+          eligible.length + " tâche(s) " + (shouldAssign ? "ajoutée(s) au dossier/label." : "retirée(s) du dossier/label.")
+        );
+        return true;
+      }
+      notify(
+        "error",
+        successfulIds.size + " tâche(s) traitée(s), " + failures.length + " en erreur."
       );
       return false;
     } finally {
@@ -2399,6 +2510,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             ) : taskView === "compact" ? (
               <CompactTaskTable
                 tasks={filteredTasks}
+                labels={projectLabels.labels}
                 labelsByTask={labelsByTask}
                 statusLabels={statusLabels}
                 statusColors={statusColors}
@@ -2413,6 +2525,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 onChangeDueAt={(task, dueAt) => void changeTaskInline(task, { dueAt }, "Échéance modifiée.")}
                 onChangeAssignees={(task, assigneeIds) => void changeTaskAssignees(task, assigneeIds)}
                 onBulkChange={changeTasksBulk}
+                onBulkLabelChange={changeTaskLabelsBulk}
               />
             ) : taskView === "canvas" ? (
               <ProjectCanvas
@@ -3538,6 +3651,12 @@ function taskAssigneeIds(task: WorkItem): string[] {
     return task.assignees.map((assignee) => assignee.userId);
   }
   return task.assigneeId ? [task.assigneeId] : [];
+}
+
+function sameIdSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightIds = new Set(right);
+  return left.every((id) => rightIds.has(id));
 }
 
 function optionalId(value: FormDataEntryValue | null): string | null {
