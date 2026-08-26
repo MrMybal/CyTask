@@ -37,7 +37,7 @@ interface TaskSavedViewsProps {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const statuses = new Set(["all", "todo", "in_progress", "blocked", "done", "cancelled"]);
+const statusPattern = /^(all|[a-z][a-z0-9_]{0,39})$/;
 const priorities = new Set(["all", "low", "normal", "high", "urgent"]);
 const dueFilters = new Set(["all", "overdue", "today", "week", "none"]);
 const sorts = new Set(["updated", "created", "due", "key", "title"]);
@@ -226,7 +226,7 @@ function parseSavedTaskView(candidate: unknown): SavedTaskView | undefined {
 function parseTaskFilterSnapshot(candidate: unknown): TaskFilterSnapshot | undefined {
   if (!isRecord(candidate)
     || typeof candidate.query !== "string" || candidate.query.length > 240
-    || typeof candidate.status !== "string" || !statuses.has(candidate.status)
+    || typeof candidate.status !== "string" || !statusPattern.test(candidate.status)
     || typeof candidate.priority !== "string" || !priorities.has(candidate.priority)
     || !isDynamicFilter(candidate.assignee, "unassigned")
     || typeof candidate.due !== "string" || !dueFilters.has(candidate.due)

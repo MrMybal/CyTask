@@ -31,6 +31,19 @@ public sealed record Project(
     Guid CreatedBy,
     DateTimeOffset CreatedAt);
 
+public sealed record ProjectStatus(
+    Guid OrganizationId,
+    Guid ProjectId,
+    string Key,
+    string Name,
+    string Color,
+    int Position,
+    bool IsSystem);
+
+public sealed record TaskAssignee(
+    Guid UserId,
+    string DisplayName);
+
 public sealed record WorkItem(
     Guid Id,
     Guid OrganizationId,
@@ -47,7 +60,8 @@ public sealed record WorkItem(
     long Revision,
     Guid CreatedBy,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<TaskAssignee>? Assignees = null);
 
 public sealed record TaskOption(
     Guid Id,

@@ -144,19 +144,24 @@ function Add-PerformanceTasks {
         else {
             $generatedAt.AddDays(($index % 35) - 7).ToString("o")
         }
-        $assigneeId = if ($index % 13 -eq 0 -or $assigneePool.Count -eq 0) {
-            $null
-        }
-        else {
-            $assigneePool[($index - 1) % $assigneePool.Count]
-        }
+        $assigneeIds = @(
+            if ($index % 13 -eq 0 -or $assigneePool.Count -eq 0) {
+            }
+            elseif ($index % 9 -eq 0 -and $assigneePool.Count -gt 1) {
+                $assigneePool[($index - 1) % $assigneePool.Count]
+                $assigneePool[$index % $assigneePool.Count]
+            }
+            else {
+                $assigneePool[($index - 1) % $assigneePool.Count]
+            }
+        )
 
         $createdTask = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($Project.id)/tasks" -Headers $csrfHeaders -Body @{
             title = "$($catalog.Prefix) $titleVariant · lot $sequence"
             description = "Tâche de démonstration $sequence pour tester la navigation, les filtres, la pagination et la charge d’un projet de production réaliste."
             priority = $priority
             dueAt = $dueAt
-            assigneeId = $assigneeId
+            assigneeIds = $assigneeIds
         }
 
         if ($status -ne "todo") {
@@ -166,7 +171,7 @@ function Add-PerformanceTasks {
                 status = $status
                 priority = $createdTask.priority
                 dueAt = $createdTask.dueAt
-                assigneeId = $createdTask.assigneeId
+                assigneeIds = $assigneeIds
                 expectedRevision = $createdTask.revision
             }
         }
@@ -187,6 +192,87 @@ function Add-PerformanceTasks {
     Write-Progress -Activity "Création du projet de charge CyTask" -Completed
     return $added
 }
+
+function Set-DemoWorkflowExamples {
+    param(
+        [Parameter(Mandatory = $true)][object]$Project
+    )
+
+    $statusDefinitions = @(
+        @{ Name = "En validation"; Color = "#8B5CF6" },
+        @{ Name = "Prête à livrer"; Color = "#06B6D4" }
+    )
+    $statusKeys = @{}
+    $statuses = @(Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($Project.id)/statuses" | ForEach-Object { $_ })
+    foreach ($definition in $statusDefinitions) {
+        $status = $statuses | Where-Object { $_.name -eq $definition.Name } | Select-Object -First 1
+        if ($null -eq $status) {
+            $status = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($Project.id)/statuses" -Headers $csrfHeaders -Body @{
+                name = $definition.Name
+                color = $definition.Color
+            }
+            $statuses += $status
+        }
+        elseif ($status.color -ne $definition.Color) {
+            $status = Invoke-DemoApi -Method Patch -Path "/api/v1/projects/$($Project.id)/statuses/$($status.key)" -Headers $csrfHeaders -Body @{
+                name = $definition.Name
+                color = $definition.Color
+            }
+        }
+        $statusKeys[$definition.Name] = $status.key
+    }
+
+    $taskOptions = @(Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($Project.id)/task-options" | ForEach-Object { $_ })
+    $assigneePool = @($memberIds.Values | Sort-Object)
+    if ($taskOptions.Count -eq 0 -or $assigneePool.Count -lt 2) {
+        return $statusKeys
+    }
+
+    $examples = @(
+        @{ TaskIndex = 2; StatusName = "En validation"; AssigneeOffsets = @(0, 1) },
+        @{ TaskIndex = 7; StatusName = "Prête à livrer"; AssigneeOffsets = @(1, 2) }
+    )
+    foreach ($example in $examples) {
+        if ($example.TaskIndex -ge $taskOptions.Count) {
+            continue
+        }
+
+        $taskDetails = Invoke-DemoApi -Method Get -Path "/api/v1/tasks/$($taskOptions[$example.TaskIndex].id)"
+        $task = $taskDetails.task
+        $targetAssigneeIds = @(
+            $example.AssigneeOffsets |
+                ForEach-Object { $assigneePool[$_ % $assigneePool.Count] } |
+                Sort-Object -Unique
+        )
+        $currentAssigneeIds = if ($null -ne $task.assignees) {
+            @($task.assignees | ForEach-Object { $_.userId } | Sort-Object -Unique)
+        }
+        elseif ($null -ne $task.assigneeId) {
+            @($task.assigneeId)
+        }
+        else {
+            @()
+        }
+        $assigneesMatch = (@($currentAssigneeIds) -join ",") -eq (@($targetAssigneeIds) -join ",")
+        $targetStatus = $statusKeys[$example.StatusName]
+        if ($task.status -eq $targetStatus -and $assigneesMatch) {
+            continue
+        }
+
+        $updated = Invoke-DemoApi -Method Patch -Path "/api/v1/tasks/$($task.id)" -Headers $csrfHeaders -Body @{
+            title = $task.title
+            description = $task.description
+            status = $targetStatus
+            priority = $task.priority
+            dueAt = $task.dueAt
+            assigneeIds = $targetAssigneeIds
+            expectedRevision = $task.revision
+        }
+    }
+
+    return $statusKeys
+}
+
 function Add-DemoSubfolders {
     param(
         [Parameter(Mandatory = $true)][object]$Project,
@@ -428,6 +514,7 @@ if ($null -ne $project) {
     Add-DemoSubfolders -Project $project -LabelIds $labelIdsByName
     $addedTaskCount = Add-PerformanceTasks -Project $project -ExistingCount $existingTaskCount -LabelIds $labelIdsByName
     $finalTaskCount = $existingTaskCount + $addedTaskCount
+    $workflowStatuses = Set-DemoWorkflowExamples -Project $project
     $previewTaskPage = Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($project.id)/task-page?query=&status=all&priority=all&assignee=all&due=all&label=all&sort=key&limit=1&utcOffsetMinutes=0"
     if ($previewTaskPage.items.Count -gt 0) {
         Add-DemoMediaPreview -TaskId $previewTaskPage.items[0].id
@@ -565,6 +652,7 @@ foreach ($label in $createdLabels.Values) {
 }
 Add-DemoSubfolders -Project $project -LabelIds $labelIdsByName
 $performanceTaskCount = Add-PerformanceTasks -Project $project -ExistingCount $createdTasks.Count -LabelIds $labelIdsByName
+$workflowStatuses = Set-DemoWorkflowExamples -Project $project
 
 $hierarchyDefinitions = @(
     @("hangar-blockout", "milestone"),
@@ -682,6 +770,6 @@ foreach ($reference in $references) {
 Add-DemoMediaPreview -TaskId $createdTasks["art-direction"].id
 Add-DemoCollaborationContent -Project $project -LabelIds $labelIdsByName
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "220 tâches, 10 dossiers, 6 contenus d’espace, 4 salons, 1 groupe privé, 4 membres, 9 dépendances et 3 références Git."
+Write-Host "220 tâches, 7 états dont 2 personnalisés, responsables multiples, 10 dossiers, 6 contenus d’espace, 4 salons, 1 groupe privé, 4 membres, 9 dépendances et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

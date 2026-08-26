@@ -7,6 +7,14 @@ namespace CyTask.Api.Infrastructure;
 
 public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorkspaceStore
 {
+    private static readonly (string Key, string Name, string Color)[] DefaultStatuses =
+    [
+        ("todo", "À faire", "#7C8B9A"),
+        ("in_progress", "En cours", "#F2A93B"),
+        ("blocked", "Bloquée", "#FF5C6C"),
+        ("done", "Terminée", "#61E6B5"),
+        ("cancelled", "Annulée", "#7B8491")
+    ];
     public async Task<bool> IsReadyAsync(CancellationToken cancellationToken)
     {
         try
@@ -1702,6 +1710,154 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         }
     }
 
+    public async Task<IReadOnlyList<ProjectStatus>?> GetProjectStatusesAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken))
+        {
+            return null;
+        }
+
+        await using var command = dataSource.CreateCommand("""
+            SELECT organization_id, project_id, status_key, name, color, position, is_system
+            FROM project_statuses
+            WHERE organization_id = @organization_id AND project_id = @project_id
+            ORDER BY position, lower(name), status_key;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var configured = new Dictionary<string, ProjectStatus>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var status = ReadProjectStatus(reader);
+            configured[status.Key] = status;
+        }
+
+        var result = new List<ProjectStatus>();
+        for (var index = 0; index < DefaultStatuses.Length; index++)
+        {
+            var definition = DefaultStatuses[index];
+            result.Add(configured.Remove(definition.Key, out var status)
+                ? status
+                : new ProjectStatus(
+                    organizationId, projectId, definition.Key, definition.Name,
+                    definition.Color, index, true));
+        }
+
+        result.AddRange(configured.Values
+            .OrderBy(status => status.Position)
+            .ThenBy(status => status.Name, StringComparer.OrdinalIgnoreCase));
+        return result;
+    }
+
+    public async Task<ProjectStatus?> CreateProjectStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string key,
+        string name,
+        string color,
+        CancellationToken cancellationToken)
+    {
+        var position = DefaultStatuses.Length;
+        await using (var countCommand = dataSource.CreateCommand("""
+                         SELECT count(*)
+                         FROM project_statuses
+                         WHERE organization_id = @organization_id
+                           AND project_id = @project_id
+                           AND NOT is_system;
+                         """))
+        {
+            countCommand.Parameters.AddWithValue("organization_id", organizationId);
+            countCommand.Parameters.AddWithValue("project_id", projectId);
+            position += checked((int)(long)(await countCommand.ExecuteScalarAsync(cancellationToken) ?? 0L));
+        }
+
+        await using var command = dataSource.CreateCommand("""
+            INSERT INTO project_statuses(
+                organization_id, project_id, status_key, name, color, position,
+                is_system, created_by, created_at)
+            SELECT @organization_id, @project_id, @status_key, @name, @color, @position,
+                   false, @user_id, @created_at
+            FROM projects project
+            WHERE project.id = @project_id
+              AND project.organization_id = @organization_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin')
+              )
+              AND (
+                  SELECT count(*) FROM project_statuses
+                  WHERE organization_id = @organization_id
+                    AND project_id = @project_id
+                    AND NOT is_system
+              ) < 20
+            ON CONFLICT DO NOTHING
+            RETURNING organization_id, project_id, status_key, name, color, position, is_system;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        command.Parameters.AddWithValue("status_key", key);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("color", color);
+        command.Parameters.AddWithValue("position", position);
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("created_at", DateTimeOffset.UtcNow);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadProjectStatus(reader) : null;
+    }
+
+    public async Task<ProjectStatus?> UpdateProjectStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string key,
+        string name,
+        string color,
+        CancellationToken cancellationToken)
+    {
+        var defaultIndex = Array.FindIndex(DefaultStatuses, definition => definition.Key == key);
+        await using var command = dataSource.CreateCommand("""
+            INSERT INTO project_statuses(
+                organization_id, project_id, status_key, name, color, position,
+                is_system, created_by, created_at)
+            SELECT @organization_id, @project_id, @status_key, @name, @color, @position,
+                   @is_system, @user_id, @created_at
+            FROM projects project
+            WHERE project.id = @project_id
+              AND project.organization_id = @organization_id
+              AND EXISTS (
+                  SELECT 1 FROM organization_members
+                  WHERE organization_id = @organization_id AND user_id = @user_id
+                    AND role IN ('owner', 'admin')
+              )
+              AND (
+                  @is_system OR EXISTS (
+                      SELECT 1 FROM project_statuses
+                      WHERE project_id = @project_id AND status_key = @status_key
+                  )
+              )
+            ON CONFLICT (project_id, status_key) DO UPDATE
+            SET name = EXCLUDED.name, color = EXCLUDED.color
+            RETURNING organization_id, project_id, status_key, name, color, position, is_system;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        command.Parameters.AddWithValue("status_key", key);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("color", color);
+        command.Parameters.AddWithValue("position", Math.Max(defaultIndex, 0));
+        command.Parameters.AddWithValue("is_system", defaultIndex >= 0);
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("created_at", DateTimeOffset.UtcNow);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadProjectStatus(reader) : null;
+    }
+
     public async Task<ProjectLabelOverview?> GetProjectLabelsAsync(
         Guid organizationId,
         Guid projectId,
@@ -2423,11 +2579,11 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
         if (request.Unassigned)
         {
-            clauses.Add("t.assignee_id IS NULL");
+            clauses.Add("NOT EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.organization_id = t.organization_id AND ta.task_id = t.id)");
         }
         else if (request.AssigneeId is not null)
         {
-            clauses.Add("t.assignee_id = @assignee_id");
+            clauses.Add("EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.organization_id = t.organization_id AND ta.task_id = t.id AND ta.user_id = @assignee_id)");
         }
 
         clauses.Add(request.DueFilter switch
@@ -2616,7 +2772,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         string description,
         string priority,
         DateTimeOffset? dueAt,
-        Guid? assigneeId,
+        IReadOnlyList<Guid> assigneeIds,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -2645,15 +2801,22 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         var number = reader.GetInt32(1);
         await reader.CloseAsync();
 
+        var distinctAssigneeIds = assigneeIds.Distinct().ToArray();
+        var assignees = new List<TaskAssignee>(distinctAssigneeIds.Length);
+        foreach (var assignedUserId in distinctAssigneeIds)
+        {
+            assignees.Add(new TaskAssignee(
+                assignedUserId,
+                await GetDisplayNameAsync(connection, transaction, assignedUserId, cancellationToken)));
+        }
+
+        var primary = assignees.FirstOrDefault();
         var now = DateTimeOffset.UtcNow;
         var task = new WorkItem(
             Guid.CreateVersion7(), organizationId, projectId, number, $"{projectKey}-{number}",
             title, description, "todo", priority, dueAt,
-            assigneeId,
-            assigneeId is Guid assignedUserId
-                ? await GetDisplayNameAsync(connection, transaction, assignedUserId, cancellationToken)
-                : null,
-            1, userId, now, now);
+            primary?.UserId, primary?.DisplayName,
+            1, userId, now, now, assignees);
         await ExecuteAsync(connection, transaction, """
             INSERT INTO tasks(
                 id, organization_id, project_id, task_number, title, description, status, priority, due_at, assignee_id,
@@ -2669,6 +2832,16 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             ("assignee_id", (object?)task.AssigneeId ?? DBNull.Value),
             ("revision", task.Revision), ("created_by", task.CreatedBy),
             ("created_at", task.CreatedAt), ("updated_at", task.UpdatedAt));
+        foreach (var assignee in assignees)
+        {
+            await ExecuteAsync(connection, transaction, """
+                INSERT INTO task_assignees(organization_id, task_id, user_id, assigned_at)
+                VALUES (@organization_id, @task_id, @user_id, @assigned_at);
+                """, cancellationToken,
+                ("organization_id", organizationId), ("task_id", task.Id),
+                ("user_id", assignee.UserId), ("assigned_at", now));
+        }
+
         await InsertOutboxAsync(connection, transaction, organizationId, "task.created", task.Id, task, cancellationToken);
         await InsertAuditAsync(
             connection, transaction, organizationId, "task.created", "task", task.Id,
@@ -2677,7 +2850,6 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await transaction.CommitAsync(cancellationToken);
         return task;
     }
-
     public async Task<TaskDetails?> GetTaskAsync(
         Guid organizationId,
         Guid taskId,
@@ -2706,6 +2878,12 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         {
             return null;
         }
+
+        task = task with
+        {
+            Assignees = await ReadTaskAssigneesAsync(
+                connection, null, organizationId, taskId, cancellationToken)
+        };
 
         await using var commentCommand = new NpgsqlCommand("""
             SELECT c.id, c.organization_id, c.task_id, c.author_id, u.display_name, c.body, c.created_at
@@ -3206,12 +3384,14 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         string status,
         string priority,
         DateTimeOffset? dueAt,
-        Guid? assigneeId,
+        IReadOnlyList<Guid> assigneeIds,
         long expectedRevision,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var distinctAssigneeIds = assigneeIds.Distinct().ToArray();
+        var primaryAssigneeId = distinctAssigneeIds.FirstOrDefault();
         var now = DateTimeOffset.UtcNow;
         await using var updateCommand = new NpgsqlCommand("""
             UPDATE tasks
@@ -3232,7 +3412,9 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         updateCommand.Parameters.AddWithValue("status", status);
         updateCommand.Parameters.AddWithValue("priority", priority);
         updateCommand.Parameters.AddWithValue("due_at", (object?)dueAt ?? DBNull.Value);
-        updateCommand.Parameters.AddWithValue("assignee_id", (object?)assigneeId ?? DBNull.Value);
+        updateCommand.Parameters.AddWithValue(
+            "assignee_id",
+            primaryAssigneeId == Guid.Empty ? DBNull.Value : primaryAssigneeId);
         updateCommand.Parameters.AddWithValue("updated_at", now);
         updateCommand.Parameters.AddWithValue("task_id", taskId);
         updateCommand.Parameters.AddWithValue("organization_id", organizationId);
@@ -3240,15 +3422,32 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         updateCommand.Parameters.AddWithValue("user_id", userId);
         var updated = await updateCommand.ExecuteScalarAsync(cancellationToken) is not null;
 
-        var current = await ReadTaskAsync(connection, transaction, organizationId, taskId, cancellationToken);
         if (!updated)
         {
+            var unchanged = await ReadTaskAsync(
+                connection, transaction, organizationId, taskId, cancellationToken);
             await transaction.RollbackAsync(cancellationToken);
-            return current is null
+            return unchanged is null
                 ? new UpdateTaskResult(UpdateTaskStatus.NotFound, null)
-                : new UpdateTaskResult(UpdateTaskStatus.RevisionConflict, current);
+                : new UpdateTaskResult(UpdateTaskStatus.RevisionConflict, unchanged);
         }
 
+        await ExecuteAsync(connection, transaction, """
+            DELETE FROM task_assignees
+            WHERE organization_id = @organization_id AND task_id = @task_id;
+            """, cancellationToken,
+            ("organization_id", organizationId), ("task_id", taskId));
+        foreach (var assignedUserId in distinctAssigneeIds)
+        {
+            await ExecuteAsync(connection, transaction, """
+                INSERT INTO task_assignees(organization_id, task_id, user_id, assigned_at)
+                VALUES (@organization_id, @task_id, @user_id, @assigned_at);
+                """, cancellationToken,
+                ("organization_id", organizationId), ("task_id", taskId),
+                ("user_id", assignedUserId), ("assigned_at", now));
+        }
+
+        var current = await ReadTaskAsync(connection, transaction, organizationId, taskId, cancellationToken);
         await InsertOutboxAsync(connection, transaction, organizationId, "task.updated", taskId, current, cancellationToken);
         await InsertAuditAsync(
             connection, transaction, organizationId, "task.updated", "task", taskId,
@@ -3257,7 +3456,6 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         await transaction.CommitAsync(cancellationToken);
         return new UpdateTaskResult(UpdateTaskStatus.Updated, current);
     }
-
     public async Task<Comment?> AddCommentAsync(
         Guid organizationId,
         Guid taskId,
@@ -3416,22 +3614,59 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         Guid taskId,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("""
-            SELECT t.id, t.organization_id, t.project_id, t.task_number, p.project_key,
-                   t.title, t.description, t.status, t.priority, t.due_at,
-                   t.assignee_id, au.display_name,
-                   t.revision, t.created_by, t.created_at, t.updated_at
-            FROM tasks t
-            JOIN projects p ON p.id = t.project_id AND p.organization_id = t.organization_id
-            LEFT JOIN users au ON au.id = t.assignee_id
-            WHERE t.id = @task_id AND t.organization_id = @organization_id;
-            """, connection, transaction);
-        command.Parameters.AddWithValue("task_id", taskId);
-        command.Parameters.AddWithValue("organization_id", organizationId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? ReadTask(reader) : null;
+        WorkItem? task;
+        await using (var command = new NpgsqlCommand("""
+                         SELECT t.id, t.organization_id, t.project_id, t.task_number, p.project_key,
+                                t.title, t.description, t.status, t.priority, t.due_at,
+                                t.assignee_id, au.display_name,
+                                t.revision, t.created_by, t.created_at, t.updated_at
+                         FROM tasks t
+                         JOIN projects p ON p.id = t.project_id AND p.organization_id = t.organization_id
+                         LEFT JOIN users au ON au.id = t.assignee_id
+                         WHERE t.id = @task_id AND t.organization_id = @organization_id;
+                         """, connection, transaction))
+        {
+            command.Parameters.AddWithValue("task_id", taskId);
+            command.Parameters.AddWithValue("organization_id", organizationId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            task = await reader.ReadAsync(cancellationToken) ? ReadTask(reader) : null;
+        }
+
+        return task is null
+            ? null
+            : task with
+            {
+                Assignees = await ReadTaskAssigneesAsync(
+                    connection, transaction, organizationId, taskId, cancellationToken)
+            };
     }
 
+    private static async Task<IReadOnlyList<TaskAssignee>> ReadTaskAssigneesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid organizationId,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT assignment.user_id, member.display_name
+            FROM task_assignees assignment
+            JOIN users member ON member.id = assignment.user_id
+            WHERE assignment.organization_id = @organization_id
+              AND assignment.task_id = @task_id
+            ORDER BY assignment.assigned_at, assignment.user_id;
+            """, connection, transaction);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("task_id", taskId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<TaskAssignee>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new TaskAssignee(reader.GetGuid(0), reader.GetString(1)));
+        }
+
+        return result;
+    }
     private static async Task InsertSessionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -3532,6 +3767,10 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
     private static Project ReadProject(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
         reader.GetInt32(4), reader.GetGuid(5), reader.GetFieldValue<DateTimeOffset>(6));
+
+    private static ProjectStatus ReadProjectStatus(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
+        reader.GetString(4), reader.GetInt32(5), reader.GetBoolean(6));
 
     private static ProjectLabel ReadProjectLabel(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),

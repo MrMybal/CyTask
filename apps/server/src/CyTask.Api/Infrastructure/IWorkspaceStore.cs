@@ -225,6 +225,29 @@ public interface IWorkspaceStore
         string key,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ProjectStatus>?> GetProjectStatusesAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken);
+
+    Task<ProjectStatus?> CreateProjectStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string key,
+        string name,
+        string color,
+        CancellationToken cancellationToken);
+
+    Task<ProjectStatus?> UpdateProjectStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string key,
+        string name,
+        string color,
+        CancellationToken cancellationToken);
+
     Task<ProjectLabelOverview?> GetProjectLabelsAsync(
         Guid organizationId,
         Guid projectId,
@@ -302,7 +325,7 @@ public interface IWorkspaceStore
         string description,
         string priority,
         DateTimeOffset? dueAt,
-        Guid? assigneeId,
+        IReadOnlyList<Guid> assigneeIds,
         CancellationToken cancellationToken);
 
     Task<TaskDetails?> GetTaskAsync(Guid organizationId, Guid taskId, CancellationToken cancellationToken);
@@ -360,7 +383,7 @@ public interface IWorkspaceStore
         string status,
         string priority,
         DateTimeOffset? dueAt,
-        Guid? assigneeId,
+        IReadOnlyList<Guid> assigneeIds,
         long expectedRevision,
         CancellationToken cancellationToken);
 

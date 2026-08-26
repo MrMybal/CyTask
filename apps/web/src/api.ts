@@ -15,6 +15,21 @@ export interface Project {
   createdAt: string;
 }
 
+export interface ProjectStatus {
+  organizationId: string;
+  projectId: string;
+  key: string;
+  name: string;
+  color: string;
+  position: number;
+  isSystem: boolean;
+}
+
+export interface TaskAssignee {
+  userId: string;
+  displayName: string;
+}
+
 export interface WorkItem {
   id: string;
   organizationId: string;
@@ -23,11 +38,12 @@ export interface WorkItem {
   key: string;
   title: string;
   description: string;
-  status: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+  status: string;
   priority: "low" | "normal" | "high" | "urgent";
   dueAt: string | null;
   assigneeId: string | null;
   assigneeName: string | null;
+  assignees: TaskAssignee[] | null;
   revision: number;
   createdAt: string;
   updatedAt: string;
@@ -49,7 +65,7 @@ export interface TaskPage {
 
 export interface TaskPageFilters {
   query: string;
-  status: "all" | WorkItem["status"];
+  status: string;
   priority: "all" | WorkItem["priority"];
   assignee: "all" | "unassigned" | string;
   due: "all" | "overdue" | "today" | "week" | "none";
@@ -401,6 +417,16 @@ export const api = {
   projects: () => request<Project[]>("/api/v1/projects"),
   createProject: (body: { name: string; key: string }) =>
     request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),
+  projectStatuses: (projectId: string) =>
+    request<ProjectStatus[]>(`/api/v1/projects/${projectId}/statuses`),
+  createProjectStatus: (projectId: string, body: { name: string; color: string }) =>
+    request<ProjectStatus>(`/api/v1/projects/${projectId}/statuses`, {
+      method: "POST", body: JSON.stringify(body)
+    }),
+  updateProjectStatus: (projectId: string, statusKey: string, body: { name: string; color: string }) =>
+    request<ProjectStatus>(`/api/v1/projects/${projectId}/statuses/${statusKey}`, {
+      method: "PATCH", body: JSON.stringify(body)
+    }),
   projectLabels: (projectId: string) =>
     request<ProjectLabelOverview>(`/api/v1/projects/${projectId}/labels`),
   createProjectLabel: (projectId: string, body: { name: string; color: string; parentLabelId?: string | null }) =>
@@ -509,6 +535,7 @@ export const api = {
     priority: WorkItem["priority"];
     dueAt: string | null;
     assigneeId: string | null;
+    assigneeIds?: string[];
   }) =>
     request<WorkItem>(`/api/v1/projects/${projectId}/tasks`, {
       method: "POST",
@@ -573,8 +600,16 @@ export const api = {
     request<Attachment>(`/api/v1/attachment-uploads/${uploadId}/complete`, { method: "POST" }),
   updateTask: (
     taskId: string,
-    body: Pick<WorkItem, "title" | "description" | "status" | "priority" | "dueAt" | "assigneeId">
-      & { expectedRevision: number }
+    body: {
+      title: string;
+      description: string;
+      status: string;
+      priority: WorkItem["priority"];
+      dueAt: string | null;
+      assigneeId?: string | null;
+      assigneeIds?: string[];
+      expectedRevision: number;
+    }
   ) => request<WorkItem>(`/api/v1/tasks/${taskId}`, {
     method: "PATCH",
     body: JSON.stringify(body)

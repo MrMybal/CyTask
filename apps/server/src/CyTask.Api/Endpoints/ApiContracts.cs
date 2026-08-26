@@ -32,7 +32,8 @@ public sealed record CreateTaskRequest(
     string? Description,
     string? Priority = null,
     DateTimeOffset? DueAt = null,
-    Guid? AssigneeId = null);
+    Guid? AssigneeId = null,
+    IReadOnlyList<Guid>? AssigneeIds = null);
 
 public sealed record CreateCommentRequest(string Body);
 
@@ -47,11 +48,14 @@ public sealed record UpdateChecklistItemRequest(
 
 
 public sealed record CreateProjectLabelRequest(string Name, string Color, Guid? ParentLabelId = null);
+public sealed record CreateProjectStatusRequest(string Name, string Color);
+public sealed record UpdateProjectStatusRequest(string Name, string Color);
 public sealed class UpdateTaskRequest
 {
     private string? priority;
     private DateTimeOffset? dueAt;
     private Guid? assigneeId;
+    private IReadOnlyList<Guid>? assigneeIds;
 
     public string Title { get; init; } = string.Empty;
 
@@ -91,6 +95,16 @@ public sealed class UpdateTaskRequest
         }
     }
 
+    public IReadOnlyList<Guid>? AssigneeIds
+    {
+        get => assigneeIds;
+        init
+        {
+            assigneeIds = value;
+            AssigneeIdsSpecified = true;
+        }
+    }
+
     [JsonIgnore]
     public bool PrioritySpecified { get; private set; }
 
@@ -99,6 +113,9 @@ public sealed class UpdateTaskRequest
 
     [JsonIgnore]
     public bool AssigneeIdSpecified { get; private set; }
+
+    [JsonIgnore]
+    public bool AssigneeIdsSpecified { get; private set; }
 }
 
 public sealed record CreateAttachmentUploadRequest(

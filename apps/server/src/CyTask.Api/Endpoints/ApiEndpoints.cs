@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text;
+using System.Globalization;
 using CyTask.Api.Collaboration;
 using CyTask.Api.Configuration;
 using CyTask.Api.Domain;
@@ -57,6 +58,13 @@ public static class ApiEndpoints
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin"));
         authenticated.MapGet("/projects", ListProjectsAsync);
         authenticated.MapPost("/projects", CreateProjectAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin"));
+        authenticated.MapGet("/projects/{projectId:guid}/statuses", GetProjectStatusesAsync);
+        authenticated.MapPost("/projects/{projectId:guid}/statuses", CreateProjectStatusAsync)
+            .AddEndpointFilter<CsrfFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin"));
+        authenticated.MapPatch("/projects/{projectId:guid}/statuses/{statusKey}", UpdateProjectStatusAsync)
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin"));
         authenticated.MapGet("/projects/{projectId:guid}/labels", GetProjectLabelsAsync);
@@ -637,6 +645,121 @@ public static class ApiEndpoints
         return Results.Created($"/api/v1/projects/{project.Id}", project);
     }
 
+    private static async Task<IResult> GetProjectStatusesAsync(
+        Guid projectId,
+        HttpContext context,
+        IWorkspaceStore store,
+        CancellationToken cancellationToken)
+    {
+        var user = context.GetUser()!;
+        var statuses = await store.GetProjectStatusesAsync(
+            user.OrganizationId, projectId, cancellationToken);
+        return statuses is null ? Results.NotFound() : Results.Ok(statuses);
+    }
+
+    private static async Task<IResult> CreateProjectStatusAsync(
+        Guid projectId,
+        CreateProjectStatusRequest request,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var name = request.Name?.Trim() ?? string.Empty;
+        var color = request.Color?.Trim().ToUpperInvariant() ?? string.Empty;
+        var errors = ValidateProjectStatus(name, color);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var user = context.GetUser()!;
+        var statuses = await store.GetProjectStatusesAsync(
+            user.OrganizationId, projectId, cancellationToken);
+        if (statuses is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (statuses.Count >= 25)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Un projet ne peut pas dépasser 25 états.");
+        }
+
+        if (statuses.Any(status =>
+            string.Equals(status.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Un état portant ce nom existe déjà.");
+        }
+
+        var baseKey = CreateStatusKey(name);
+        var key = baseKey;
+        for (var suffix = 2; statuses.Any(status => status.Key == key); suffix++)
+        {
+            var suffixText = $"_{suffix}";
+            key = $"{baseKey[..Math.Min(baseKey.Length, 40 - suffixText.Length)]}{suffixText}";
+        }
+
+        var status = await store.CreateProjectStatusAsync(
+            user.OrganizationId, projectId, user.UserId, key, name, color, cancellationToken);
+        if (status is null)
+        {
+            return Results.Conflict();
+        }
+
+        events.Publish(user.OrganizationId, "project.status_created", projectId);
+        return Results.Created($"/api/v1/projects/{projectId}/statuses/{status.Key}", status);
+    }
+
+    private static async Task<IResult> UpdateProjectStatusAsync(
+        Guid projectId,
+        string statusKey,
+        UpdateProjectStatusRequest request,
+        HttpContext context,
+        IWorkspaceStore store,
+        WorkspaceEventHub events,
+        CancellationToken cancellationToken)
+    {
+        var key = statusKey.Trim().ToLowerInvariant();
+        var name = request.Name?.Trim() ?? string.Empty;
+        var color = request.Color?.Trim().ToUpperInvariant() ?? string.Empty;
+        var errors = ValidateProjectStatus(name, color);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var user = context.GetUser()!;
+        var statuses = await store.GetProjectStatusesAsync(
+            user.OrganizationId, projectId, cancellationToken);
+        if (statuses is null || statuses.All(status => status.Key != key))
+        {
+            return Results.NotFound();
+        }
+
+        if (statuses.Any(status => status.Key != key
+            && string.Equals(status.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Un état portant ce nom existe déjà.");
+        }
+
+        var status = await store.UpdateProjectStatusAsync(
+            user.OrganizationId, projectId, user.UserId, key, name, color, cancellationToken);
+        if (status is null)
+        {
+            return Results.NotFound();
+        }
+
+        events.Publish(user.OrganizationId, "project.status_updated", projectId);
+        return Results.Ok(status);
+    }
+
     private static async Task<IResult> GetProjectLabelsAsync(
         Guid projectId,
         HttpContext context,
@@ -897,10 +1020,9 @@ public static class ApiEndpoints
             errors["query"] = ["La recherche ne peut pas dépasser 240 caractères."];
         }
 
-        if (status is not null
-            && status is not ("todo" or "in_progress" or "blocked" or "done" or "cancelled"))
+        if (status is not null && !IsValidStatusKey(status))
         {
-            errors["status"] = ["Le statut est invalide."];
+            errors["status"] = ["L’état est invalide."];
         }
 
         if (priority is not null && priority is not ("low" or "normal" or "high" or "urgent"))
@@ -998,6 +1120,24 @@ public static class ApiEndpoints
         }
 
         var user = context.GetUser()!;
+        if (status is not null)
+        {
+            var projectStatuses = await store.GetProjectStatusesAsync(
+                user.OrganizationId, projectId, cancellationToken);
+            if (projectStatuses is null)
+            {
+                return Results.NotFound();
+            }
+            if (projectStatuses.All(candidate => candidate.Key != status))
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        ["status"] = ["L’état n’existe pas dans ce projet."]
+                    },
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+        }
         var page = await store.GetTaskPageAsync(
             user.OrganizationId,
             projectId,
@@ -1066,6 +1206,10 @@ public static class ApiEndpoints
         var description = request.Description?.Trim() ?? string.Empty;
         var priority = (request.Priority ?? "normal").Trim().ToLowerInvariant();
         var dueAt = request.DueAt?.ToUniversalTime();
+        var assigneeIds = (request.AssigneeIds
+            ?? (request.AssigneeId is Guid legacyAssigneeId ? [legacyAssigneeId] : []))
+            .Distinct()
+            .ToArray();
         var errors = new Dictionary<string, string[]>();
         if (title.Length is < 1 or > 240)
         {
@@ -1082,12 +1226,16 @@ public static class ApiEndpoints
             errors[nameof(request.Priority)] = ["La priorité est invalide."];
         }
 
-        if (request.AssigneeId is Guid assigneeId)
+        if (assigneeIds.Length > 20)
+        {
+            errors[nameof(request.AssigneeIds)] = ["Une tâche ne peut pas avoir plus de 20 responsables."];
+        }
+        else if (assigneeIds.Length > 0)
         {
             var members = await store.ListMembersAsync(user.OrganizationId, cancellationToken);
-            if (members.All(member => member.UserId != assigneeId))
+            if (assigneeIds.Any(assigneeId => members.All(member => member.UserId != assigneeId)))
             {
-                errors[nameof(request.AssigneeId)] = ["La personne assignée ne fait pas partie de l'organisation."];
+                errors[nameof(request.AssigneeIds)] = ["Une personne assignée ne fait pas partie de l'organisation."];
             }
         }
 
@@ -1104,7 +1252,7 @@ public static class ApiEndpoints
             description,
             priority,
             dueAt,
-            request.AssigneeId,
+            assigneeIds,
             cancellationToken);
         if (task is null)
         {
@@ -1114,7 +1262,6 @@ public static class ApiEndpoints
         events.Publish(user.OrganizationId, "task.created", task.Id);
         return Results.Created($"/api/v1/tasks/{task.Id}", task);
     }
-
     private static async Task<IResult> GetTaskAsync(
         Guid taskId,
         HttpContext context,
@@ -1840,11 +1987,6 @@ public static class ApiEndpoints
             errors[nameof(request.Description)] = ["La description ne peut pas dépasser 20 000 caractères."];
         }
 
-        if (status is not ("todo" or "in_progress" or "blocked" or "done" or "cancelled"))
-        {
-            errors[nameof(request.Status)] = ["Le statut est invalide."];
-        }
-
         if (request.PrioritySpecified
             && requestedPriority is not ("low" or "normal" or "high" or "urgent"))
         {
@@ -1862,31 +2004,53 @@ public static class ApiEndpoints
         }
 
         var user = context.GetUser()!;
-        if (request.AssigneeIdSpecified && request.AssigneeId is Guid requestedAssigneeId)
-        {
-            var members = await store.ListMembersAsync(user.OrganizationId, cancellationToken);
-            if (members.All(member => member.UserId != requestedAssigneeId))
-            {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.AssigneeId)] = ["La personne assignée ne fait pas partie de l'organisation."]
-                });
-            }
-        }
-
         var current = await store.GetTaskAsync(user.OrganizationId, taskId, cancellationToken);
         if (current is null)
         {
             return Results.NotFound();
         }
 
+        var statuses = await store.GetProjectStatusesAsync(
+            user.OrganizationId, current.Task.ProjectId, cancellationToken);
+        if (statuses is null || statuses.All(candidate => candidate.Key != status))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(request.Status)] = ["L’état n’existe pas dans ce projet."]
+            });
+        }
+
+        var currentAssigneeIds = current.Task.Assignees?.Select(assignee => assignee.UserId).ToArray()
+            ?? (current.Task.AssigneeId is Guid currentAssigneeId ? [currentAssigneeId] : []);
+        var assigneeIds = request.AssigneeIdsSpecified
+            ? (request.AssigneeIds ?? []).Distinct().ToArray()
+            : request.AssigneeIdSpecified
+                ? (request.AssigneeId is Guid legacyAssigneeId ? [legacyAssigneeId] : [])
+                : currentAssigneeIds;
+        if (assigneeIds.Length > 20)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(request.AssigneeIds)] = ["Une tâche ne peut pas avoir plus de 20 responsables."]
+            });
+        }
+
+        if (assigneeIds.Length > 0)
+        {
+            var members = await store.ListMembersAsync(user.OrganizationId, cancellationToken);
+            if (assigneeIds.Any(assigneeId => members.All(member => member.UserId != assigneeId)))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.AssigneeIds)] = ["Une personne assignée ne fait pas partie de l'organisation."]
+                });
+            }
+        }
+
         var priority = request.PrioritySpecified ? requestedPriority! : current.Task.Priority;
         var dueAt = request.DueAtSpecified
             ? request.DueAt?.ToUniversalTime()
             : current.Task.DueAt;
-        var assigneeId = request.AssigneeIdSpecified
-            ? request.AssigneeId
-            : current.Task.AssigneeId;
         var result = await store.UpdateTaskAsync(
             user.OrganizationId,
             taskId,
@@ -1896,7 +2060,7 @@ public static class ApiEndpoints
             status,
             priority,
             dueAt,
-            assigneeId,
+            assigneeIds,
             request.ExpectedRevision,
             cancellationToken);
         if (result.Status == UpdateTaskStatus.NotFound)
@@ -1914,7 +2078,6 @@ public static class ApiEndpoints
         events.Publish(user.OrganizationId, "task.updated", taskId);
         return Results.Ok(result.Task);
     }
-
     private static async Task<IResult> AddCommentAsync(
         Guid taskId,
         CreateCommentRequest request,
@@ -2107,6 +2270,63 @@ public static class ApiEndpoints
         }
 
         return errors;
+    }
+
+    private static Dictionary<string, string[]> ValidateProjectStatus(string name, string color)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (name.Length is < 1 or > 60)
+        {
+            errors["name"] = ["Le nom doit contenir entre 1 et 60 caractères."];
+        }
+
+        if (color.Length != 7 || color[0] != '#'
+            || color[1..].Any(character => !Uri.IsHexDigit(character)))
+        {
+            errors["color"] = ["La couleur doit être au format hexadécimal #RRGGBB."];
+        }
+
+        return errors;
+    }
+
+    private static bool IsValidStatusKey(string key) =>
+        key.Length is >= 1 and <= 40
+        && char.IsAsciiLetter(key[0])
+        && key.All(character => char.IsAsciiLetterOrDigit(character) || character == '_');
+
+    private static string CreateStatusKey(string name)
+    {
+        var builder = new StringBuilder();
+        foreach (var character in name.Normalize(NormalizationForm.FormD))
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            var normalized = char.ToLowerInvariant(character);
+            if (normalized is >= 'a' and <= 'z' or >= '0' and <= '9')
+            {
+                builder.Append(normalized);
+            }
+            else if (builder.Length > 0 && builder[^1] != '_')
+            {
+                builder.Append('_');
+            }
+
+            if (builder.Length == 40)
+            {
+                break;
+            }
+        }
+
+        var key = builder.ToString().Trim('_');
+        if (key.Length == 0 || !char.IsAsciiLetter(key[0]))
+        {
+            key = $"etat_{key}";
+        }
+
+        return key[..Math.Min(key.Length, 40)];
     }
 
     private static SessionResponse ToSessionResponse(AuthenticatedUser user, string csrfToken) => new(

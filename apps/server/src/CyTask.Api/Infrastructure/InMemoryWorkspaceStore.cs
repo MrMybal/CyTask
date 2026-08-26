@@ -4,6 +4,15 @@ namespace CyTask.Api.Infrastructure;
 
 public sealed class InMemoryWorkspaceStore : IWorkspaceStore
 {
+    private static readonly (string Key, string Name, string Color)[] DefaultStatuses =
+    [
+        ("todo", "À faire", "#7C8B9A"),
+        ("in_progress", "En cours", "#F2A93B"),
+        ("blocked", "Bloquée", "#FF5C6C"),
+        ("done", "Terminée", "#61E6B5"),
+        ("cancelled", "Annulée", "#7B8491")
+    ];
+
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, UserAccount> _users = [];
     private readonly Dictionary<Guid, Organization> _organizations = [];
@@ -15,6 +24,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private readonly Dictionary<string, ApiTokenEntry> _apiTokens = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Project> _projects = [];
     private readonly Dictionary<Guid, ProjectLabel> _projectLabels = [];
+    private readonly Dictionary<(Guid ProjectId, string Key), ProjectStatus> _projectStatuses = [];
     private readonly Dictionary<(Guid TaskId, Guid LabelId), TaskLabelAssignment> _taskLabelAssignments = [];
     private readonly Dictionary<Guid, WorkItem> _tasks = [];
     private readonly Dictionary<Guid, TaskParentAssignment> _taskParents = [];
@@ -1082,6 +1092,115 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         }
     }
 
+    public Task<IReadOnlyList<ProjectStatus>?> GetProjectStatusesAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<IReadOnlyList<ProjectStatus>?>(null);
+            }
+
+            var result = new List<ProjectStatus>();
+            for (var index = 0; index < DefaultStatuses.Length; index++)
+            {
+                var definition = DefaultStatuses[index];
+                result.Add(_projectStatuses.TryGetValue((projectId, definition.Key), out var configured)
+                    ? configured
+                    : new ProjectStatus(
+                        organizationId, projectId, definition.Key, definition.Name,
+                        definition.Color, index, true));
+            }
+
+            result.AddRange(_projectStatuses.Values
+                .Where(status => status.ProjectId == projectId
+                    && DefaultStatuses.All(definition => definition.Key != status.Key))
+                .OrderBy(status => status.Position)
+                .ThenBy(status => status.Name, StringComparer.OrdinalIgnoreCase));
+            return Task.FromResult<IReadOnlyList<ProjectStatus>?>(result);
+        }
+    }
+
+    public Task<ProjectStatus?> CreateProjectStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string key,
+        string name,
+        string color,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role is not ("owner" or "admin")
+                || !_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId
+                || DefaultStatuses.Any(definition => definition.Key == key)
+                || _projectStatuses.ContainsKey((projectId, key))
+                || _projectStatuses.Values.Count(status => status.ProjectId == projectId) >= 20)
+            {
+                return Task.FromResult<ProjectStatus?>(null);
+            }
+
+            var position = DefaultStatuses.Length
+                + _projectStatuses.Values.Count(status => status.ProjectId == projectId
+                    && DefaultStatuses.All(definition => definition.Key != status.Key));
+            var status = new ProjectStatus(
+                organizationId, projectId, key, name, color, position, false);
+            _projectStatuses[(projectId, key)] = status;
+            AddActivity(
+                organizationId, "project.status_created", "project", projectId,
+                userId, _users[userId].DisplayName,
+                $"État « {status.Name} » créé dans {project.Key}", DateTimeOffset.UtcNow);
+            return Task.FromResult<ProjectStatus?>(status);
+        }
+    }
+
+    public Task<ProjectStatus?> UpdateProjectStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        string key,
+        string name,
+        string color,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue(userId, out var membership)
+                || membership.OrganizationId != organizationId
+                || membership.Role is not ("owner" or "admin")
+                || !_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<ProjectStatus?>(null);
+            }
+
+            var defaultIndex = Array.FindIndex(DefaultStatuses, definition => definition.Key == key);
+            var existing = _projectStatuses.GetValueOrDefault((projectId, key));
+            if (existing is null && defaultIndex < 0)
+            {
+                return Task.FromResult<ProjectStatus?>(null);
+            }
+
+            var updated = existing is null
+                ? new ProjectStatus(organizationId, projectId, key, name, color, defaultIndex, true)
+                : existing with { Name = name, Color = color };
+            _projectStatuses[(projectId, key)] = updated;
+            AddActivity(
+                organizationId, "project.status_updated", "project", projectId,
+                userId, _users[userId].DisplayName,
+                $"État « {updated.Name} » configuré dans {project.Key}", DateTimeOffset.UtcNow);
+            return Task.FromResult<ProjectStatus?>(updated);
+        }
+    }
+
     public Task<ProjectLabelOverview?> GetProjectLabelsAsync(
         Guid organizationId,
         Guid projectId,
@@ -1507,7 +1626,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         string description,
         string priority,
         DateTimeOffset? dueAt,
-        Guid? assigneeId,
+        IReadOnlyList<Guid> assigneeIds,
         CancellationToken cancellationToken)
     {
         lock (_gate)
@@ -1519,13 +1638,18 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 return Task.FromResult<WorkItem?>(null);
             }
 
-            if (assigneeId is Guid assignedUserId
-                && (!_memberships.TryGetValue(assignedUserId, out var assignedMembership)
+            var distinctAssigneeIds = assigneeIds.Distinct().ToArray();
+            if (distinctAssigneeIds.Any(assignedUserId =>
+                    !_memberships.TryGetValue(assignedUserId, out var assignedMembership)
                     || assignedMembership.OrganizationId != organizationId))
             {
                 return Task.FromResult<WorkItem?>(null);
             }
 
+            var assignees = distinctAssigneeIds
+                .Select(assignedId => new TaskAssignee(assignedId, _users[assignedId].DisplayName))
+                .ToArray();
+            var primary = assignees.Length > 0 ? assignees[0] : null;
             var number = project.NextTaskNumber;
             _projects[projectId] = project with { NextTaskNumber = number + 1 };
             var now = DateTimeOffset.UtcNow;
@@ -1540,12 +1664,13 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 "todo",
                 priority,
                 dueAt,
-                assigneeId,
-                assigneeId is Guid assignedId ? _users[assignedId].DisplayName : null,
+                primary?.UserId,
+                primary?.DisplayName,
                 1,
                 userId,
                 now,
-                now);
+                now,
+                assignees);
             _tasks.Add(task.Id, task);
             AddActivity(
                 organizationId, "task.created", "task", task.Id,
@@ -1553,7 +1678,6 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             return Task.FromResult<WorkItem?>(task);
         }
     }
-
     public Task<TaskDetails?> GetTaskAsync(Guid organizationId, Guid taskId, CancellationToken cancellationToken)
     {
         lock (_gate)
@@ -1830,7 +1954,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         string status,
         string priority,
         DateTimeOffset? dueAt,
-        Guid? assigneeId,
+        IReadOnlyList<Guid> assigneeIds,
         long expectedRevision,
         CancellationToken cancellationToken)
     {
@@ -1847,9 +1971,9 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 return Task.FromResult(new UpdateTaskResult(UpdateTaskStatus.NotFound, null));
             }
 
-
-            if (assigneeId is Guid assignedUserId
-                && (!_memberships.TryGetValue(assignedUserId, out var assignedMembership)
+            var distinctAssigneeIds = assigneeIds.Distinct().ToArray();
+            if (distinctAssigneeIds.Any(assignedUserId =>
+                    !_memberships.TryGetValue(assignedUserId, out var assignedMembership)
                     || assignedMembership.OrganizationId != organizationId))
             {
                 return Task.FromResult(new UpdateTaskResult(UpdateTaskStatus.NotFound, null));
@@ -1860,6 +1984,10 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 return Task.FromResult(new UpdateTaskResult(UpdateTaskStatus.RevisionConflict, task));
             }
 
+            var assignees = distinctAssigneeIds
+                .Select(assignedId => new TaskAssignee(assignedId, _users[assignedId].DisplayName))
+                .ToArray();
+            var primary = assignees.Length > 0 ? assignees[0] : null;
             var updated = task with
             {
                 Title = title,
@@ -1867,8 +1995,9 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 Status = status,
                 Priority = priority,
                 DueAt = dueAt,
-                AssigneeId = assigneeId,
-                AssigneeName = assigneeId is Guid assignedId ? _users[assignedId].DisplayName : null,
+                AssigneeId = primary?.UserId,
+                AssigneeName = primary?.DisplayName,
+                Assignees = assignees,
                 Revision = task.Revision + 1,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
@@ -1879,7 +2008,6 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             return Task.FromResult(new UpdateTaskResult(UpdateTaskStatus.Updated, updated));
         }
     }
-
     public Task<Comment?> AddCommentAsync(
         Guid organizationId,
         Guid taskId,

@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type DragEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -17,6 +18,7 @@ import {
   type ExternalReference,
   type OrganizationMember,
   type Project,
+  type ProjectStatus,
   type ProjectLabel,
   type ProjectLabelOverview,
   type ProjectTaskHierarchy,
@@ -34,6 +36,7 @@ import { ApiTokensPane } from "./ApiTokensPane";
 import { ToastStack, useToasts } from "./Toasts";
 import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
 import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
+import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { ProjectFolderTree } from "./ProjectFolderTree";
 import { ProjectCanvas } from "./ProjectCanvas";
 import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
@@ -54,13 +57,13 @@ interface WorkspaceProps {
   onLogout: () => void;
 }
 
-const statusLabels: Record<WorkItem["status"], string> = {
-  todo: "À faire",
-  in_progress: "En cours",
-  blocked: "Bloquée",
-  done: "Terminée",
-  cancelled: "Annulée"
-};
+const defaultProjectStatuses: ProjectStatus[] = [
+  { organizationId: "", projectId: "", key: "todo", name: "À faire", color: "#7C8B9A", position: 0, isSystem: true },
+  { organizationId: "", projectId: "", key: "in_progress", name: "En cours", color: "#F2A93B", position: 1, isSystem: true },
+  { organizationId: "", projectId: "", key: "blocked", name: "Bloquée", color: "#FF5C6C", position: 2, isSystem: true },
+  { organizationId: "", projectId: "", key: "done", name: "Terminée", color: "#61E6B5", position: 3, isSystem: true },
+  { organizationId: "", projectId: "", key: "cancelled", name: "Annulée", color: "#7B8491", position: 4, isSystem: true }
+];
 
 const priorityLabels: Record<WorkItem["priority"], string> = {
   low: "Basse",
@@ -71,7 +74,6 @@ const priorityLabels: Record<WorkItem["priority"], string> = {
 
 const priorities: WorkItem["priority"][] = ["urgent", "high", "normal", "low"];
 
-const boardStatuses: WorkItem["status"][] = ["todo", "in_progress", "blocked", "done", "cancelled"];
 type TaskView = TaskFilterSnapshot["view"];
 type TaskStatusFilter = TaskFilterSnapshot["status"];
 type TaskPriorityFilter = TaskFilterSnapshot["priority"];
@@ -98,10 +100,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [taskTotalCount, setTaskTotalCount] = useState(0);
   const [taskNextCursor, setTaskNextCursor] = useState<string | null>(null);
   const [projectLabels, setProjectLabels] = useState<ProjectLabelOverview>({ labels: [], assignments: [] });
+  const [projectStatuses, setProjectStatuses] = useState<ProjectStatus[]>(defaultProjectStatuses);
   const [taskHierarchy, setTaskHierarchy] = useState<ProjectTaskHierarchy>({ relations: [] });
   const [details, setDetails] = useState<TaskDetails>();
   const [dependencies, setDependencies] = useState<TaskDependencyOverview>({ dependsOn: [], blocking: [] });
   const [showProjectForm, setShowProjectForm] = useState(false);
+  const [showStatusEditor, setShowStatusEditor] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
@@ -152,6 +156,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [pendingChecklistItemIds, setPendingChecklistItemIds] =
     useState<Set<string>>(() => new Set());
   const [pendingLabelIds, setPendingLabelIds] = useState<Set<string>>(() => new Set());
+  const [pendingStatusKeys, setPendingStatusKeys] = useState<Set<string>>(() => new Set());
   const [hierarchyPending, setHierarchyPending] = useState(false);
   const [checklistCreating, setChecklistCreating] = useState(false);
   const [taskLinkLabel, setTaskLinkLabel] = useState("Copier le lien");
@@ -180,6 +185,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     () => projects.find((project) => project.id === selectedProjectId),
     [projects, selectedProjectId]
   );
+  const statusLabels = useMemo(() => Object.fromEntries(
+    projectStatuses.map((status) => [status.key, status.name])
+  ) as Record<string, string>, [projectStatuses]);
+  const boardStatuses = useMemo(() => projectStatuses.map((status) => status.key), [projectStatuses]);
+  const statusColors = useMemo(() => Object.fromEntries(
+    projectStatuses.map((status) => [status.key, status.color])
+  ) as Record<string, string>, [projectStatuses]);
+  function taskStatusStyle(status: string): CSSProperties {
+    const color = statusColors[status] ?? "#7C8B9A";
+    return { color, borderColor: color, "--status-color": color } as CSSProperties;
+  }
+
   const labelCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const labelsById = new Map(projectLabels.labels.map((label) => [label.id, label]));
@@ -328,7 +345,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const filteredTasks = tasks;
   const taskCounts = useMemo(() => Object.fromEntries(
     boardStatuses.map((status) => [status, taskOptions.filter((task) => task.status === status).length])
-  ) as Record<WorkItem["status"], number>, [taskOptions]);
+  ) as Record<string, number>, [boardStatuses, taskOptions]);
   const dependencyCandidates = useMemo(() => taskOptions.filter((task) =>
     task.id !== selectedTaskId
     && dependencies.dependsOn.every((dependency) => dependency.id !== task.id)
@@ -376,17 +393,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   const loadTaskSupport = useCallback(async (projectId: string) => {
     const request = ++taskSupportRequestSequence.current;
-    const [nextOptions, nextLabels, nextHierarchy, nextMedia] = await Promise.all([
+    const [nextOptions, nextLabels, nextHierarchy, nextMedia, nextStatuses] = await Promise.all([
       api.taskOptions(projectId),
       api.projectLabels(projectId),
       api.projectTaskHierarchy(projectId),
-      api.projectMediaPreviews(projectId)
+      api.projectMediaPreviews(projectId),
+      api.projectStatuses(projectId)
     ]);
     if (request !== taskSupportRequestSequence.current) return;
     setTaskOptions(nextOptions);
     setProjectLabels(nextLabels);
     setTaskHierarchy(nextHierarchy);
     setTaskMediaPreviews(nextMedia);
+    setProjectStatuses(nextStatuses);
   }, []);
 
   const loadTasks = useCallback(async (projectId: string) => {
@@ -479,6 +498,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setTaskTotalCount(0);
     setTaskNextCursor(null);
     setProjectLabels({ labels: [], assignments: [] });
+    setProjectStatuses(defaultProjectStatuses);
+    setShowStatusEditor(false);
     setTaskMediaPreviews([]);
     setTaskHierarchy({ relations: [] });
     setTasksLoadingMore(false);
@@ -1041,6 +1062,53 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
   }
 
+  async function createProjectStatus(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedProjectId || !canAdminister) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setError("");
+    try {
+      await api.createProjectStatus(selectedProjectId, {
+        name: String(data.get("name")),
+        color: String(data.get("color"))
+      });
+      form.reset();
+      setProjectStatuses(await api.projectStatuses(selectedProjectId));
+      notify("success", "Nouvel état ajouté au projet.");
+    } catch (reason) {
+      setError(messageFor(reason));
+    }
+  }
+
+  async function updateProjectStatus(
+    event: FormEvent<HTMLFormElement>,
+    projectStatus: ProjectStatus
+  ) {
+    event.preventDefault();
+    if (!selectedProjectId || !canAdminister || pendingStatusKeys.has(projectStatus.key)) return;
+    const data = new FormData(event.currentTarget);
+    setPendingStatusKeys((current) => new Set(current).add(projectStatus.key));
+    setError("");
+    try {
+      const updated = await api.updateProjectStatus(selectedProjectId, projectStatus.key, {
+        name: String(data.get("name")),
+        color: String(data.get("color"))
+      });
+      setProjectStatuses((current) => current.map((candidate) =>
+        candidate.key === updated.key ? updated : candidate));
+      notify("success", `État « ${updated.name} » mis à jour.`);
+    } catch (reason) {
+      setError(messageFor(reason));
+    } finally {
+      setPendingStatusKeys((current) => {
+        const next = new Set(current);
+        next.delete(projectStatus.key);
+        return next;
+      });
+    }
+  }
+
   async function createProjectLabel(name: string, color: string) {
     if (!details) return false;
     const taskId = details.task.id;
@@ -1221,7 +1289,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         status: String(data.get("status")) as WorkItem["status"],
         priority: String(data.get("priority")) as WorkItem["priority"],
         dueAt: localDateTimeToIso(String(data.get("dueAt"))),
-        assigneeId: optionalId(data.get("assigneeId")),
+        assigneeIds: data.getAll("assigneeIds").map(String),
         expectedRevision: details.task.revision
       });
       setDetails((current) => current ? { ...current, task: updated } : current);
@@ -1253,7 +1321,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         status,
         priority: task.priority,
         dueAt: task.dueAt,
-        assigneeId: task.assigneeId,
+        assigneeIds: taskAssigneeIds(task),
         expectedRevision: task.revision
       });
       setTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
@@ -1264,6 +1332,40 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       if (selectedTaskId === task.id) await loadDetails(task.id);
       setError(reason instanceof ApiError && reason.status === 409
         ? "Cette tâche a été modifiée ailleurs. Son état actuel a été rechargé."
+        : messageFor(reason));
+    } finally {
+      setPendingTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(task.id);
+        return next;
+      });
+    }
+  }
+
+  async function changeTaskAssignees(task: WorkItem, assigneeIds: string[]) {
+    if (!canContribute || pendingTaskIds.has(task.id)) return;
+    setPendingTaskIds((current) => new Set(current).add(task.id));
+    setError("");
+    try {
+      const updated = await api.updateTask(task.id, {
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        dueAt: task.dueAt,
+        assigneeIds,
+        expectedRevision: task.revision
+      });
+      setTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setDetails((current) => current?.task.id === updated.id ? { ...current, task: updated } : current);
+      await loadTasks(updated.projectId);
+      notify("success", assigneeIds.length > 1
+        ? `${assigneeIds.length} responsables assignés.`
+        : assigneeIds.length === 1 ? "Responsable assigné." : "Responsables retirés.");
+    } catch (reason) {
+      if (selectedTaskId === task.id) await loadDetails(task.id).catch(() => undefined);
+      setError(reason instanceof ApiError && reason.status === 409
+        ? "Cette tâche a été modifiée ailleurs. Sa dernière version a été rechargée."
         : messageFor(reason));
     } finally {
       setPendingTaskIds((current) => {
@@ -2127,6 +2229,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               <CompactTaskTable
                 tasks={filteredTasks}
                 labelsByTask={labelsByTask}
+                statusLabels={statusLabels}
+                statusColors={statusColors}
+                statusOrder={boardStatuses}
                 selectedTaskId={selectedTaskId}
                 onOpenTask={openTask}
               />
@@ -2182,7 +2287,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       </small>
                     </span>
                     <span className="task-state-stack">
-                      <span className={`status status-${task.status}`}>{statusLabels[task.status]}</span>
+                      <span
+                        className={`status status-${task.status}`}
+                        style={taskStatusStyle(task.status)}
+                      >{statusLabels[task.status] ?? task.status}</span>
                       <span className={`priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span>
                     </span>
                     <time dateTime={task.updatedAt}>{relativeDate(task.updatedAt)}</time>
@@ -2221,8 +2329,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         onDrop={(event) => dropTask(event, status)}
                       >
                         <header className="board-column-header">
-                          <span className={`status-dot status-dot-${status}`} aria-hidden="true" />
-                          <h2>{statusLabels[status]}</h2>
+                          <span
+                            className={`status-dot status-dot-${status}`}
+                            style={{ backgroundColor: statusColors[status] ?? "#7C8B9A" }}
+                            aria-hidden="true"
+                          />
+                          <h2>{statusLabels[status] ?? status}</h2>
                           <span>{columnTasks.length}{taskNextCursor ? "+" : ""}</span>
                         </header>
                         <div className="board-column-body">
@@ -2507,8 +2619,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 <label>
                   État
                   <select name="status" defaultValue={details.task.status}>
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <option value={value} key={value}>{label}</option>
+                    {projectStatuses.map((projectStatus) => (
+                      <option
+                        value={projectStatus.key}
+                        key={projectStatus.key}
+                        style={{ color: projectStatus.color }}
+                      >● {projectStatus.name}</option>
                     ))}
                   </select>
                 </label>
@@ -2528,14 +2644,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     defaultValue={isoToLocalDateTime(details.task.dueAt)}
                   />
                 </label>
-                <label>
-                  Assignée à
-                  <select name="assigneeId" defaultValue={details.task.assigneeId ?? ""}>
-                    <option value="">Personne</option>
-                    {members.map((member) => (
-                      <option value={member.userId} key={member.userId}>{member.displayName}</option>
-                    ))}
-                  </select>
+                <label className="edit-field-assignees">
+                  Responsables
+                  <TaskAssigneePicker
+                    key={`${details.task.id}-${details.task.revision}-edit-assignees`}
+                    members={members}
+                    initialSelectedIds={taskAssigneeIds(details.task)}
+                    name="assigneeIds"
+                  />
                 </label>
                 <label className="edit-field-description">
                   Description
@@ -2557,27 +2673,79 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 </h2>
                 <div className="quick-status">
                   <span className="quick-status-badges">
-                    <span className={`status status-${details.task.status}`}>{statusLabels[details.task.status]}</span>
+                    <span
+                      className={`status status-${details.task.status}`}
+                      style={taskStatusStyle(details.task.status)}
+                    >{statusLabels[details.task.status] ?? details.task.status}</span>
                     <span className={`priority priority-${details.task.priority}`}>{priorityLabels[details.task.priority]}</span>
                   </span>
                   {canContribute && (
-                    <label>
-                      <span>Changer l’état</span>
-                      <select
-                        value={details.task.status}
-                        disabled={pendingTaskIds.has(details.task.id)}
-                        onChange={(event) => void changeTaskStatus(
-                          details.task,
-                          event.currentTarget.value as WorkItem["status"]
-                        )}
-                      >
-                        {boardStatuses.map((status) => (
-                          <option value={status} key={status}>{statusLabels[status]}</option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="quick-status-controls">
+                      <label>
+                        <span>Changer l’état</span>
+                        <select
+                          value={details.task.status}
+                          disabled={pendingTaskIds.has(details.task.id)}
+                          style={taskStatusStyle(details.task.status)}
+                          onChange={(event) => void changeTaskStatus(
+                            details.task,
+                            event.currentTarget.value
+                          )}
+                        >
+                          {projectStatuses.map((projectStatus) => (
+                            <option
+                              value={projectStatus.key}
+                              key={projectStatus.key}
+                              style={{ color: projectStatus.color }}
+                            >● {projectStatus.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {canAdminister && (
+                        <button
+                          className="text-button status-settings-trigger"
+                          type="button"
+                          onClick={() => setShowStatusEditor((value) => !value)}
+                        >{showStatusEditor ? "Fermer" : "Configurer les états"}</button>
+                      )}
+                    </div>
                   )}
                 </div>
+                {showStatusEditor && canAdminister && (
+                  <section className="project-status-editor" aria-label="Configuration des états">
+                    <header>
+                      <div><h3>États du projet</h3><small>Nom et couleur visibles dans les tâches et les tableaux.</small></div>
+                    </header>
+                    <div className="project-status-list">
+                      {projectStatuses.map((projectStatus) => (
+                        <form
+                          className="project-status-row"
+                          onSubmit={(event) => void updateProjectStatus(event, projectStatus)}
+                          key={projectStatus.key}
+                        >
+                          <input
+                            type="color"
+                            name="color"
+                            defaultValue={projectStatus.color}
+                            aria-label={`Couleur de ${projectStatus.name}`}
+                          />
+                          <input name="name" defaultValue={projectStatus.name} maxLength={60} required />
+                          <code>{projectStatus.key}</code>
+                          <button
+                            className="secondary-button small"
+                            type="submit"
+                            disabled={pendingStatusKeys.has(projectStatus.key)}
+                          >Enregistrer</button>
+                        </form>
+                      ))}
+                    </div>
+                    <form className="project-status-create" onSubmit={createProjectStatus}>
+                      <input type="color" name="color" defaultValue="#8B5CF6" aria-label="Couleur du nouvel état" />
+                      <input name="name" placeholder="Nouvel état, ex. En validation" maxLength={60} required />
+                      <button className="primary-button small" type="submit">Ajouter</button>
+                    </form>
+                  </section>
+                )}
                 <TaskLabelsSection
                   labels={projectLabels.labels}
                   assignedLabelIds={selectedTaskLabelIds}
@@ -2651,7 +2819,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       {details.task.dueAt ? shortDate(details.task.dueAt) : "Non définie"}
                     </dd>
                   </div>
-                  <div><dt>Assignée à</dt><dd>{details.task.assigneeName ?? "Personne"}</dd></div>
+                  <div className="task-assignee-fact">
+                    <dt>Responsables</dt>
+                    <dd>
+                      <TaskAssigneePicker
+                        key={`${details.task.id}-${details.task.revision}-quick-assignees`}
+                        members={members}
+                        selectedIds={taskAssigneeIds(details.task)}
+                        disabled={!canContribute || pendingTaskIds.has(details.task.id)}
+                        compact
+                        onChange={(assigneeIds) => void changeTaskAssignees(details.task, assigneeIds)}
+                      />
+                    </dd>
+                  </div>
                   <div><dt>Révision</dt><dd>#{details.task.revision}</dd></div>
                 </dl>
 
@@ -2752,7 +2932,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                           <strong>{dependency.key} · {dependency.title}</strong>
                           <small>Liée {relativeDate(dependency.linkedAt)}</small>
                         </span>
-                        <span className={`status status-${dependency.status}`}>{statusLabels[dependency.status]}</span>
+                        <span
+                          className={`status status-${dependency.status}`}
+                          style={taskStatusStyle(dependency.status)}
+                        >{statusLabels[dependency.status] ?? dependency.status}</span>
                       </button>
                       {canContribute && (
                         <button
@@ -2798,7 +2981,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                           <strong>{relation.key} · {relation.title}</strong>
                           <small>Liée {relativeDate(relation.linkedAt)}</small>
                         </span>
-                        <span className={`status status-${relation.status}`}>{statusLabels[relation.status]}</span>
+                        <span
+                          className={`status status-${relation.status}`}
+                          style={taskStatusStyle(relation.status)}
+                        >{statusLabels[relation.status] ?? relation.status}</span>
                       </button>
                       {canContribute && (
                         <button
@@ -3118,6 +3304,13 @@ function localDateTimeToIso(value: string): string | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function taskAssigneeIds(task: WorkItem): string[] {
+  if (task.assignees && task.assignees.length > 0) {
+    return task.assignees.map((assignee) => assignee.userId);
+  }
+  return task.assigneeId ? [task.assigneeId] : [];
 }
 
 function optionalId(value: FormDataEntryValue | null): string | null {
