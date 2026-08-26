@@ -61,8 +61,8 @@ des labels colorés, priorités, échéances, assignations multiples, vues rapid
 La vue compacte se trie directement par chaque colonne et permet de modifier le statut, la priorité, l’échéance
 ou les responsables sans ouvrir la fiche complète. Ses dossiers sont repliables et ses sélections par ligne,
 par dossier ou globales permettent d’appliquer un statut, une priorité, une échéance ou plusieurs responsables à plusieurs tâches,
-et d’ajouter ou retirer un dossier/label sans effacer les autres classements. Les colonnes visibles sont configurables et
-mémorisées par appareil ; les opérations groupées utilisent une concurrence bornée.
+et d’ajouter ou retirer un dossier/label sans effacer les autres classements. Les colonnes visibles et leur ordre sont configurables,
+réinitialisables et mémorisés par appareil ; les opérations groupées utilisent une concurrence bornée.
 Chaque espace possède une bibliothèque commune où documents, canvas et fichiers serveur
 peuvent être rangés dans les mêmes dossiers que les tâches, filtrés, regroupés et triés
 par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même passage en

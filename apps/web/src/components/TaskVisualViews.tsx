@@ -25,19 +25,25 @@ const priorityLabels: Record<WorkItem["priority"], string> = {
 
 type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder";
 
-const compactColumnDefinitions: readonly {
+interface CompactColumnDefinition {
   key: CompactSort;
   label: string;
   template: string;
   minimumWidth: number;
-}[] = [
+}
+
+const compactColumnDefinitions: readonly CompactColumnDefinition[] = [
   { key: "name", label: "Nom", template: "minmax(280px, 1.8fr)", minimumWidth: 280 },
-  { key: "assignee", label: "Assignée", template: "160px", minimumWidth: 160 },
+  { key: "assignee", label: "Responsables", template: "160px", minimumWidth: 160 },
   { key: "due", label: "Échéance", template: "130px", minimumWidth: 130 },
   { key: "priority", label: "Priorité", template: "110px", minimumWidth: 110 },
   { key: "status", label: "Statut", template: "120px", minimumWidth: 120 },
   { key: "folder", label: "Dossier", template: "150px", minimumWidth: 150 }
 ];
+
+const compactColumnByKey = new Map<CompactSort, CompactColumnDefinition>(
+  compactColumnDefinitions.map((column) => [column.key, column])
+);
 
 interface CompactTaskBulkChanges extends Partial<Pick<WorkItem, "status" | "priority" | "dueAt">> {
   assigneeIds?: string[];
@@ -97,6 +103,7 @@ export function CompactTaskTable({
   const [bulkLabelId, setBulkLabelId] = useState("");
   const [bulkDueDate, setBulkDueDate] = useState("");
   const [visibleColumns, setVisibleColumns] = useState<Set<CompactSort>>(readCompactColumns);
+  const [columnOrder, setColumnOrder] = useState<CompactSort[]>(readCompactColumnOrder);
   const [bulkPending, setBulkPending] = useState(false);
   const bulkAssigneeDetails = useRef<HTMLDetailsElement>(null);
   const statusRanks = useMemo(
@@ -149,6 +156,10 @@ export function CompactTaskTable({
     window.localStorage.setItem("cytask.compactColumns", JSON.stringify([...visibleColumns]));
   }, [visibleColumns]);
 
+  useEffect(() => {
+    window.localStorage.setItem("cytask.compactColumnOrder", JSON.stringify(columnOrder));
+  }, [columnOrder]);
+
   function sort(column: CompactSort) {
     if (column === sortColumn) setSortDirection((current) => current === "asc" ? "desc" : "asc");
     else {
@@ -169,6 +180,24 @@ export function CompactTaskTable({
       setSortColumn("name");
       setSortDirection("asc");
     }
+  }
+
+  function moveColumn(column: CompactSort, direction: -1 | 1) {
+    setColumnOrder((current) => {
+      const index = current.indexOf(column);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      const moved = next.splice(index, 1)[0];
+      if (!moved) return current;
+      next.splice(nextIndex, 0, moved);
+      return next;
+    });
+  }
+
+  function resetColumns() {
+    setVisibleColumns(new Set(compactColumnDefinitions.map((column) => column.key)));
+    setColumnOrder(compactColumnDefinitions.map((column) => column.key));
   }
 
   function toggleRows(taskIds: string[], checked: boolean) {
@@ -231,7 +260,10 @@ export function CompactTaskTable({
   }
 
   const allRowsSelected = tasks.length > 0 && tasks.every((task) => selectedRowIds.has(task.id));
-  const displayedColumns = compactColumnDefinitions.filter((column) =>
+  const orderedColumns = columnOrder
+    .map((column) => compactColumnByKey.get(column))
+    .filter((column): column is CompactColumnDefinition => column !== undefined);
+  const displayedColumns = orderedColumns.filter((column) =>
     column.key === "name" || visibleColumns.has(column.key)
   );
   const compactMinimumWidth = Math.max(
@@ -253,20 +285,41 @@ export function CompactTaskTable({
     >
       <header className="compact-view-toolbar">
         <details className="compact-column-picker">
-          <summary>Colonnes · {displayedColumns.length}/6</summary>
-          <div>
-            {compactColumnDefinitions.map((column) => (
-              <label key={column.key}>
-                <input
-                  type="checkbox"
-                  checked={column.key === "name" || visibleColumns.has(column.key)}
-                  disabled={column.key === "name"}
-                  onChange={(event) => toggleColumn(column.key, event.currentTarget.checked)}
-                />
-                <span>{column.label}</span>
-                {column.key === "name" && <small>Obligatoire</small>}
-              </label>
+          <summary>Colonnes · {displayedColumns.length}/{compactColumnDefinitions.length}</summary>
+          <div className="compact-column-picker-menu">
+            {orderedColumns.map((column, index) => (
+              <div className="compact-column-option" key={column.key}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={column.key === "name" || visibleColumns.has(column.key)}
+                    disabled={column.key === "name"}
+                    onChange={(event) => toggleColumn(column.key, event.currentTarget.checked)}
+                  />
+                  <span>{column.label}</span>
+                  {column.key === "name" && <small>Obligatoire</small>}
+                </label>
+                <span className="compact-column-move">
+                  <button
+                    type="button"
+                    disabled={index === 0}
+                    aria-label={"Déplacer " + column.label + " vers la gauche"}
+                    title="Déplacer vers la gauche"
+                    onClick={() => moveColumn(column.key, -1)}
+                  >←</button>
+                  <button
+                    type="button"
+                    disabled={index === orderedColumns.length - 1}
+                    aria-label={"Déplacer " + column.label + " vers la droite"}
+                    title="Déplacer vers la droite"
+                    onClick={() => moveColumn(column.key, 1)}
+                  >→</button>
+                </span>
+              </div>
             ))}
+            <button type="button" className="compact-column-reset" onClick={resetColumns}>
+              Réinitialiser les colonnes
+            </button>
           </div>
         </details>
         <small>Affichage mémorisé sur cet appareil</small>
@@ -581,6 +634,30 @@ function readCompactColumns(): Set<CompactSort> {
       }
     }
     return selected;
+  } catch {
+    return defaults;
+  }
+}
+
+function readCompactColumnOrder(): CompactSort[] {
+  const defaults = compactColumnDefinitions.map((column) => column.key);
+  try {
+    const saved = JSON.parse(window.localStorage.getItem("cytask.compactColumnOrder") ?? "null");
+    if (!Array.isArray(saved)) return defaults;
+    const allowed = new Set(defaults);
+    const seen = new Set<CompactSort>();
+    const result: CompactSort[] = [];
+    for (const column of saved) {
+      if (typeof column !== "string"
+        || !allowed.has(column as CompactSort)
+        || seen.has(column as CompactSort)) continue;
+      seen.add(column as CompactSort);
+      result.push(column as CompactSort);
+    }
+    for (const column of defaults) {
+      if (!seen.has(column)) result.push(column);
+    }
+    return result;
   } catch {
     return defaults;
   }
