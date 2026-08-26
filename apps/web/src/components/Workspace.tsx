@@ -1441,13 +1441,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   async function changeTasksBulk(
     selectedTasks: WorkItem[],
-    changes: Partial<Pick<WorkItem, "status" | "priority">> & { assigneeIds?: string[] }
+    changes: Partial<Pick<WorkItem, "status" | "priority" | "dueAt">> & { assigneeIds?: string[] }
   ): Promise<boolean> {
     if (!canContribute) return false;
     const eligible = selectedTasks.filter((task) =>
       !pendingTaskIds.has(task.id)
       && ((changes.status !== undefined && changes.status !== task.status)
         || (changes.priority !== undefined && changes.priority !== task.priority)
+        || (changes.dueAt !== undefined && changes.dueAt !== task.dueAt)
         || (changes.assigneeIds !== undefined
           && !sameIdSet(taskAssigneeIds(task), changes.assigneeIds)))
     );
@@ -1461,7 +1462,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         return [task.id, {
           ...task,
           status: changes.status ?? task.status,
-          priority: changes.priority ?? task.priority
+          priority: changes.priority ?? task.priority,
+          dueAt: changes.dueAt === undefined ? task.dueAt : changes.dueAt
         }];
       }
       const assignees = changes.assigneeIds.flatMap((userId) => {
@@ -1472,6 +1474,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         ...task,
         status: changes.status ?? task.status,
         priority: changes.priority ?? task.priority,
+        dueAt: changes.dueAt === undefined ? task.dueAt : changes.dueAt,
         assigneeId: assignees[0]?.userId ?? null,
         assigneeName: assignees[0]?.displayName ?? null,
         assignees
