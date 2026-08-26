@@ -5,10 +5,14 @@
 #include "CyTaskAssetRecipe.h"
 #include "CyTaskNativeAuthorization.h"
 #include "CyTaskVersionCompat.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "Misc/App.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -173,6 +177,93 @@ void SCyTaskPanel::Construct(const FArguments& InArgs)
                         .ListItemsSource(&TaskItems)
                         .SelectionMode(ESelectionMode::Single)
                         .OnGenerateRow(this, &SCyTaskPanel::GenerateTaskRow)
+                        .OnSelectionChanged(this, &SCyTaskPanel::OnTaskSelected)
+                    ]
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 4.0f)
+                [
+                    SNew(STextBlock)
+                    .Font(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 14))
+                    .Text(LOCTEXT("UnrealDataTitle", "Onglet ticket · Unreal"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 8.0f)
+                [
+                    SAssignNew(UnrealStatusText, STextBlock)
+                    .AutoWrapText(true)
+                    .Text(LOCTEXT("UnrealDataIdle", "Sélectionnez une tâche pour charger son contexte Unreal."))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(EngineVersionTextBox, SEditableTextBox)
+                    .HintText(LOCTEXT("EngineVersionHint", "Version du moteur"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(ProjectNameTextBox, SEditableTextBox)
+                    .HintText(LOCTEXT("ProjectNameHint", "Projet Unreal"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(MapPathTextBox, SEditableTextBox)
+                    .HintText(LOCTEXT("MapPathHint", "/Game/Maps/Niveau"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(AssetPathsTextBox, SMultiLineEditableTextBox)
+                    .HintText(LOCTEXT("AssetPathsHint", "Assets concernés — un chemin /Game ou /Plugins par ligne"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(TargetPlatformTextBox, SEditableTextBox)
+                    .HintText(LOCTEXT("PlatformHint", "Win64, Linux, Mac, Android ou Toutes"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(ReviewBuildTextBox, SEditableTextBox)
+                    .HintText(LOCTEXT("ReviewBuildHint", "Build de revue"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 8.0f)
+                [
+                    SAssignNew(UnrealNotesTextBox, SMultiLineEditableTextBox)
+                    .HintText(LOCTEXT("UnrealNotesHint", "Notes techniques Unreal"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 20.0f)
+                [
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+                    [
+                        SNew(SButton)
+                        .Text(LOCTEXT("CaptureContext", "Capturer ce projet"))
+                        .OnClicked(this, &SCyTaskPanel::CaptureUnrealContext)
+                    ]
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    [
+                        SNew(SButton)
+                        .Text(LOCTEXT("SaveContext", "Enregistrer dans CyTask"))
+                        .OnClicked(this, &SCyTaskPanel::SaveUnrealContext)
                     ]
                 ]
                 + SVerticalBox::Slot()
@@ -355,8 +446,11 @@ FReply SCyTaskPanel::DisconnectAccount()
         });
     ProjectOptions.Reset();
     SelectedProject.Reset();
+    SelectedTask.Reset();
+    UnrealDataRevision = 0;
     TaskItems.Reset();
     ProjectComboBox->ClearSelection();
+    TaskListView->ClearSelection();
     ProjectComboBox->RefreshOptions();
     SelectedProjectText->SetText(LOCTEXT("NoProjectAfterDisconnect", "Aucun projet"));
     TaskListView->RequestListRefresh();
@@ -427,6 +521,10 @@ void SCyTaskPanel::OnProjectSelected(
     ESelectInfo::Type SelectionType)
 {
     SelectedProject = MoveTemp(Project);
+    SelectedTask.Reset();
+    UnrealDataRevision = 0;
+    TaskListView->ClearSelection();
+    UnrealStatusText->SetText(LOCTEXT("UnrealDataSelectTask", "Sélectionnez une tâche pour charger son contexte Unreal."));
     if (!SelectedProject.IsValid())
     {
         SelectedProjectText->SetText(LOCTEXT("NoProjectSelection", "Aucun projet"));
@@ -476,6 +574,9 @@ void SCyTaskPanel::LoadSelectedProjectTasks()
                     return;
                 }
 
+                Panel->SelectedTask.Reset();
+                Panel->UnrealDataRevision = 0;
+                Panel->TaskListView->ClearSelection();
                 Panel->TaskItems.Reset(ResultCopy.Tasks.Num());
                 for (const FCyTaskWorkItemSummary& Task : ResultCopy.Tasks)
                 {
@@ -485,6 +586,126 @@ void SCyTaskPanel::LoadSelectedProjectTasks()
                 Panel->TaskStatusText->SetText(FText::FromString(ResultCopy.Message));
             });
         });
+}
+
+void SCyTaskPanel::OnTaskSelected(
+    TSharedPtr<FCyTaskWorkItemSummary> Task,
+    ESelectInfo::Type SelectionType)
+{
+    SelectedTask = MoveTemp(Task);
+    UnrealDataRevision = 0;
+    if (!SelectedTask.IsValid())
+    {
+        UnrealStatusText->SetText(LOCTEXT("UnrealDataNoTask", "Aucune tâche sélectionnée."));
+        return;
+    }
+    LoadSelectedTaskUnrealData();
+}
+
+void SCyTaskPanel::LoadSelectedTaskUnrealData()
+{
+    if (!SelectedTask.IsValid())
+    {
+        return;
+    }
+
+    const FString RequestedTaskId = SelectedTask->Id;
+    UnrealStatusText->SetText(LOCTEXT("UnrealDataLoading", "Chargement du contexte Unreal…"));
+    const TWeakPtr<SCyTaskPanel> WeakPanel = StaticCastSharedRef<SCyTaskPanel>(AsShared());
+    ApiClient->GetUnrealTaskData(
+        RequestedTaskId,
+        [WeakPanel, RequestedTaskId](const FCyTaskUnrealDataResult& Result)
+        {
+            const FCyTaskUnrealDataResult Copy = Result;
+            AsyncTask(ENamedThreads::GameThread, [WeakPanel, RequestedTaskId, Copy]()
+            {
+                const TSharedPtr<SCyTaskPanel> Panel = WeakPanel.Pin();
+                if (!Panel.IsValid() || !Panel->SelectedTask.IsValid()
+                    || Panel->SelectedTask->Id != RequestedTaskId)
+                {
+                    return;
+                }
+
+                Panel->UnrealStatusText->SetText(FText::FromString(Copy.Message));
+                if (!Copy.bSucceeded)
+                {
+                    return;
+                }
+
+                Panel->UnrealDataRevision = Copy.Revision;
+                Panel->EngineVersionTextBox->SetText(FText::FromString(Copy.Data.EngineVersion));
+                Panel->ProjectNameTextBox->SetText(FText::FromString(Copy.Data.ProjectName));
+                Panel->MapPathTextBox->SetText(FText::FromString(Copy.Data.MapPath));
+                Panel->AssetPathsTextBox->SetText(FText::FromString(
+                    FString::Join(Copy.Data.AssetPaths, TEXT("\n"))));
+                Panel->TargetPlatformTextBox->SetText(FText::FromString(Copy.Data.TargetPlatform));
+                Panel->ReviewBuildTextBox->SetText(FText::FromString(Copy.Data.ReviewBuild));
+                Panel->UnrealNotesTextBox->SetText(FText::FromString(Copy.Data.Notes));
+            });
+        });
+}
+
+FReply SCyTaskPanel::CaptureUnrealContext()
+{
+    EngineVersionTextBox->SetText(FText::FromString(CyTaskCompat::GetEngineVersionLabel()));
+    ProjectNameTextBox->SetText(FText::FromString(FApp::GetProjectName()));
+    if (GWorld != nullptr && GWorld->GetOutermost() != nullptr)
+    {
+        MapPathTextBox->SetText(FText::FromString(GWorld->GetOutermost()->GetName()));
+    }
+    UnrealStatusText->SetText(LOCTEXT(
+        "UnrealDataCaptured",
+        "Contexte local capturé. Vérifiez les champs puis enregistrez dans CyTask."));
+    return FReply::Handled();
+}
+
+FReply SCyTaskPanel::SaveUnrealContext()
+{
+    if (!SelectedTask.IsValid())
+    {
+        UnrealStatusText->SetText(LOCTEXT("UnrealDataSaveNoTask", "Sélectionnez d'abord une tâche."));
+        return FReply::Handled();
+    }
+
+    FCyTaskUnrealData Data;
+    Data.EngineVersion = EngineVersionTextBox->GetText().ToString().TrimStartAndEnd();
+    Data.ProjectName = ProjectNameTextBox->GetText().ToString().TrimStartAndEnd();
+    Data.MapPath = MapPathTextBox->GetText().ToString().TrimStartAndEnd();
+    AssetPathsTextBox->GetText().ToString().ParseIntoArrayLines(Data.AssetPaths, true);
+    for (FString& Path : Data.AssetPaths)
+    {
+        Path.TrimStartAndEndInline();
+    }
+    Data.TargetPlatform = TargetPlatformTextBox->GetText().ToString().TrimStartAndEnd();
+    Data.ReviewBuild = ReviewBuildTextBox->GetText().ToString().TrimStartAndEnd();
+    Data.Notes = UnrealNotesTextBox->GetText().ToString().TrimStartAndEnd();
+
+    const FString RequestedTaskId = SelectedTask->Id;
+    UnrealStatusText->SetText(LOCTEXT("UnrealDataSaving", "Enregistrement dans CyTask…"));
+    const TWeakPtr<SCyTaskPanel> WeakPanel = StaticCastSharedRef<SCyTaskPanel>(AsShared());
+    ApiClient->UpdateUnrealTaskData(
+        RequestedTaskId,
+        Data,
+        UnrealDataRevision,
+        [WeakPanel, RequestedTaskId](const FCyTaskUnrealDataResult& Result)
+        {
+            const FCyTaskUnrealDataResult Copy = Result;
+            AsyncTask(ENamedThreads::GameThread, [WeakPanel, RequestedTaskId, Copy]()
+            {
+                const TSharedPtr<SCyTaskPanel> Panel = WeakPanel.Pin();
+                if (!Panel.IsValid() || !Panel->SelectedTask.IsValid()
+                    || Panel->SelectedTask->Id != RequestedTaskId)
+                {
+                    return;
+                }
+                Panel->UnrealStatusText->SetText(FText::FromString(Copy.Message));
+                if (Copy.bSucceeded)
+                {
+                    Panel->UnrealDataRevision = Copy.Revision;
+                }
+            });
+        });
+    return FReply::Handled();
 }
 
 TSharedRef<ITableRow> SCyTaskPanel::GenerateTaskRow(

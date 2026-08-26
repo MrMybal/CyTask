@@ -63,6 +63,46 @@ selon sa portée, mais ne peut pas se répliquer ni prolonger sa propre durée d
 Un jeton est également refusé sur l'ouverture d'une autorisation native Unreal, qui
 demande un consentement humain dans le navigateur.
 
+## Plugins déclaratifs de projet
+
+Le catalogue officiel est disponible avec `GET /api/v1/plugins/catalog`. Un propriétaire ou
+administrateur active ensuite une extension pour un projet avec
+`PUT /api/v1/projects/{projectId}/plugins/{pluginId}`. La désactivation utilise `DELETE` sur
+la même route. Les clients obtiennent les contributions actives d'un ticket avec
+`GET /api/v1/tasks/{taskId}/plugins`.
+
+Chaque manifeste peut déclarer des onglets de ticket et des champs typés. Le client Web rend
+uniquement ce schéma contrôlé ; aucun script, HTML distant ou composant arbitraire n'est chargé.
+Les valeurs sont écrites avec :
+
+```http
+PUT /api/v1/tasks/{taskId}/plugins/{pluginId}/data
+Content-Type: application/json
+
+{
+  "expectedRevision": 3,
+  "data": {
+    "engineVersion": "5.8",
+    "mapPath": "/Game/Maps/Hangar"
+  }
+}
+```
+
+Le serveur refuse les champs inconnus, types invalides, chemins Unreal hors `/Game` et
+`/Plugins`, listes démesurées et objets de plus de 64 Kio. Une révision obsolète répond
+`409 Conflict`. Les données restent bornées à l'organisation et au projet du ticket.
+
+Quatre plugins officiels servent de référence :
+
+- `dev.cytask.git` rend l’onglet Git activable par projet et regroupe configuration du dépôt,
+  liaison de commits, branches, tags et demandes de fusion ;
+- `dev.cytask.ai-assistant` conserve l’objectif, les sources et le mode de sortie de
+  l’assistant. Les clés de fournisseur n’appartiennent jamais aux données d’un ticket ;
+- `dev.cytask.unreal` partage moteur, projet, map, assets et build de revue entre le site et
+  le panneau Unreal ;
+- `dev.cytask.cyrevision` expose dépôt, branche, commit, révision et fichiers modifiés. Son
+  connecteur compagnon est distribué dans CyRevision et utilise la même API Bearer que les
+  intégrations Jira et ClickUp.
 ## Bornes systématiques
 
 - toute réponse est limitée à l'organisation du compte propriétaire du jeton ;

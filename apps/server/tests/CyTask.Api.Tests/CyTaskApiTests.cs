@@ -1990,6 +1990,84 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task ProjectPluginsContributeValidatedRevisionedTaskTabs()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Extensions", key = "EXT" });
+        var projectId = project.GetProperty("id").GetGuid();
+        var task = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Synchroniser Unreal", description = "" });
+        var taskId = task.GetProperty("id").GetGuid();
+
+        using var catalogResponse = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/plugins", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, catalogResponse.StatusCode);
+        var catalog = await ReadJsonAsync(catalogResponse);
+        Assert.Equal(4, catalog.GetArrayLength());
+        Assert.All(catalog.EnumerateArray(), plugin => Assert.False(plugin.GetProperty("enabled").GetBoolean()));
+
+        foreach (var pluginId in new[] { "dev.cytask.git", "dev.cytask.ai-assistant", "dev.cytask.unreal", "dev.cytask.cyrevision" })
+        {
+            using var enable = await client.PutAsync(
+                new Uri($"/api/v1/projects/{projectId}/plugins/{pluginId}", UriKind.Relative),
+                null,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, enable.StatusCode);
+        }
+
+        using var tabsResponse = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, tabsResponse.StatusCode);
+        var tabs = await ReadJsonAsync(tabsResponse);
+        Assert.Equal(4, tabs.GetArrayLength());
+        Assert.Contains(tabs.EnumerateArray(), tab =>
+            tab.GetProperty("manifest").GetProperty("id").GetString() == "dev.cytask.unreal");
+
+        using var save = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/data", UriKind.Relative),
+            new
+            {
+                data = new
+                {
+                    engineVersion = "5.5",
+                    projectName = "Nebula",
+                    mapPath = "/Game/Maps/Hangar",
+                    assetPaths = new List<string> { "/Game/Props/Door" },
+                    targetPlatform = "Win64",
+                    reviewBuild = "VS-142",
+                    notes = "Vérifier Lumen."
+                },
+                expectedRevision = 0
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        var saved = await ReadJsonAsync(save);
+        Assert.Equal(1, saved.GetProperty("revision").GetInt64());
+
+        using var stale = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/data", UriKind.Relative),
+            new { data = new { engineVersion = "5.6" }, expectedRevision = 0 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+
+        using var invalid = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/dev.cytask.unreal/data", UriKind.Relative),
+            new { data = new { executableScript = "rm -rf" }, expectedRevision = 1 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
+    [Fact]
     public async Task TaskCreationIsPublishedInRealTime()
     {
         await using var factory = new CyTaskApiFactory();

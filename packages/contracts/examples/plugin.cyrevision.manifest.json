@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "dev.cytask.cyrevision",
+  "name": "CyRevision",
+  "description": "Relie les tickets CyTask aux branches, commits et révisions CyRevision.",
+  "version": "0.1.0",
+  "apiVersion": "v1",
+  "runtime": "service-connector",
+  "entrypoints": {
+    "service": "CyRevision.Plugin.CyTask"
+  },
+  "permissions": [
+    "tasks:read",
+    "tasks:write",
+    "tasks:plugin-data:write"
+  ],
+  "contributes": {
+    "taskTabs": [
+      {
+        "id": "cyrevision",
+        "title": "CyRevision",
+        "icon": "CR",
+        "fields": [
+          { "key": "repository", "label": "Dépôt", "type": "text", "maxLength": 240 },
+          { "key": "branch", "label": "Branche", "type": "text", "maxLength": 512 },
+          { "key": "revisionId", "label": "Révision CyRevision", "type": "text", "maxLength": 240 },
+          { "key": "commitSha", "label": "Commit Git", "type": "text", "maxLength": 128 },
+          { "key": "revisionUrl", "label": "Lien de révision", "type": "text", "maxLength": 2048 },
+          { "key": "changedFiles", "label": "Fichiers modifiés", "type": "string-list", "maxLength": 2048 },
+          { "key": "syncMode", "label": "Mode de synchronisation", "type": "select", "options": ["Git", "Git LFS", "Syncthing", "CyStore", "Hybride"] },
+          { "key": "summary", "label": "Résumé de la révision", "type": "textarea", "maxLength": 20000 }
+        ]
+      }
+    ]
+  },
+  "minimumCyTaskVersion": "0.2.0",
+  "homepage": "https://github.com/MrMybal/CyRevision"
+}

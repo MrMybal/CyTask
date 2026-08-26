@@ -1,20 +1,37 @@
 {
   "schemaVersion": 1,
   "id": "dev.cytask.git",
-  "name": "CyTask Git",
-  "description": "Relie des références Git aux tâches CyTask.",
+  "name": "Git",
+  "description": "Relie les tickets aux dépôts, branches, commits et demandes de fusion.",
   "version": "0.1.0",
   "apiVersion": "v1",
   "runtime": "service-connector",
   "entrypoints": {
-    "service": "CyTask.Plugin.Git"
+    "service": "CyTask.Plugin.Git",
+    "web": "builtin:git"
   },
   "permissions": [
-    "events:publish",
-    "external-links:write",
-    "tasks:read"
+    "tasks:read",
+    "external-references:write",
+    "tasks:plugin-data:write"
   ],
-  "minimumCyTaskVersion": "0.1.0",
-  "homepage": "https://cytask.dev/plugins/git"
+  "contributes": {
+    "taskTabs": [
+      {
+        "id": "git",
+        "title": "Git",
+        "icon": "GT",
+        "fields": [
+          { "key": "provider", "label": "Forge", "type": "select", "options": ["Git", "GitHub", "GitLab", "Forgejo", "Gitea", "Azure DevOps"] },
+          { "key": "repository", "label": "Dépôt principal", "type": "text", "maxLength": 240 },
+          { "key": "defaultBranch", "label": "Branche par défaut", "type": "text", "maxLength": 240 },
+          { "key": "remoteUrl", "label": "URL du dépôt", "type": "text", "maxLength": 2048 },
+          { "key": "integrationMode", "label": "Mode", "type": "select", "options": ["Références manuelles", "Webhook", "Application Git", "Local uniquement"] },
+          { "key": "autoLink", "label": "Lier automatiquement les clés de tickets", "type": "boolean" }
+        ]
+      }
+    ]
+  },
+  "minimumCyTaskVersion": "0.2.0",
+  "homepage": "https://github.com/MrMybal/CyTask"
 }
-

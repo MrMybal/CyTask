@@ -28,6 +28,7 @@ import {
   type TaskDetails,
   type TaskChecklistItem,
   type TaskOption,
+  type TaskPlugin,
   type WorkItem
 } from "../api";
 import { sha256 } from "../sha256";
@@ -42,6 +43,8 @@ import { ProjectCanvas } from "./ProjectCanvas";
 import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
 import { ProjectContentPane } from "./ProjectContentPane";
 import { TeamChatPane } from "./TeamChatPane";
+import { PluginManagerPane } from "./PluginManagerPane";
+import { TaskPluginPanel } from "./TaskPluginPanel";
 import {
   parseSavedTaskViews,
   savedTaskViewsStorageKey,
@@ -74,22 +77,31 @@ const priorityLabels: Record<WorkItem["priority"], string> = {
 
 const priorities: WorkItem["priority"][] = ["urgent", "high", "normal", "low"];
 
+const gitPluginId = "dev.cytask.git";
+
 type TaskView = TaskFilterSnapshot["view"];
 type TaskStatusFilter = TaskFilterSnapshot["status"];
 type TaskPriorityFilter = TaskFilterSnapshot["priority"];
 type TaskAssigneeFilter = TaskFilterSnapshot["assignee"];
 type TaskDueFilter = TaskFilterSnapshot["due"];
 type TaskLabelFilter = TaskFilterSnapshot["label"];
-type DetailTab = "overview" | "dependencies" | "files" | "git" | "activity";
+type DetailTab =
+  | "overview"
+  | "dependencies"
+  | "files"
+  | "git"
+  | "activity"
+  | `plugin:${string}:${string}`;
 type TaskSort = TaskFilterSnapshot["sort"];
 type SidebarSection = "project" | "inbox" | "mine" | "today" | "later" | "completed";
-type WorkspaceArea = "tasks" | "contents" | "chat";
+type WorkspaceArea = "tasks" | "contents" | "chat" | "plugins";
 type DetailBundle = [
   TaskDetails,
   Attachment[],
   AttachmentUpload[],
   ExternalReference[],
-  TaskDependencyOverview
+  TaskDependencyOverview,
+  TaskPlugin[]
 ];
 
 export function Workspace({ session, onLogout }: WorkspaceProps) {
@@ -115,6 +127,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [taskMediaPreviews, setTaskMediaPreviews] = useState<Attachment[]>([]);
   const [activeUploads, setActiveUploads] = useState<AttachmentUpload[]>([]);
   const [externalReferences, setExternalReferences] = useState<ExternalReference[]>([]);
+  const [taskPlugins, setTaskPlugins] = useState<TaskPlugin[]>([]);
+  const [pluginConfigurationRevision, setPluginConfigurationRevision] = useState(0);
   const [searchHits, setSearchHits] = useState<SearchHit[]>();
   const [invitationLink, setInvitationLink] = useState("");
   const [copyLabel, setCopyLabel] = useState("Copier le lien");
@@ -216,7 +230,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     : projectLabels.labels.find((label) => label.id === taskLabelFilter);
   const workspaceAreaTitle = workspaceArea === "contents"
     ? (selectedFolder ? "Contenus · " + selectedFolder.name : "Contenus de l’espace")
-    : workspaceArea === "chat" ? "Discussion d’équipe" : undefined;
+    : workspaceArea === "chat"
+      ? "Discussion d’équipe"
+      : workspaceArea === "plugins" ? "Plugins du projet" : undefined;
   const workspaceTitle = selectedFolder?.name ?? (sidebarSection === "project"
     ? selectedProject?.name
     : {
@@ -429,8 +445,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     api.attachments(taskId),
     api.attachmentUploads(taskId),
     api.externalReferences(taskId),
-    api.taskDependencies(taskId)
-  ]), []);
+    api.taskDependencies(taskId),
+    api.taskPlugins(taskId)
+  ]), [pluginConfigurationRevision]);
 
   const prefetchDetails = useCallback((taskId: string) => {
     const cache = detailPrefetch.current;
@@ -457,7 +474,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         nextAttachments,
         nextUploads,
         nextReferences,
-        nextDependencies
+        nextDependencies,
+        nextTaskPlugins
       ] = await usable;
       if (request !== detailRequestSequence.current) return;
       setDetails(nextDetails);
@@ -465,6 +483,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       setActiveUploads(nextUploads);
       setExternalReferences(nextReferences);
       setDependencies(nextDependencies);
+      setTaskPlugins(nextTaskPlugins);
       setSelectedProjectId((current) => current === nextDetails.task.projectId
         ? current
         : nextDetails.task.projectId);
@@ -1643,6 +1662,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     detailRequestSequence.current += 1;
     setDetailsLoading(false);
     setDetails(undefined);
+    setTaskPlugins([]);
     setIsEditing(false);
     setTaskLinkLabel("Copier le lien");
     if (taskIdFromHash(window.location.hash)) {
@@ -1859,6 +1879,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         }}>
                         <span>#</span><span>Chat d’équipe</span>
                       </button>
+                      <button className={workspaceArea === "plugins" ? "active" : ""} type="button"
+                        onClick={() => {
+                          closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                          setWorkspaceArea("plugins"); setSidebarSection("project");
+                        }}>
+                        <span>＋</span><span>Plugins</span>
+                      </button>
                     </div>
                   </>
                 )}
@@ -1982,7 +2009,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </form>
         )}
 
-        {workspaceArea === "contents" && selectedProject ? (
+        {workspaceArea === "plugins" && selectedProject ? (
+          <PluginManagerPane
+            projectId={selectedProject.id}
+            canAdminister={canAdminister}
+            onError={setError}
+            onNotice={(message) => notify("success", message)}
+            onChanged={() => setPluginConfigurationRevision((revision) => revision + 1)}
+          />
+        ) : workspaceArea === "contents" && selectedProject ? (
           <ProjectContentPane
             projectId={selectedProject.id}
             labels={projectLabels.labels}
@@ -2592,13 +2627,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 aria-selected={detailTab === "files"}
                 onClick={() => { setDetailTab("files"); setIsEditing(false); }}
               >Fichiers <span>{attachments.length}</span></button>
-              <button
-                className={detailTab === "git" ? "active" : ""}
-                type="button"
-                role="tab"
-                aria-selected={detailTab === "git"}
-                onClick={() => { setDetailTab("git"); setIsEditing(false); }}
-              >Git <span>{externalReferences.length}</span></button>
+              {taskPlugins.some((plugin) => plugin.manifest.id === gitPluginId) && (
+                <button
+                  className={detailTab === "git" ? "active plugin-tab" : "plugin-tab"}
+                  type="button"
+                  role="tab"
+                  aria-selected={detailTab === "git"}
+                  onClick={() => { setDetailTab("git"); setIsEditing(false); }}
+                ><span className="plugin-tab-icon">GT</span>Git <span>{externalReferences.length}</span></button>
+              )}
               <button
                 className={detailTab === "activity" ? "active" : ""}
                 type="button"
@@ -2606,6 +2643,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 aria-selected={detailTab === "activity"}
                 onClick={() => { setDetailTab("activity"); setIsEditing(false); }}
               >Activité <span>{details.comments.length}</span></button>
+              {taskPlugins.filter((plugin) => plugin.manifest.id !== gitPluginId).flatMap((plugin) => plugin.manifest.contributes.taskTabs.map((tab) => {
+                const tabKey: DetailTab = `plugin:${plugin.manifest.id}:${tab.id}`;
+                return (
+                  <button
+                    className={detailTab === tabKey ? "active plugin-tab" : "plugin-tab"}
+                    type="button"
+                    role="tab"
+                    aria-selected={detailTab === tabKey}
+                    key={tabKey}
+                    onClick={() => { setDetailTab(tabKey); setIsEditing(false); }}
+                  ><span className="plugin-tab-icon">{tab.icon}</span>{tab.title}</button>
+                );
+              }))}
             </nav>
 
             {detailsLoading && <p className="detail-loading" role="status">Synchronisation…</p>}
@@ -2917,6 +2967,25 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               </>
             ))}
 
+            {taskPlugins.filter((plugin) => plugin.manifest.id !== gitPluginId).flatMap((plugin) =>
+              plugin.manifest.contributes.taskTabs.map((tab) => {
+                const tabKey: DetailTab = `plugin:${plugin.manifest.id}:${tab.id}`;
+                return detailTab === tabKey ? (
+                  <TaskPluginPanel
+                    key={tabKey}
+                    taskId={details.task.id}
+                    plugin={plugin}
+                    tab={tab}
+                    canEdit={canContribute}
+                    onError={setError}
+                    onNotice={(message) => notify("success", message)}
+                    onSaved={(updated) => setTaskPlugins((current) =>
+                      current.map((item) => item.manifest.id === updated.manifest.id ? updated : item))}
+                  />
+                ) : null;
+              })
+            )}
+
             {detailTab === "dependencies" && (
               <section className="task-dependencies detail-section">
                 <div className="dependency-heading">
@@ -3003,9 +3072,22 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               </section>
             )}
 
-            {detailTab === "git" && (
-            <section className="external-references detail-section">
-              <h3>Git <span>{externalReferences.length}</span></h3>
+            {detailTab === "git" && taskPlugins
+              .filter((plugin) => plugin.manifest.id === gitPluginId)
+              .flatMap((plugin) => plugin.manifest.contributes.taskTabs.slice(0, 1).map((tab) => (
+                <div className="git-plugin-stack" key={plugin.manifest.id}>
+                  <TaskPluginPanel
+                    taskId={details.task.id}
+                    plugin={plugin}
+                    tab={tab}
+                    canEdit={canContribute}
+                    onError={setError}
+                    onNotice={(message) => notify("success", message)}
+                    onSaved={(updated) => setTaskPlugins((current) =>
+                      current.map((item) => item.manifest.id === updated.manifest.id ? updated : item))}
+                  />
+                  <section className="external-references detail-section">
+                    <h3>Références Git <span>{externalReferences.length}</span></h3>
               {externalReferences.map((reference) => (
                 <article className="reference-row" key={reference.id}>
                   <span className="reference-provider">{reference.provider.slice(0, 2).toUpperCase()}</span>
@@ -3046,8 +3128,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   </form>
                 </details>
               )}
-            </section>
-            )}
+                  </section>
+                </div>
+              )))}
 
             {detailTab === "files" && (
             <section className="attachments detail-section">

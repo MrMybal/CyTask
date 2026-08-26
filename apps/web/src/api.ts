@@ -135,6 +135,60 @@ export interface TaskDetails {
   checklist: TaskChecklistItem[];
 }
 
+export type PluginFieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "boolean"
+  | "select"
+  | "asset-path"
+  | "map-path"
+  | "string-list";
+
+export interface PluginFieldDefinition {
+  key: string;
+  label: string;
+  type: PluginFieldType;
+  required: boolean;
+  description: string | null;
+  placeholder: string | null;
+  maxLength: number | null;
+  options: string[] | null;
+}
+
+export interface PluginTaskTabDefinition {
+  id: string;
+  title: string;
+  icon: string;
+  fields: PluginFieldDefinition[];
+}
+
+export interface PluginManifest {
+  schemaVersion: number;
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  apiVersion: string;
+  runtime: "sandbox" | "service-connector" | "ui-extension";
+  permissions: string[];
+  contributes: { taskTabs: PluginTaskTabDefinition[] };
+  homepage: string | null;
+}
+
+export interface ProjectPlugin {
+  manifest: PluginManifest;
+  enabled: boolean;
+  enabledAt: string | null;
+}
+
+export interface TaskPlugin {
+  manifest: PluginManifest;
+  data: Record<string, unknown>;
+  revision: number;
+  updatedAt: string | null;
+}
+
 export interface TaskRelation {
   id: string;
   projectId: string;
@@ -427,6 +481,17 @@ export const api = {
     request<ProjectStatus>(`/api/v1/projects/${projectId}/statuses/${statusKey}`, {
       method: "PATCH", body: JSON.stringify(body)
     }),
+  plugins: () => request<PluginManifest[]>("/api/v1/plugins/catalog"),
+  projectPlugins: (projectId: string) =>
+    request<ProjectPlugin[]>(`/api/v1/projects/${projectId}/plugins`),
+  enableProjectPlugin: (projectId: string, pluginId: string) =>
+    request<ProjectPlugin>(`/api/v1/projects/${projectId}/plugins/${encodeURIComponent(pluginId)}`, {
+      method: "PUT"
+    }),
+  disableProjectPlugin: (projectId: string, pluginId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/plugins/${encodeURIComponent(pluginId)}`, {
+      method: "DELETE"
+    }),
   projectLabels: (projectId: string) =>
     request<ProjectLabelOverview>(`/api/v1/projects/${projectId}/labels`),
   createProjectLabel: (projectId: string, body: { name: string; color: string; parentLabelId?: string | null }) =>
@@ -542,6 +607,15 @@ export const api = {
       body: JSON.stringify(body)
     }),
   task: (taskId: string) => request<TaskDetails>(`/api/v1/tasks/${taskId}`),
+  taskPlugins: (taskId: string) =>
+    request<TaskPlugin[]>(`/api/v1/tasks/${taskId}/plugins`),
+  updateTaskPluginData: (
+    taskId: string,
+    pluginId: string,
+    body: { data: Record<string, unknown>; expectedRevision: number }
+  ) => request<TaskPlugin>(`/api/v1/tasks/${taskId}/plugins/${encodeURIComponent(pluginId)}/data`, {
+    method: "PUT", body: JSON.stringify(body)
+  }),
   taskDependencies: (taskId: string) =>
     request<TaskDependencyOverview>(`/api/v1/tasks/${taskId}/dependencies`),
   addTaskDependency: (taskId: string, dependsOnTaskId: string) =>

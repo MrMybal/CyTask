@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "dev.cytask.unreal",
+  "name": "Unreal Engine",
+  "description": "Ajoute un onglet Unreal partagé avec le plugin de l’éditeur.",
+  "version": "0.2.0",
+  "apiVersion": "v1",
+  "runtime": "ui-extension",
+  "entrypoints": {
+    "web": "builtin:unreal",
+    "native": "integrations/unreal/CyTask"
+  },
+  "permissions": [
+    "tasks:read",
+    "tasks:plugin-data:write"
+  ],
+  "contributes": {
+    "taskTabs": [
+      {
+        "id": "unreal",
+        "title": "Unreal",
+        "icon": "UE",
+        "fields": [
+          { "key": "engineVersion", "label": "Version du moteur", "type": "text", "maxLength": 80 },
+          { "key": "projectName", "label": "Projet Unreal", "type": "text", "maxLength": 160 },
+          { "key": "mapPath", "label": "Map / niveau", "type": "map-path", "maxLength": 1024 },
+          { "key": "assetPaths", "label": "Assets concernés", "type": "string-list", "maxLength": 1024 },
+          { "key": "targetPlatform", "label": "Plateforme cible", "type": "select", "options": ["Win64", "Linux", "Mac", "Android", "Toutes"] },
+          { "key": "reviewBuild", "label": "Build de revue", "type": "text", "maxLength": 240 },
+          { "key": "notes", "label": "Notes Unreal", "type": "textarea", "maxLength": 20000 }
+        ]
+      }
+    ]
+  },
+  "minimumCyTaskVersion": "0.2.0",
+  "homepage": "https://github.com/MrMybal/CyTask/tree/main/integrations/unreal/CyTask"
+}
