@@ -749,11 +749,31 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 
 /* Vue compacte */
 .compact-table { margin: 16px 40px 60px; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }
+.compact-bulk-toolbar {
+  position: sticky; left: 0; z-index: 8; display: flex; min-width: 1050px; min-height: 46px;
+  align-items: center; gap: 9px; border-bottom: 1px solid var(--line); padding: 7px 14px;
+  background: var(--surface-raised); box-shadow: 0 7px 18px #0002;
+}
+.compact-bulk-toolbar label { display: flex; min-width: 145px; align-items: center; gap: 8px; color: var(--text); font-size: 9px; font-weight: 800; }
+.compact-bulk-toolbar select { min-width: 170px; height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 3px 26px 3px 8px; color: var(--text); background: var(--surface); font-size: 9px; }
+.compact-bulk-toolbar button { height: 28px; border: 0; padding: 0 9px; color: var(--muted); background: transparent; cursor: pointer; font-size: 9px; }
+.compact-bulk-toolbar button:hover { color: var(--accent); }
+.compact-bulk-toolbar small { margin-left: auto; color: var(--accent); font-size: 9px; }
+.compact-bulk-toolbar :is(input, select, button):disabled { cursor: wait; opacity: .55; }
+.compact-bulk-toolbar input[type="checkbox"],
+.compact-group-select input,
+.compact-row-select { width: 15px; height: 15px; flex: 0 0 15px; accent-color: var(--accent); cursor: pointer; }
+.compact-group-select input:disabled, .compact-row-select:disabled { cursor: wait; opacity: .5; }
 .compact-group { min-width: 1050px; }
 .compact-group + .compact-group { border-top: 10px solid var(--bg); }
-.compact-group-header { display: flex; align-items: center; gap: 9px; min-height: 40px; border-bottom: 1px solid var(--line-soft); padding: 7px 14px; }
+.compact-group-header { display: flex; align-items: center; justify-content: space-between; gap: 9px; min-height: 40px; border-bottom: 1px solid var(--line-soft); padding: 7px 14px; }
+.compact-group-toggle { display: flex; min-width: 0; align-items: center; gap: 9px; border: 0; padding: 0; color: var(--text); background: transparent; cursor: pointer; text-align: left; }
+.compact-group-toggle:hover strong { color: var(--accent); }
+.compact-group-chevron { width: 12px; color: var(--muted); font-size: 16px; line-height: 1; text-align: center; }
+.compact-group-select { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; font-size: 8px; }
+.compact-group-select:hover { color: var(--text); }
 .compact-group-header strong { font-size: 12px; }
-.compact-group-header > span:last-child { color: var(--muted); font-size: 10px; }
+.compact-group-toggle > span:last-child { color: var(--muted); font-size: 10px; }
 .compact-folder-mark { width: 14px; height: 8px; border-radius: 2px 2px 1px 1px; transform: skewX(-12deg); }
 .compact-columns, .compact-task-row {
   display: grid; grid-template-columns: minmax(280px, 1.8fr) 160px 130px 110px 120px 150px;
@@ -766,7 +786,8 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-task-row[aria-busy="true"] { opacity: .62; }
 .compact-cell-button { min-width: 0; border: 0; padding: 0; color: inherit; background: transparent; cursor: pointer; text-align: left; }
 .compact-cell-button:focus-visible { border-radius: 5px; outline: 2px solid var(--accent); outline-offset: 3px; }
-.compact-task-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.compact-task-name-cell { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.compact-task-name { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; }
 .compact-task-name strong { overflow: hidden; min-width: 0; flex: 1; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .compact-task-name small { color: var(--muted); font-size: 8px; }
 .compact-status-dot { width: 10px; height: 10px; flex: 0 0 10px; border: 2px solid #718096; border-radius: 50%; }
