@@ -2267,8 +2267,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 statusLabels={statusLabels}
                 statusColors={statusColors}
                 statusOrder={boardStatuses}
+                members={members}
+                canEdit={canContribute}
+                pendingTaskIds={pendingTaskIds}
                 selectedTaskId={selectedTaskId}
                 onOpenTask={openTask}
+                onChangeStatus={(task, status) => void changeTaskStatus(task, status)}
+                onChangeAssignees={(task, assigneeIds) => void changeTaskAssignees(task, assigneeIds)}
               />
             ) : taskView === "canvas" ? (
               <ProjectCanvas

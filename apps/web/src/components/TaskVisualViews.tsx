@@ -6,12 +6,14 @@ import {
   type WheelEvent as ReactWheelEvent
 } from "react";
 import type {
+  OrganizationMember,
   ProjectLabel,
   TaskLabelAssignment,
   TaskOption,
   TaskParentAssignment,
   WorkItem
 } from "../api";
+import { TaskAssigneePicker } from "./TaskAssigneePicker";
 
 const priorityLabels: Record<WorkItem["priority"], string> = {
   low: "Basse",
@@ -26,8 +28,13 @@ interface CompactTaskTableProps {
   statusLabels: Readonly<Record<string, string>>;
   statusColors: Readonly<Record<string, string>>;
   statusOrder: readonly string[];
+  members: OrganizationMember[];
+  canEdit: boolean;
+  pendingTaskIds: ReadonlySet<string>;
   selectedTaskId?: string;
   onOpenTask: (taskId: string) => void;
+  onChangeStatus: (task: WorkItem, status: WorkItem["status"]) => void;
+  onChangeAssignees: (task: WorkItem, assigneeIds: string[]) => void;
 }
 
 type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder";
@@ -38,8 +45,13 @@ export function CompactTaskTable({
   statusLabels,
   statusColors,
   statusOrder,
+  members,
+  canEdit,
+  pendingTaskIds,
   selectedTaskId,
-  onOpenTask
+  onOpenTask,
+  onChangeStatus,
+  onChangeAssignees
 }: CompactTaskTableProps) {
   const [sortColumn, setSortColumn] = useState<CompactSort>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -57,18 +69,19 @@ export function CompactTaskTable({
       group.tasks.push(task);
       grouped.set(key, group);
     }
-    const result = [...grouped.values()].sort((left, right) =>
-      (left.label?.name ?? "Sans dossier").localeCompare(
+    const direction = sortDirection === "asc" ? 1 : -1;
+    const result = [...grouped.values()].sort((left, right) => {
+      const comparison = (left.label?.name ?? "Sans dossier").localeCompare(
         right.label?.name ?? "Sans dossier",
         "fr"
-      )
-    );
+      );
+      return sortColumn === "folder" ? comparison * direction : comparison;
+    });
     const priorityOrder = { low: 0, normal: 1, high: 2, urgent: 3 };
-    const direction = sortDirection === "asc" ? 1 : -1;
     for (const group of result) {
       group.tasks.sort((left, right) => {
         const comparison = sortColumn === "name" ? left.title.localeCompare(right.title, "fr")
-          : sortColumn === "assignee" ? (left.assigneeName ?? "").localeCompare(right.assigneeName ?? "", "fr")
+          : sortColumn === "assignee" ? taskAssigneeSortName(left).localeCompare(taskAssigneeSortName(right), "fr")
           : sortColumn === "due" ? (left.dueAt ? Date.parse(left.dueAt) : Number.MAX_SAFE_INTEGER)
             - (right.dueAt ? Date.parse(right.dueAt) : Number.MAX_SAFE_INTEGER)
           : sortColumn === "priority" ? priorityOrder[left.priority] - priorityOrder[right.priority]
@@ -115,48 +128,77 @@ export function CompactTaskTable({
               </button>
             ))}
           </div>
-          {group.tasks.map((task) => (
-            <button
-              className={task.id === selectedTaskId ? "compact-task-row active" : "compact-task-row"}
-              type="button"
-              key={task.id}
-              onClick={() => onOpenTask(task.id)}
-            >
-              <span className="compact-task-name">
-                <i
-                  className={`compact-status-dot status-dot-${task.status}`}
-                  style={{ backgroundColor: statusColors[task.status] ?? "#94A3B8" }}
-                  aria-hidden="true"
-                />
-                <strong>{task.title}</strong>
-                <small>{task.key}</small>
-              </span>
-              <span className="compact-assignee">
-                {task.assigneeName
-                  ? <i title={task.assigneeName}>{initials(task.assigneeName)}</i>
-                  : <span className="compact-empty">—</span>}
-                <em>{task.assigneeName ?? "Non assignée"}</em>
-              </span>
-              <span>{task.dueAt ? compactDate(task.dueAt) : "—"}</span>
-              <span className={`compact-priority priority-${task.priority}`}>
-                {priorityLabels[task.priority]}
-              </span>
-              <span
-                className={`compact-status status status-${task.status}`}
-                style={{ color: statusColors[task.status] ?? "#94A3B8", borderColor: statusColors[task.status] ?? "#94A3B8" }}
+          {group.tasks.map((task) => {
+            const pending = pendingTaskIds.has(task.id);
+            return (
+              <div
+                className={task.id === selectedTaskId ? "compact-task-row active" : "compact-task-row"}
+                key={task.id}
+                aria-busy={pending}
               >
-                {statusLabels[task.status] ?? task.status}
-              </span>
-              <span className="compact-folder-value">
-                <i style={{ backgroundColor: group.label?.color ?? "#94A3B8" }} />
-                {group.label?.name ?? "Sans dossier"}
-              </span>
-            </button>
-          ))}
+                <button
+                  className="compact-task-name compact-cell-button"
+                  type="button"
+                  onClick={() => onOpenTask(task.id)}
+                >
+                  <i
+                    className={"compact-status-dot status-dot-" + task.status}
+                    style={{ backgroundColor: statusColors[task.status] ?? "#94A3B8" }}
+                    aria-hidden="true"
+                  />
+                  <strong>{task.title}</strong>
+                  <small>{task.key}</small>
+                </button>
+                <TaskAssigneePicker
+                  compact
+                  members={members}
+                  selectedIds={taskAssigneeIds(task)}
+                  disabled={!canEdit || pending}
+                  onChange={(assigneeIds) => onChangeAssignees(task, assigneeIds)}
+                />
+                <span>{task.dueAt ? compactDate(task.dueAt) : "—"}</span>
+                <span className={"compact-priority priority-" + task.priority}>
+                  {priorityLabels[task.priority]}
+                </span>
+                <select
+                  className={"compact-status-select status-" + task.status}
+                  value={task.status}
+                  disabled={!canEdit || pending}
+                  aria-label={"Modifier le statut de " + task.key}
+                  style={{
+                    color: statusColors[task.status] ?? "#94A3B8",
+                    borderColor: statusColors[task.status] ?? "#94A3B8"
+                  }}
+                  onChange={(event) => onChangeStatus(task, event.currentTarget.value)}
+                >
+                  {statusOrder.map((status) => (
+                    <option value={status} key={status}>{statusLabels[status] ?? status}</option>
+                  ))}
+                </select>
+                <span className="compact-folder-value">
+                  <i style={{ backgroundColor: group.label?.color ?? "#94A3B8" }} />
+                  {group.label?.name ?? "Sans dossier"}
+                </span>
+              </div>
+            );
+          })}
         </section>
       ))}
     </section>
   );
+}
+
+function taskAssigneeIds(task: WorkItem): string[] {
+  if (task.assignees && task.assignees.length > 0) {
+    return task.assignees.map((assignee) => assignee.userId);
+  }
+  return task.assigneeId ? [task.assigneeId] : [];
+}
+
+function taskAssigneeSortName(task: WorkItem): string {
+  return task.assignees?.map((assignee) => assignee.displayName).join(" ")
+    ?? task.assigneeName
+    ?? "";
 }
 
 type CanvasMode = "canvas" | "graph";
@@ -660,14 +702,6 @@ function compactDate(value: string) {
   return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" }).format(new Date(value));
 }
 
-function initials(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));

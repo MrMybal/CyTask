@@ -57,8 +57,9 @@ Le client Web responsive et installable consomme la même API que les futurs
 clients et le plugin Unreal. Son interface de tâches propose maintenant cinq vues :
 Liste, Compacte en colonnes, Kanban, Canvas libre multimédia et graphe relationnel.
 Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
-des labels colorés, priorités, échéances, assignation aux membres, vues rapides et filtres nommés mémorisés localement,
-ainsi que le tri direct par chaque colonne de la vue compacte.
+des labels colorés, priorités, échéances, assignations multiples, vues rapides et filtres nommés mémorisés localement.
+La vue compacte se trie directement par chaque colonne et permet de modifier le statut ou les responsables
+sans ouvrir la fiche complète.
 Chaque espace possède une bibliothèque commune où documents, canvas et fichiers serveur
 peuvent être rangés dans les mêmes dossiers que les tâches, filtrés, regroupés et triés
 par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même passage en

@@ -760,9 +760,12 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
   align-items: center; gap: 10px; min-width: 1050px;
 }
 .compact-columns { min-height: 32px; border-bottom: 1px solid var(--line-soft); padding: 5px 14px; color: var(--muted); font-size: 9px; font-weight: 700; }
-.compact-task-row { width: 100%; min-height: 38px; border: 0; border-bottom: 1px solid var(--line-soft); padding: 5px 14px; color: var(--text); background: transparent; cursor: pointer; font-size: 10px; text-align: left; }
+.compact-task-row { position: relative; width: 100%; min-height: 42px; border: 0; border-bottom: 1px solid var(--line-soft); padding: 5px 14px; color: var(--text); background: transparent; font-size: 10px; text-align: left; }
 .compact-task-row:hover, .compact-task-row.active { background: #141e28; }
 .compact-task-row.active { box-shadow: inset 2px 0 var(--accent); }
+.compact-task-row[aria-busy="true"] { opacity: .62; }
+.compact-cell-button { min-width: 0; border: 0; padding: 0; color: inherit; background: transparent; cursor: pointer; text-align: left; }
+.compact-cell-button:focus-visible { border-radius: 5px; outline: 2px solid var(--accent); outline-offset: 3px; }
 .compact-task-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .compact-task-name strong { overflow: hidden; min-width: 0; flex: 1; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .compact-task-name small { color: var(--muted); font-size: 8px; }
@@ -772,6 +775,11 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-assignee em { overflow: hidden; color: var(--muted); font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .compact-empty { color: var(--muted); }
 .compact-priority, .compact-status { width: fit-content; border-radius: 6px; padding: 3px 6px; font-size: 8px; font-weight: 700; }
+.compact-status-select { width: min(116px, 100%); height: 27px; border: 1px solid; border-radius: 6px; padding: 2px 22px 2px 7px; background: var(--surface); cursor: pointer; font-size: 8px; font-weight: 800; }
+.compact-status-select:disabled { cursor: wait; }
+.compact-task-row > .assignee-picker { overflow: visible; }
+.compact-task-row > .assignee-picker .assignee-picker-menu { right: auto; left: 0; }
+.compact-table:has(.assignee-picker details[open]) { padding-bottom: 340px; }
 .compact-folder-value { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compact-folder-value i { width: 9px; height: 7px; flex: 0 0 9px; border-radius: 2px; }
 
