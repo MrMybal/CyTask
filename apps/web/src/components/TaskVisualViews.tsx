@@ -23,8 +23,13 @@ const priorityLabels: Record<WorkItem["priority"], string> = {
   urgent: "Urgente"
 };
 
+interface CompactTaskBulkChanges extends Partial<Pick<WorkItem, "status" | "priority">> {
+  assigneeIds?: string[];
+}
+
 interface CompactTaskTableProps {
   tasks: WorkItem[];
+  labels: ProjectLabel[];
   labelsByTask: ReadonlyMap<string, ProjectLabel[]>;
   statusLabels: Readonly<Record<string, string>>;
   statusColors: Readonly<Record<string, string>>;
@@ -40,7 +45,12 @@ interface CompactTaskTableProps {
   onChangeAssignees: (task: WorkItem, assigneeIds: string[]) => void;
   onBulkChange: (
     tasks: WorkItem[],
-    changes: Partial<Pick<WorkItem, "status" | "priority">>
+    changes: CompactTaskBulkChanges
+  ) => Promise<boolean>;
+  onBulkLabelChange: (
+    tasks: WorkItem[],
+    labelId: string,
+    shouldAssign: boolean
   ) => Promise<boolean>;
 }
 
@@ -48,6 +58,7 @@ type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder
 
 export function CompactTaskTable({
   tasks,
+  labels,
   labelsByTask,
   statusLabels,
   statusColors,
@@ -61,13 +72,17 @@ export function CompactTaskTable({
   onChangePriority,
   onChangeDueAt,
   onChangeAssignees,
-  onBulkChange
+  onBulkChange,
+  onBulkLabelChange
 }: CompactTaskTableProps) {
   const [sortColumn, setSortColumn] = useState<CompactSort>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set());
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
+  const [bulkAssigneeIds, setBulkAssigneeIds] = useState<Set<string>>(() => new Set());
+  const [bulkLabelId, setBulkLabelId] = useState("");
   const [bulkPending, setBulkPending] = useState(false);
+  const bulkAssigneeDetails = useRef<HTMLDetailsElement>(null);
   const statusRanks = useMemo(
     () => new Map(statusOrder.map((status, index) => [status, index])),
     [statusOrder]
@@ -142,15 +157,42 @@ export function CompactTaskTable({
     });
   }
 
-  async function applyBulk(changes: Partial<Pick<WorkItem, "status" | "priority">>) {
+  async function applyBulk(changes: CompactTaskBulkChanges) {
     const selectedTasks = tasks.filter((task) => selectedRowIds.has(task.id));
     if (selectedTasks.length === 0 || bulkPending) return;
     setBulkPending(true);
     try {
-      if (await onBulkChange(selectedTasks, changes)) setSelectedRowIds(new Set());
+      if (await onBulkChange(selectedTasks, changes)) {
+        setSelectedRowIds(new Set());
+        setBulkAssigneeIds(new Set());
+        bulkAssigneeDetails.current?.removeAttribute("open");
+      }
     } finally {
       setBulkPending(false);
     }
+  }
+
+  async function applyBulkLabel(shouldAssign: boolean) {
+    const selectedTasks = tasks.filter((task) => selectedRowIds.has(task.id));
+    if (!bulkLabelId || selectedTasks.length === 0 || bulkPending) return;
+    setBulkPending(true);
+    try {
+      if (await onBulkLabelChange(selectedTasks, bulkLabelId, shouldAssign)) {
+        setSelectedRowIds(new Set());
+        setBulkLabelId("");
+      }
+    } finally {
+      setBulkPending(false);
+    }
+  }
+
+  function toggleBulkAssignee(userId: string, checked: boolean) {
+    setBulkAssigneeIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(userId);
+      else next.delete(userId);
+      return next;
+    });
   }
 
   const allRowsSelected = tasks.length > 0 && tasks.every((task) => selectedRowIds.has(task.id));
@@ -158,7 +200,7 @@ export function CompactTaskTable({
   return (
     <section className="compact-table" aria-label="Tâches en tableau compact">
       {canEdit && (
-        <header className="compact-bulk-toolbar" aria-label="Actions groupées">
+        <header className="compact-bulk-toolbar" aria-label="Actions groupées" aria-busy={bulkPending}>
           <label>
             <input
               type="checkbox"
@@ -196,6 +238,74 @@ export function CompactTaskTable({
               <option value={priority} key={priority}>{priorityLabels[priority]}</option>
             ))}
           </select>
+          <details className="compact-bulk-assignees" ref={bulkAssigneeDetails}>
+            <summary
+              aria-disabled={selectedRowIds.size === 0 || bulkPending}
+              onClick={(event) => {
+                if (selectedRowIds.size === 0 || bulkPending) event.preventDefault();
+              }}
+            >
+              {bulkAssigneeIds.size === 0
+                ? "Responsables…"
+                : bulkAssigneeIds.size === 1
+                  ? "1 responsable"
+                  : bulkAssigneeIds.size + " responsables"}
+            </summary>
+            <div className="compact-bulk-assignee-menu">
+              <header>
+                <strong>Remplacer les responsables</strong>
+                <small>La sélection vide retire toutes les assignations.</small>
+              </header>
+              {members.map((member) => (
+                <label key={member.userId}>
+                  <input
+                    type="checkbox"
+                    checked={bulkAssigneeIds.has(member.userId)}
+                    disabled={bulkPending}
+                    onChange={(event) => toggleBulkAssignee(member.userId, event.currentTarget.checked)}
+                  />
+                  <i aria-hidden="true">{memberInitials(member.displayName)}</i>
+                  <span>{member.displayName}<small>{member.email}</small></span>
+                </label>
+              ))}
+              {members.length === 0 && <p>Aucun membre disponible.</p>}
+              <footer>
+                <button
+                  type="button"
+                  disabled={bulkPending}
+                  onClick={() => void applyBulk({
+                    assigneeIds: members
+                      .filter((member) => bulkAssigneeIds.has(member.userId))
+                      .map((member) => member.userId)
+                  })}
+                >
+                  {bulkAssigneeIds.size === 0 ? "Retirer les responsables" : "Appliquer"}
+                </button>
+              </footer>
+            </div>
+          </details>
+          <select
+            className="compact-bulk-label-select"
+            value={bulkLabelId}
+            disabled={selectedRowIds.size === 0 || bulkPending}
+            aria-label="Choisir un dossier ou label"
+            onChange={(event) => setBulkLabelId(event.currentTarget.value)}
+          >
+            <option value="">Dossier ou label…</option>
+            {labels.map((label) => (
+              <option value={label.id} key={label.id}>{labelPath(label, labels)}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!bulkLabelId || selectedRowIds.size === 0 || bulkPending}
+            onClick={() => void applyBulkLabel(true)}
+          >Ajouter</button>
+          <button
+            type="button"
+            disabled={!bulkLabelId || selectedRowIds.size === 0 || bulkPending}
+            onClick={() => void applyBulkLabel(false)}
+          >Retirer</button>
           {selectedRowIds.size > 0 && (
             <button type="button" disabled={bulkPending} onClick={() => setSelectedRowIds(new Set())}>
               Effacer
@@ -366,6 +476,26 @@ function taskAssigneeSortName(task: WorkItem): string {
   return task.assignees?.map((assignee) => assignee.displayName).join(" ")
     ?? task.assigneeName
     ?? "";
+}
+
+function memberInitials(displayName: string): string {
+  return displayName.split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((part) => part[0]?.toUpperCase()).join("") || "?";
+}
+
+function labelPath(label: ProjectLabel, labels: ProjectLabel[]): string {
+  const labelsById = new Map(labels.map((candidate) => [candidate.id, candidate]));
+  const parts = [label.name];
+  const visited = new Set([label.id]);
+  let parentId = label.parentLabelId;
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = labelsById.get(parentId);
+    if (!parent) break;
+    parts.unshift(parent.name);
+    parentId = parent.parentLabelId;
+  }
+  return parts.join(" / ");
 }
 
 type CanvasMode = "canvas" | "graph";

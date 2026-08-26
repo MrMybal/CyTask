@@ -751,7 +751,7 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-table { margin: 16px 40px 60px; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }
 .compact-bulk-toolbar {
   position: sticky; left: 0; z-index: 8; display: flex; min-width: 1050px; min-height: 46px;
-  align-items: center; gap: 9px; border-bottom: 1px solid var(--line); padding: 7px 14px;
+  flex-wrap: wrap; align-items: center; gap: 9px; border-bottom: 1px solid var(--line); padding: 7px 14px;
   background: var(--surface-raised); box-shadow: 0 7px 18px #0002;
 }
 .compact-bulk-toolbar label { display: flex; min-width: 145px; align-items: center; gap: 8px; color: var(--text); font-size: 9px; font-weight: 800; }
@@ -759,10 +759,42 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-bulk-toolbar button { height: 28px; border: 0; padding: 0 9px; color: var(--muted); background: transparent; cursor: pointer; font-size: 9px; }
 .compact-bulk-toolbar button:hover { color: var(--accent); }
 .compact-bulk-toolbar small { margin-left: auto; color: var(--accent); font-size: 9px; }
-.compact-bulk-toolbar :is(input, select, button):disabled { cursor: wait; opacity: .55; }
+.compact-bulk-toolbar :is(input, select, button):disabled { cursor: not-allowed; opacity: .55; }
+.compact-bulk-toolbar[aria-busy="true"] :is(input, select, button):disabled { cursor: wait; }
 .compact-bulk-toolbar input[type="checkbox"],
 .compact-group-select input,
 .compact-row-select { width: 15px; height: 15px; flex: 0 0 15px; accent-color: var(--accent); cursor: pointer; }
+.compact-bulk-assignees { position: relative; }
+.compact-bulk-assignees summary {
+  display: flex; min-width: 145px; height: 30px; align-items: center; border: 1px solid var(--line);
+  border-radius: 7px; padding: 3px 26px 3px 8px; color: var(--text); background: var(--surface);
+  cursor: pointer; list-style: none; font-size: 9px;
+}
+.compact-bulk-assignees summary::-webkit-details-marker { display: none; }
+.compact-bulk-assignees summary::after { position: absolute; right: 9px; content: "⌄"; color: var(--muted); }
+.compact-bulk-assignees summary[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
+.compact-bulk-assignee-menu {
+  position: absolute; z-index: 95; top: calc(100% + 6px); left: 0; display: grid; width: 330px;
+  max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px; background: var(--surface-raised); box-shadow: 0 18px 50px #0008;
+}
+.compact-bulk-assignee-menu > header { display: grid; gap: 2px; padding: 6px 7px 9px; }
+.compact-bulk-assignee-menu > header small,
+.compact-bulk-assignee-menu > p { color: var(--muted); font-size: 8px; }
+.compact-bulk-assignee-menu > label {
+  display: grid; grid-template-columns: auto 26px minmax(0, 1fr); min-width: 0;
+  align-items: center; gap: 7px; border-radius: 7px; padding: 6px 7px; cursor: pointer;
+}
+.compact-bulk-assignee-menu > label:hover { background: var(--surface-hover); }
+.compact-bulk-assignee-menu > label > i {
+  display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%;
+  color: #07131a; background: var(--accent); font-size: 8px; font-style: normal; font-weight: 800;
+}
+.compact-bulk-assignee-menu > label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-bulk-assignee-menu > label small { display: block; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; }
+.compact-bulk-assignee-menu > footer { display: flex; justify-content: flex-end; border-top: 1px solid var(--line-soft); margin-top: 6px; padding-top: 7px; }
+.compact-bulk-assignee-menu > footer button { color: #06140f; border-radius: 6px; background: var(--accent); font-weight: 800; }
+.compact-bulk-label-select { max-width: 220px; }
 .compact-group-select input:disabled, .compact-row-select:disabled { cursor: wait; opacity: .5; }
 .compact-group { min-width: 1050px; }
 .compact-group + .compact-group { border-top: 10px solid var(--bg); }
@@ -808,6 +840,7 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-task-row > .assignee-picker { overflow: visible; }
 .compact-task-row > .assignee-picker .assignee-picker-menu { right: auto; left: 0; }
 .compact-table:has(.assignee-picker details[open]) { padding-bottom: 340px; }
+.compact-table:has(.compact-bulk-assignees[open]) { padding-bottom: 370px; }
 .compact-folder-value { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compact-folder-value i { width: 9px; height: 7px; flex: 0 0 9px; border-radius: 2px; }
 
