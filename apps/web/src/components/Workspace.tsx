@@ -1395,6 +1395,49 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
   }
 
+  async function changeTaskInline(
+    task: WorkItem,
+    changes: Partial<Pick<WorkItem, "priority" | "dueAt">>,
+    confirmation: string
+  ) {
+    if (!canContribute || pendingTaskIds.has(task.id)) return;
+    const optimistic = { ...task, ...changes };
+    if (optimistic.priority === task.priority && optimistic.dueAt === task.dueAt) return;
+    setError("");
+    setPendingTaskIds((current) => new Set(current).add(task.id));
+    setTasks((current) => current.map((item) => item.id === task.id ? optimistic : item));
+    setDetails((current) => current?.task.id === task.id
+      ? { ...current, task: { ...current.task, ...changes } }
+      : current);
+    try {
+      const updated = await api.updateTask(task.id, {
+        title: optimistic.title,
+        description: optimistic.description,
+        status: optimistic.status,
+        priority: optimistic.priority,
+        dueAt: optimistic.dueAt,
+        assigneeIds: taskAssigneeIds(optimistic),
+        expectedRevision: task.revision
+      });
+      setTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setDetails((current) => current?.task.id === updated.id ? { ...current, task: updated } : current);
+      notify("success", confirmation);
+      await loadTasks(updated.projectId);
+    } catch (reason) {
+      if (selectedProjectId) await loadTasks(selectedProjectId).catch(() => undefined);
+      if (selectedTaskId === task.id) await loadDetails(task.id).catch(() => undefined);
+      setError(reason instanceof ApiError && reason.status === 409
+        ? "Cette tâche a été modifiée ailleurs. Sa dernière version a été rechargée."
+        : messageFor(reason));
+    } finally {
+      setPendingTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(task.id);
+        return next;
+      });
+    }
+  }
+
   function startTaskDrag(event: DragEvent<HTMLElement>, taskId: string) {
     if (!canContribute || pendingTaskIds.has(taskId)) {
       event.preventDefault();
@@ -2273,6 +2316,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 selectedTaskId={selectedTaskId}
                 onOpenTask={openTask}
                 onChangeStatus={(task, status) => void changeTaskStatus(task, status)}
+                onChangePriority={(task, priority) => void changeTaskInline(task, { priority }, "Priorité modifiée.")}
+                onChangeDueAt={(task, dueAt) => void changeTaskInline(task, { dueAt }, "Échéance modifiée.")}
                 onChangeAssignees={(task, assigneeIds) => void changeTaskAssignees(task, assigneeIds)}
               />
             ) : taskView === "canvas" ? (
