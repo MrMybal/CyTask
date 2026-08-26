@@ -34,6 +34,8 @@ interface CompactTaskTableProps {
   selectedTaskId?: string;
   onOpenTask: (taskId: string) => void;
   onChangeStatus: (task: WorkItem, status: WorkItem["status"]) => void;
+  onChangePriority: (task: WorkItem, priority: WorkItem["priority"]) => void;
+  onChangeDueAt: (task: WorkItem, dueAt: string | null) => void;
   onChangeAssignees: (task: WorkItem, assigneeIds: string[]) => void;
 }
 
@@ -51,6 +53,8 @@ export function CompactTaskTable({
   selectedTaskId,
   onOpenTask,
   onChangeStatus,
+  onChangePriority,
+  onChangeDueAt,
   onChangeAssignees
 }: CompactTaskTableProps) {
   const [sortColumn, setSortColumn] = useState<CompactSort>("name");
@@ -156,10 +160,35 @@ export function CompactTaskTable({
                   disabled={!canEdit || pending}
                   onChange={(assigneeIds) => onChangeAssignees(task, assigneeIds)}
                 />
-                <span>{task.dueAt ? compactDate(task.dueAt) : "—"}</span>
-                <span className={"compact-priority priority-" + task.priority}>
-                  {priorityLabels[task.priority]}
-                </span>
+                {canEdit ? (
+                  <input
+                    className="compact-due-input"
+                    type="date"
+                    value={dateInputValue(task.dueAt)}
+                    disabled={pending}
+                    aria-label={"Modifier l’échéance de " + task.key}
+                    onChange={(event) => onChangeDueAt(task, dateInputToIso(event.currentTarget.value, task.dueAt))}
+                  />
+                ) : (
+                  <span>{task.dueAt ? compactDate(task.dueAt) : "—"}</span>
+                )}
+                {canEdit ? (
+                  <select
+                    className={"compact-priority-select priority-" + task.priority}
+                    value={task.priority}
+                    disabled={pending}
+                    aria-label={"Modifier la priorité de " + task.key}
+                    onChange={(event) => onChangePriority(task, event.currentTarget.value as WorkItem["priority"])}
+                  >
+                    {(["low", "normal", "high", "urgent"] as const).map((priority) => (
+                      <option value={priority} key={priority}>{priorityLabels[priority]}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className={"compact-priority priority-" + task.priority}>
+                    {priorityLabels[task.priority]}
+                  </span>
+                )}
                 <select
                   className={"compact-status-select status-" + task.status}
                   value={task.status}
@@ -702,6 +731,24 @@ function compactDate(value: string) {
   return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" }).format(new Date(value));
 }
 
+function dateInputValue(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day;
+}
+
+function dateInputToIso(value: string, current: string | null): string | null {
+  if (!value) return null;
+  const previous = current ? new Date(current) : undefined;
+  const hours = previous && !Number.isNaN(previous.valueOf()) ? previous.getHours() : 17;
+  const minutes = previous && !Number.isNaN(previous.valueOf()) ? previous.getMinutes() : 0;
+  const next = new Date(value + "T00:00:00");
+  next.setHours(hours, minutes, 0, 0);
+  return next.toISOString();
+}
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));

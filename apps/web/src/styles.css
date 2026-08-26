@@ -775,8 +775,15 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-assignee em { overflow: hidden; color: var(--muted); font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .compact-empty { color: var(--muted); }
 .compact-priority, .compact-status { width: fit-content; border-radius: 6px; padding: 3px 6px; font-size: 8px; font-weight: 700; }
-.compact-status-select { width: min(116px, 100%); height: 27px; border: 1px solid; border-radius: 6px; padding: 2px 22px 2px 7px; background: var(--surface); cursor: pointer; font-size: 8px; font-weight: 800; }
-.compact-status-select:disabled { cursor: wait; }
+.compact-status-select,
+.compact-priority-select,
+.compact-due-input { width: min(116px, 100%); height: 27px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 22px 2px 7px; color: var(--text); background: var(--surface); cursor: pointer; font-size: 8px; font-weight: 800; }
+.compact-status-select { border-color: currentColor; }
+.compact-due-input { width: min(124px, 100%); padding-right: 5px; color-scheme: dark; font-weight: 600; }
+.theme-light .compact-due-input { color-scheme: light; }
+.compact-priority-select.priority-urgent { color: #ff7c88; border-color: #8b3b45; }
+.compact-priority-select.priority-high { color: #f4bd58; border-color: #70582c; }
+.compact-status-select:disabled, .compact-priority-select:disabled, .compact-due-input:disabled { cursor: wait; }
 .compact-task-row > .assignee-picker { overflow: visible; }
 .compact-task-row > .assignee-picker .assignee-picker-menu { right: auto; left: 0; }
 .compact-table:has(.assignee-picker details[open]) { padding-bottom: 340px; }
