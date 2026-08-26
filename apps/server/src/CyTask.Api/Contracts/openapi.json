@@ -643,7 +643,23 @@
           "422": { "$ref": "#/components/responses/Validation" }
         }
       }
-    },    "/api/v1/tasks/{taskId}": {
+    },
+    "/api/v1/tasks/{taskId}/plugins/{pluginId}/history": {
+      "get": {
+        "tags": ["plugins"],
+        "summary": "Lister les révisions archivées des données d'un plugin",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "$ref": "#/components/parameters/pluginId" }
+        ],
+        "responses": {
+          "200": { "description": "100 révisions les plus récentes", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TaskPluginHistory" } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}": {
       "get": {
         "tags": ["tâches"],
         "summary": "Détail d'une tâche, ses commentaires et sa checklist",
@@ -1128,7 +1144,18 @@
           "revision": { "type": "integer", "format": "int64", "minimum": 0 },
           "updatedAt": { "type": ["string", "null"], "format": "date-time" }
         }
-      },      "Session": {
+      },
+      "TaskPluginHistory": {
+        "type": "object",
+        "required": ["data", "revision", "updatedBy", "updatedAt"],
+        "properties": {
+          "data": { "type": "object", "additionalProperties": true },
+          "revision": { "type": "integer", "format": "int64", "minimum": 1 },
+          "updatedBy": { "type": "string", "format": "uuid" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Session": {
         "type": "object",
         "properties": {
           "userId": { "type": "string", "format": "uuid" },

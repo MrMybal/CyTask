@@ -9,16 +9,19 @@ public class CyTaskEditor : ModuleRules
         PrivateDependencyModuleNames.AddRange(new[]
         {
             "Core",
+            "ContentBrowser",
             "CoreUObject",
             "CyTaskAssetRecipes",
             "CyTaskCompat",
             "CyTaskCore",
+            "DesktopPlatform",
             "Engine",
             "InputCore",
             "LevelEditor",
             "Slate",
             "SlateCore",
-            "ToolMenus"
+            "ToolMenus",
+            "UnrealEd"
         });
     }
 }

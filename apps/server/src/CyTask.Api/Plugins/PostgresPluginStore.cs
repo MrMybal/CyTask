@@ -87,28 +87,69 @@ public sealed class PostgresPluginStore(NpgsqlDataSource dataSource) : IPluginSt
         return await reader.ReadAsync(cancellationToken) ? ReadTaskPluginData(reader) : null;
     }
 
+    public async Task<IReadOnlyList<TaskPluginData>> ListTaskPluginDataHistoryAsync(
+        Guid organizationId, Guid taskId, string pluginId, int limit,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT organization_id, project_id, task_id, plugin_id, data::text,
+                   revision, updated_by, updated_at
+            FROM task_plugin_data_history
+            WHERE organization_id = @organization_id
+              AND task_id = @task_id
+              AND plugin_id = @plugin_id
+            ORDER BY revision DESC
+            LIMIT @limit;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("task_id", taskId);
+        command.Parameters.AddWithValue("plugin_id", pluginId);
+        command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 100));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var history = new List<TaskPluginData>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            history.Add(ReadTaskPluginData(reader));
+        }
+        return history;
+    }
+
     public async Task<TaskPluginData?> UpsertTaskPluginDataAsync(
         Guid organizationId, Guid projectId, Guid taskId, string pluginId,
         JsonElement data, long expectedRevision, Guid userId,
         CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand("""
-            INSERT INTO task_plugin_data(
-                organization_id, project_id, task_id, plugin_id, data,
-                revision, updated_by, updated_at)
-            SELECT @organization_id, @project_id, @task_id, @plugin_id,
-                   @data::jsonb, 1, @updated_by, now()
-            WHERE @expected_revision = 0
-            ON CONFLICT (task_id, plugin_id) DO UPDATE
-            SET data = EXCLUDED.data,
-                revision = task_plugin_data.revision + 1,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = now()
-            WHERE task_plugin_data.organization_id = @organization_id
-              AND task_plugin_data.project_id = @project_id
-              AND task_plugin_data.revision = @expected_revision
-            RETURNING organization_id, project_id, task_id, plugin_id, data::text,
-                      revision, updated_by, updated_at;
+            WITH upserted AS (
+                INSERT INTO task_plugin_data(
+                    organization_id, project_id, task_id, plugin_id, data,
+                    revision, updated_by, updated_at)
+                SELECT @organization_id, @project_id, @task_id, @plugin_id,
+                       @data::jsonb, 1, @updated_by, now()
+                WHERE @expected_revision = 0
+                ON CONFLICT (task_id, plugin_id) DO UPDATE
+                SET data = EXCLUDED.data,
+                    revision = task_plugin_data.revision + 1,
+                    updated_by = EXCLUDED.updated_by,
+                    updated_at = now()
+                WHERE task_plugin_data.organization_id = @organization_id
+                  AND task_plugin_data.project_id = @project_id
+                  AND task_plugin_data.revision = @expected_revision
+                RETURNING organization_id, project_id, task_id, plugin_id, data,
+                          revision, updated_by, updated_at
+            ), archived AS (
+                INSERT INTO task_plugin_data_history(
+                    organization_id, project_id, task_id, plugin_id, data,
+                    revision, updated_by, updated_at)
+                SELECT organization_id, project_id, task_id, plugin_id, data,
+                       revision, updated_by, updated_at
+                FROM upserted
+                ON CONFLICT (task_id, plugin_id, revision) DO NOTHING
+                RETURNING revision
+            )
+            SELECT organization_id, project_id, task_id, plugin_id, data::text,
+                   revision, updated_by, updated_at
+            FROM upserted;
             """);
         command.Parameters.AddWithValue("organization_id", organizationId);
         command.Parameters.AddWithValue("project_id", projectId);

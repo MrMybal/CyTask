@@ -1,15 +1,23 @@
 #include "SCyTaskPanel.h"
 
+#include "AssetRegistry/AssetData.h"
 #include "Async/Async.h"
+#include "ContentBrowserModule.h"
 #include "CyTaskApiClient.h"
 #include "CyTaskAssetRecipe.h"
 #include "CyTaskNativeAuthorization.h"
 #include "CyTaskVersionCompat.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "DesktopPlatformModule.h"
+#include "IDesktopPlatform.h"
+#include "IContentBrowserSingleton.h"
 #include "Misc/App.h"
+#include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
@@ -162,6 +170,40 @@ void SCyTaskPanel::Construct(const FArguments& InArgs)
                 .AutoHeight()
                 .Padding(0.0f, 0.0f, 0.0f, 8.0f)
                 [
+                    SNew(SCheckBox)
+                    .IsChecked(this, &SCyTaskPanel::GetMyTasksCheckState)
+                    .OnCheckStateChanged(this, &SCyTaskPanel::OnMyTasksCheckStateChanged)
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("MyTasksOnly", "Afficher uniquement mes tâches"))
+                    ]
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(NewTaskTitleTextBox, SEditableTextBox)
+                    .HintText(LOCTEXT("NewTaskTitleHint", "Nouvelle tâche assignée à moi"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(NewTaskDescriptionTextBox, SMultiLineEditableTextBox)
+                    .HintText(LOCTEXT("NewTaskDescriptionHint", "Description facultative"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 8.0f)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("CreateMyTask", "Créer et m'assigner la tâche"))
+                    .OnClicked(this, &SCyTaskPanel::CreateAssignedTask)
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 8.0f)
+                [
                     SAssignNew(TaskStatusText, STextBlock)
                     .AutoWrapText(true)
                     .Text(LOCTEXT("TasksIdle", "Connectez un compte pour charger les tâches."))
@@ -228,6 +270,29 @@ void SCyTaskPanel::Construct(const FArguments& InArgs)
                 .AutoHeight()
                 .Padding(0.0f, 0.0f, 0.0f, 6.0f)
                 [
+                    SNew(SButton)
+                    .Text(LOCTEXT("AddSelectedAssets", "Ajouter les assets sélectionnés dans le Content Browser"))
+                    .OnClicked(this, &SCyTaskPanel::AddSelectedAssets)
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(FilePathsTextBox, SMultiLineEditableTextBox)
+                    .HintText(LOCTEXT("FilePathsHint", "Fichiers du projet — Source, Config, Content… un chemin relatif par ligne"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("AddProjectFiles", "Choisir des fichiers du projet…"))
+                    .OnClicked(this, &SCyTaskPanel::AddProjectFiles)
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
                     SAssignNew(TargetPlatformTextBox, SEditableTextBox)
                     .HintText(LOCTEXT("PlatformHint", "Win64, Linux, Mac, Android ou Toutes"))
                 ]
@@ -264,6 +329,35 @@ void SCyTaskPanel::Construct(const FArguments& InArgs)
                         SNew(SButton)
                         .Text(LOCTEXT("SaveContext", "Enregistrer dans CyTask"))
                         .OnClicked(this, &SCyTaskPanel::SaveUnrealContext)
+                    ]
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 4.0f)
+                [
+                    SNew(STextBlock)
+                    .Font(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 14))
+                    .Text(LOCTEXT("HistoryTitle", "Historique du ticket Unreal"))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+                [
+                    SAssignNew(HistoryStatusText, STextBlock)
+                    .AutoWrapText(true)
+                    .Text(LOCTEXT("HistoryIdle", "Sélectionnez une tâche pour charger ses révisions."))
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 20.0f)
+                [
+                    SNew(SBox)
+                    .HeightOverride(180.0f)
+                    [
+                        SAssignNew(HistoryListView, SListView<TSharedPtr<FCyTaskUnrealHistoryEntry>>)
+                        .ListItemsSource(&HistoryItems)
+                        .SelectionMode(ESelectionMode::None)
+                        .OnGenerateRow(this, &SCyTaskPanel::GenerateHistoryRow)
                     ]
                 ]
                 + SVerticalBox::Slot()
@@ -391,22 +485,23 @@ FReply SCyTaskPanel::ConnectAccount()
             Panel->ApiClient->GetCurrentIdentity(
                 [WeakPanel](const FCyTaskIdentityResult& IdentityResult)
                 {
-                    const FString Message = IdentityResult.Message;
-                    const bool bSucceeded = IdentityResult.bSucceeded;
-                    AsyncTask(ENamedThreads::GameThread, [WeakPanel, Message, bSucceeded]()
+                    const FCyTaskIdentityResult Copy = IdentityResult;
+                    AsyncTask(ENamedThreads::GameThread, [WeakPanel, Copy]()
                     {
                         const TSharedPtr<SCyTaskPanel> InnerPanel = WeakPanel.Pin();
                         if (!InnerPanel.IsValid())
                         {
                             return;
                         }
-                        if (!bSucceeded)
+                        if (!Copy.bSucceeded)
                         {
+                            InnerPanel->CurrentUserId.Reset();
                             InnerPanel->ApiClient->ClearAccessToken();
                         }
-                        InnerPanel->ConnectionStatusText->SetText(FText::FromString(Message));
-                        if (bSucceeded)
+                        InnerPanel->ConnectionStatusText->SetText(FText::FromString(Copy.Message));
+                        if (Copy.bSucceeded)
                         {
+                            InnerPanel->CurrentUserId = Copy.UserId;
                             InnerPanel->RefreshProjects();
                         }
                     });
@@ -444,16 +539,21 @@ FReply SCyTaskPanel::DisconnectAccount()
                 }
             });
         });
+    CurrentUserId.Reset();
     ProjectOptions.Reset();
     SelectedProject.Reset();
     SelectedTask.Reset();
     UnrealDataRevision = 0;
+    AllTaskItems.Reset();
     TaskItems.Reset();
     ProjectComboBox->ClearSelection();
     TaskListView->ClearSelection();
     ProjectComboBox->RefreshOptions();
     SelectedProjectText->SetText(LOCTEXT("NoProjectAfterDisconnect", "Aucun projet"));
     TaskListView->RequestListRefresh();
+    HistoryItems.Reset();
+    HistoryListView->RequestListRefresh();
+    HistoryStatusText->SetText(LOCTEXT("HistoryDisconnected", "Connectez un compte pour charger les révisions."));
     TaskStatusText->SetText(LOCTEXT("TasksDisconnected", "Connectez un compte pour charger les tâches."));
     ConnectionStatusText->SetText(LOCTEXT(
         "Disconnecting",
@@ -464,6 +564,55 @@ FReply SCyTaskPanel::DisconnectAccount()
 FReply SCyTaskPanel::RefreshProjectsClicked()
 {
     RefreshProjects();
+    return FReply::Handled();
+}
+
+FReply SCyTaskPanel::CreateAssignedTask()
+{
+    if (!SelectedProject.IsValid() || CurrentUserId.IsEmpty())
+    {
+        TaskStatusText->SetText(LOCTEXT("CreateTaskNeedsProject", "Connectez votre compte et sélectionnez un projet."));
+        return FReply::Handled();
+    }
+
+    const FString Title = NewTaskTitleTextBox->GetText().ToString().TrimStartAndEnd();
+    if (Title.IsEmpty() || Title.Len() > 240)
+    {
+        TaskStatusText->SetText(LOCTEXT("CreateTaskInvalidTitle", "Le titre doit contenir entre 1 et 240 caractères."));
+        return FReply::Handled();
+    }
+
+    const FString ProjectId = SelectedProject->Id;
+    const FString Description = NewTaskDescriptionTextBox->GetText().ToString();
+    TaskStatusText->SetText(LOCTEXT("CreatingAssignedTask", "Création et assignation de la tâche…"));
+    const TWeakPtr<SCyTaskPanel> WeakPanel = StaticCastSharedRef<SCyTaskPanel>(AsShared());
+    ApiClient->CreateTask(ProjectId, Title, Description, CurrentUserId,
+        [WeakPanel, ProjectId](const FCyTaskWorkItemResult& Result)
+        {
+            const FCyTaskWorkItemResult Copy = Result;
+            AsyncTask(ENamedThreads::GameThread, [WeakPanel, ProjectId, Copy]()
+            {
+                const TSharedPtr<SCyTaskPanel> Panel = WeakPanel.Pin();
+                if (!Panel.IsValid() || !Panel->SelectedProject.IsValid()
+                    || Panel->SelectedProject->Id != ProjectId)
+                {
+                    return;
+                }
+                Panel->TaskStatusText->SetText(FText::FromString(Copy.Message));
+                if (!Copy.bSucceeded)
+                {
+                    return;
+                }
+
+                Panel->NewTaskTitleTextBox->SetText(FText::GetEmpty());
+                Panel->NewTaskDescriptionTextBox->SetText(FText::GetEmpty());
+                const TSharedPtr<FCyTaskWorkItemSummary> NewTask =
+                    MakeShared<FCyTaskWorkItemSummary>(Copy.Task);
+                Panel->AllTaskItems.Insert(NewTask, 0);
+                Panel->ApplyTaskFilter();
+                Panel->TaskListView->SetSelection(NewTask);
+            });
+        });
     return FReply::Handled();
 }
 
@@ -503,7 +652,9 @@ void SCyTaskPanel::RefreshProjects()
                 if (Panel->ProjectOptions.Num() == 0)
                 {
                     Panel->SelectedProject.Reset();
+                    Panel->AllTaskItems.Reset();
                     Panel->TaskItems.Reset();
+                    Panel->HistoryItems.Reset();
                     Panel->ProjectComboBox->ClearSelection();
                     Panel->SelectedProjectText->SetText(LOCTEXT("NoProjects", "Aucun projet"));
                     Panel->TaskListView->RequestListRefresh();
@@ -523,7 +674,13 @@ void SCyTaskPanel::OnProjectSelected(
     SelectedProject = MoveTemp(Project);
     SelectedTask.Reset();
     UnrealDataRevision = 0;
+    AllTaskItems.Reset();
+    TaskItems.Reset();
+    HistoryItems.Reset();
     TaskListView->ClearSelection();
+    TaskListView->RequestListRefresh();
+    HistoryListView->RequestListRefresh();
+    HistoryStatusText->SetText(LOCTEXT("HistorySelectTask", "Sélectionnez une tâche pour charger ses révisions."));
     UnrealStatusText->SetText(LOCTEXT("UnrealDataSelectTask", "Sélectionnez une tâche pour charger son contexte Unreal."));
     if (!SelectedProject.IsValid())
     {
@@ -543,6 +700,47 @@ TSharedRef<SWidget> SCyTaskPanel::GenerateProjectWidget(
         ? FString::Printf(TEXT("%s — %s"), *Project->Key, *Project->Name)
         : FString(TEXT("Projet invalide"));
     return SNew(STextBlock).Text(FText::FromString(Label));
+}
+
+ECheckBoxState SCyTaskPanel::GetMyTasksCheckState() const
+{
+    return bMyTasksOnly ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+}
+
+void SCyTaskPanel::OnMyTasksCheckStateChanged(ECheckBoxState NewState)
+{
+    bMyTasksOnly = NewState == ECheckBoxState::Checked;
+    ApplyTaskFilter();
+}
+
+void SCyTaskPanel::ApplyTaskFilter()
+{
+    TaskItems.Reset();
+    for (const TSharedPtr<FCyTaskWorkItemSummary>& Task : AllTaskItems)
+    {
+        if (!Task.IsValid())
+        {
+            continue;
+        }
+        if (!bMyTasksOnly || (!CurrentUserId.IsEmpty() && Task->AssigneeIds.Contains(CurrentUserId)))
+        {
+            TaskItems.Add(Task);
+        }
+    }
+
+    if (SelectedTask.IsValid() && !TaskItems.Contains(SelectedTask))
+    {
+        SelectedTask.Reset();
+        UnrealDataRevision = 0;
+        HistoryItems.Reset();
+        TaskListView->ClearSelection();
+        HistoryListView->RequestListRefresh();
+    }
+    TaskListView->RequestListRefresh();
+    TaskStatusText->SetText(FText::FromString(
+        bMyTasksOnly
+            ? FString::Printf(TEXT("%d tâche(s) assignée(s) à moi sur %d."), TaskItems.Num(), AllTaskItems.Num())
+            : FString::Printf(TEXT("%d tâche(s) affichée(s)."), TaskItems.Num())));
 }
 
 void SCyTaskPanel::LoadSelectedProjectTasks()
@@ -577,13 +775,12 @@ void SCyTaskPanel::LoadSelectedProjectTasks()
                 Panel->SelectedTask.Reset();
                 Panel->UnrealDataRevision = 0;
                 Panel->TaskListView->ClearSelection();
-                Panel->TaskItems.Reset(ResultCopy.Tasks.Num());
+                Panel->AllTaskItems.Reset(ResultCopy.Tasks.Num());
                 for (const FCyTaskWorkItemSummary& Task : ResultCopy.Tasks)
                 {
-                    Panel->TaskItems.Add(MakeShared<FCyTaskWorkItemSummary>(Task));
+                    Panel->AllTaskItems.Add(MakeShared<FCyTaskWorkItemSummary>(Task));
                 }
-                Panel->TaskListView->RequestListRefresh();
-                Panel->TaskStatusText->SetText(FText::FromString(ResultCopy.Message));
+                Panel->ApplyTaskFilter();
             });
         });
 }
@@ -596,6 +793,9 @@ void SCyTaskPanel::OnTaskSelected(
     UnrealDataRevision = 0;
     if (!SelectedTask.IsValid())
     {
+        HistoryItems.Reset();
+        HistoryListView->RequestListRefresh();
+        HistoryStatusText->SetText(LOCTEXT("HistoryNoTaskSelected", "Aucune tâche sélectionnée."));
         UnrealStatusText->SetText(LOCTEXT("UnrealDataNoTask", "Aucune tâche sélectionnée."));
         return;
     }
@@ -611,6 +811,7 @@ void SCyTaskPanel::LoadSelectedTaskUnrealData()
 
     const FString RequestedTaskId = SelectedTask->Id;
     UnrealStatusText->SetText(LOCTEXT("UnrealDataLoading", "Chargement du contexte Unreal…"));
+    LoadSelectedTaskUnrealHistory();
     const TWeakPtr<SCyTaskPanel> WeakPanel = StaticCastSharedRef<SCyTaskPanel>(AsShared());
     ApiClient->GetUnrealTaskData(
         RequestedTaskId,
@@ -638,9 +839,52 @@ void SCyTaskPanel::LoadSelectedTaskUnrealData()
                 Panel->MapPathTextBox->SetText(FText::FromString(Copy.Data.MapPath));
                 Panel->AssetPathsTextBox->SetText(FText::FromString(
                     FString::Join(Copy.Data.AssetPaths, TEXT("\n"))));
+                Panel->FilePathsTextBox->SetText(FText::FromString(
+                    FString::Join(Copy.Data.FilePaths, TEXT("\n"))));
                 Panel->TargetPlatformTextBox->SetText(FText::FromString(Copy.Data.TargetPlatform));
                 Panel->ReviewBuildTextBox->SetText(FText::FromString(Copy.Data.ReviewBuild));
                 Panel->UnrealNotesTextBox->SetText(FText::FromString(Copy.Data.Notes));
+            });
+        });
+}
+
+void SCyTaskPanel::LoadSelectedTaskUnrealHistory()
+{
+    HistoryItems.Reset();
+    HistoryListView->RequestListRefresh();
+    if (!SelectedTask.IsValid())
+    {
+        HistoryStatusText->SetText(LOCTEXT("HistoryNoTask", "Aucune tâche sélectionnée."));
+        return;
+    }
+
+    const FString RequestedTaskId = SelectedTask->Id;
+    HistoryStatusText->SetText(LOCTEXT("HistoryLoading", "Chargement des révisions…"));
+    const TWeakPtr<SCyTaskPanel> WeakPanel = StaticCastSharedRef<SCyTaskPanel>(AsShared());
+    ApiClient->GetUnrealTaskHistory(RequestedTaskId,
+        [WeakPanel, RequestedTaskId](const FCyTaskUnrealHistoryResult& Result)
+        {
+            const FCyTaskUnrealHistoryResult Copy = Result;
+            AsyncTask(ENamedThreads::GameThread, [WeakPanel, RequestedTaskId, Copy]()
+            {
+                const TSharedPtr<SCyTaskPanel> Panel = WeakPanel.Pin();
+                if (!Panel.IsValid() || !Panel->SelectedTask.IsValid()
+                    || Panel->SelectedTask->Id != RequestedTaskId)
+                {
+                    return;
+                }
+
+                Panel->HistoryStatusText->SetText(FText::FromString(Copy.Message));
+                Panel->HistoryItems.Reset();
+                if (Copy.bSucceeded)
+                {
+                    Panel->HistoryItems.Reserve(Copy.Entries.Num());
+                    for (const FCyTaskUnrealHistoryEntry& Entry : Copy.Entries)
+                    {
+                        Panel->HistoryItems.Add(MakeShared<FCyTaskUnrealHistoryEntry>(Entry));
+                    }
+                }
+                Panel->HistoryListView->RequestListRefresh();
             });
         });
 }
@@ -656,6 +900,101 @@ FReply SCyTaskPanel::CaptureUnrealContext()
     UnrealStatusText->SetText(LOCTEXT(
         "UnrealDataCaptured",
         "Contexte local capturé. Vérifiez les champs puis enregistrez dans CyTask."));
+    return FReply::Handled();
+}
+
+FReply SCyTaskPanel::AddSelectedAssets()
+{
+    TArray<FAssetData> SelectedAssets;
+    FContentBrowserModule& ContentBrowser =
+        FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+    ContentBrowser.Get().GetSelectedAssets(SelectedAssets);
+    if (SelectedAssets.Num() == 0)
+    {
+        UnrealStatusText->SetText(LOCTEXT(
+            "NoSelectedAssets", "Sélectionnez un ou plusieurs assets dans le Content Browser."));
+        return FReply::Handled();
+    }
+
+    TArray<FString> Paths;
+    AssetPathsTextBox->GetText().ToString().ParseIntoArrayLines(Paths, true);
+    for (FString& Path : Paths)
+    {
+        Path.TrimStartAndEndInline();
+    }
+    for (const FAssetData& Asset : SelectedAssets)
+    {
+        Paths.AddUnique(Asset.PackageName.ToString());
+    }
+    AssetPathsTextBox->SetText(FText::FromString(FString::Join(Paths, TEXT("\n"))));
+    UnrealStatusText->SetText(FText::FromString(FString::Printf(
+        TEXT("%d asset(s) lié(s) localement. Enregistrez le ticket pour créer une révision."),
+        SelectedAssets.Num())));
+    return FReply::Handled();
+}
+
+FReply SCyTaskPanel::AddProjectFiles()
+{
+    IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+    if (DesktopPlatform == nullptr)
+    {
+        UnrealStatusText->SetText(LOCTEXT("NoDesktopPlatform", "Le sélecteur de fichiers est indisponible."));
+        return FReply::Handled();
+    }
+
+    TArray<FString> SelectedFiles;
+    const FString ProjectRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+    if (!DesktopPlatform->OpenFileDialog(
+        nullptr,
+        TEXT("Associer des fichiers du projet à la tâche CyTask"),
+        ProjectRoot,
+        TEXT(""),
+        TEXT("Tous les fichiers (*.*)|*.*"),
+        EFileDialogFlags::Multiple,
+        SelectedFiles))
+    {
+        return FReply::Handled();
+    }
+
+    FString NormalizedRoot = ProjectRoot;
+    FPaths::NormalizeDirectoryName(NormalizedRoot);
+    const FString RootPrefix = NormalizedRoot + TEXT("/");
+    TArray<FString> Paths;
+    FilePathsTextBox->GetText().ToString().ParseIntoArrayLines(Paths, true);
+    for (FString& Path : Paths)
+    {
+        Path.TrimStartAndEndInline();
+        Path.ReplaceInline(TEXT("\\"), TEXT("/"));
+    }
+
+    int32 AddedCount = 0;
+    int32 RejectedCount = 0;
+    for (const FString& SelectedFile : SelectedFiles)
+    {
+        FString FullPath = FPaths::ConvertRelativePathToFull(SelectedFile);
+        FPaths::NormalizeFilename(FullPath);
+        if (!FullPath.StartsWith(RootPrefix, ESearchCase::IgnoreCase))
+        {
+            ++RejectedCount;
+            continue;
+        }
+
+        FString RelativePath = FullPath;
+        if (!FPaths::MakePathRelativeTo(RelativePath, *NormalizedRoot))
+        {
+            ++RejectedCount;
+            continue;
+        }
+        RelativePath.ReplaceInline(TEXT("\\"), TEXT("/"));
+        const int32 PreviousCount = Paths.Num();
+        Paths.AddUnique(RelativePath);
+        AddedCount += Paths.Num() > PreviousCount ? 1 : 0;
+    }
+
+    FilePathsTextBox->SetText(FText::FromString(FString::Join(Paths, TEXT("\n"))));
+    UnrealStatusText->SetText(FText::FromString(FString::Printf(
+        TEXT("%d fichier(s) du projet lié(s), %d chemin(s) hors projet refusé(s). Enregistrez pour historiser."),
+        AddedCount, RejectedCount)));
     return FReply::Handled();
 }
 
@@ -675,6 +1014,12 @@ FReply SCyTaskPanel::SaveUnrealContext()
     for (FString& Path : Data.AssetPaths)
     {
         Path.TrimStartAndEndInline();
+    }
+    FilePathsTextBox->GetText().ToString().ParseIntoArrayLines(Data.FilePaths, true);
+    for (FString& Path : Data.FilePaths)
+    {
+        Path.TrimStartAndEndInline();
+        Path.ReplaceInline(TEXT("\\"), TEXT("/"));
     }
     Data.TargetPlatform = TargetPlatformTextBox->GetText().ToString().TrimStartAndEnd();
     Data.ReviewBuild = ReviewBuildTextBox->GetText().ToString().TrimStartAndEnd();
@@ -702,6 +1047,7 @@ FReply SCyTaskPanel::SaveUnrealContext()
                 if (Copy.bSucceeded)
                 {
                     Panel->UnrealDataRevision = Copy.Revision;
+                    Panel->LoadSelectedTaskUnrealHistory();
                 }
             });
         });
@@ -740,6 +1086,50 @@ TSharedRef<ITableRow> SCyTaskPanel::GenerateTaskRow(
             [
                 SNew(STextBlock)
                 .Text(FText::FromString(Status))
+            ]
+        ];
+}
+
+TSharedRef<ITableRow> SCyTaskPanel::GenerateHistoryRow(
+    TSharedPtr<FCyTaskUnrealHistoryEntry> Entry,
+    const TSharedRef<STableViewBase>& OwnerTable) const
+{
+    const int64 Revision = Entry.IsValid() ? Entry->Revision : 0;
+    const int32 AssetCount = Entry.IsValid() ? Entry->Data.AssetPaths.Num() : 0;
+    const int32 FileCount = Entry.IsValid() ? Entry->Data.FilePaths.Num() : 0;
+    const FString UpdatedAt = Entry.IsValid() ? Entry->UpdatedAt : TEXT("?");
+    const FString Paths = Entry.IsValid()
+        ? FString::Join(Entry->Data.AssetPaths, TEXT("\n"))
+            + (Entry->Data.AssetPaths.Num() > 0 && Entry->Data.FilePaths.Num() > 0 ? TEXT("\n") : TEXT(""))
+            + FString::Join(Entry->Data.FilePaths, TEXT("\n"))
+        : FString();
+
+    return SNew(STableRow<TSharedPtr<FCyTaskUnrealHistoryEntry>>, OwnerTable)
+        .Padding(4.0f)
+        .ToolTipText(FText::FromString(Paths.IsEmpty() ? TEXT("Aucun fichier lié à cette révision.") : Paths))
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 10.0f, 0.0f)
+            [
+                SNew(STextBlock)
+                .Font(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 10))
+                .Text(FText::FromString(FString::Printf(TEXT("r%lld"), Revision)))
+            ]
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(FString::Printf(
+                    TEXT("%d asset(s) · %d fichier(s)"), AssetCount, FileCount)))
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(10.0f, 0.0f, 0.0f, 0.0f)
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(UpdatedAt))
             ]
         ];
 }

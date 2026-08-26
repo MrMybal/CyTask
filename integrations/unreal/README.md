@@ -20,11 +20,17 @@ Aucun mot de passe ou secret client n'est embarqué. Le Bearer opaque reste en
 mémoire, est écrasé à la fermeture et le bouton de déconnexion demande aussi sa
 révocation au serveur.
 
-Quand le plugin **Unreal Engine** est activé dans le projet CyTask, sélectionner un ticket
-charge son onglet Unreal partagé. **Capturer le contexte** relève la version du moteur, le nom
-du projet et la map ouverte ; les assets concernés, la plateforme, le build de revue et les
-notes peuvent ensuite être complétés puis enregistrés. La mise à jour utilise une révision
-optimiste : le panneau demande un rechargement si une autre personne a modifié ces données.
+Quand le plugin **Unreal Engine** est activé dans le projet CyTask, le panneau peut limiter la
+liste aux tâches assignées au compte connecté et créer directement une tâche auto-assignée.
+Sélectionner un ticket charge son onglet Unreal partagé. **Capturer le contexte** relève la
+version du moteur, le nom du projet et la map ouverte. Les assets sélectionnés dans le Content
+Browser peuvent être ajoutés en un clic ; le sélecteur de fichiers n’accepte que les chemins
+situés sous la racine du projet et les stocke sous forme relative.
+
+Chaque enregistrement crée une révision persistante contenant assets, fichiers, plateforme,
+build de revue et notes. L’historique du ticket est visible dans le panneau avec le nombre de
+fichiers et d’assets de chaque révision. La mise à jour reste optimiste : le panneau demande un
+rechargement si une autre personne a modifié ces données.
 
 ## Installation dans un projet
 

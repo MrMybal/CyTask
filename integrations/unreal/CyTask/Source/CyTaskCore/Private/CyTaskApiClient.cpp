@@ -62,6 +62,78 @@ namespace
         return Json->TryGetStringField(Field, OutValue);
     }
 
+    bool ReadStringArray(
+        const TSharedPtr<FJsonObject>& Json,
+        const TCHAR* Field,
+        TArray<FString>& OutValues)
+    {
+        OutValues.Reset();
+        const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+        if (!Json.IsValid() || !Json->TryGetArrayField(Field, Values) || Values == nullptr)
+        {
+            return true;
+        }
+        for (const TSharedPtr<FJsonValue>& Value : *Values)
+        {
+            FString Text;
+            if (!Value.IsValid() || !Value->TryGetString(Text))
+            {
+                return false;
+            }
+            OutValues.Add(MoveTemp(Text));
+        }
+        return true;
+    }
+
+    bool ParseWorkItemObject(
+        const TSharedPtr<FJsonObject>& Json,
+        FCyTaskWorkItemSummary& OutTask)
+    {
+        if (!Json.IsValid()
+            || !Json->TryGetStringField(TEXT("id"), OutTask.Id)
+            || !Json->TryGetStringField(TEXT("projectId"), OutTask.ProjectId)
+            || !Json->TryGetStringField(TEXT("key"), OutTask.Key)
+            || !Json->TryGetStringField(TEXT("title"), OutTask.Title)
+            || !Json->TryGetStringField(TEXT("status"), OutTask.Status)
+            || !IsGuid(OutTask.Id) || !IsGuid(OutTask.ProjectId)
+            || OutTask.Key.IsEmpty() || OutTask.Title.IsEmpty() || !HasExpectedStatus(OutTask.Status))
+        {
+            return false;
+        }
+
+        OutTask.AssigneeIds.Reset();
+        const TArray<TSharedPtr<FJsonValue>>* Assignees = nullptr;
+        if (Json->TryGetArrayField(TEXT("assignees"), Assignees) && Assignees != nullptr)
+        {
+            for (const TSharedPtr<FJsonValue>& Value : *Assignees)
+            {
+                const TSharedPtr<FJsonObject> Assignee = Value.IsValid() ? Value->AsObject() : nullptr;
+                FString UserId;
+                if (!Assignee.IsValid() || !Assignee->TryGetStringField(TEXT("userId"), UserId)
+                    || !IsGuid(UserId))
+                {
+                    return false;
+                }
+                OutTask.AssigneeIds.Add(MoveTemp(UserId));
+            }
+        }
+        return true;
+    }
+
+    bool ParseUnrealDataObject(
+        const TSharedPtr<FJsonObject>& Data,
+        FCyTaskUnrealData& OutData)
+    {
+        return ReadOptionalString(Data, TEXT("engineVersion"), OutData.EngineVersion)
+            && ReadOptionalString(Data, TEXT("projectName"), OutData.ProjectName)
+            && ReadOptionalString(Data, TEXT("mapPath"), OutData.MapPath)
+            && ReadStringArray(Data, TEXT("assetPaths"), OutData.AssetPaths)
+            && ReadStringArray(Data, TEXT("filePaths"), OutData.FilePaths)
+            && ReadOptionalString(Data, TEXT("targetPlatform"), OutData.TargetPlatform)
+            && ReadOptionalString(Data, TEXT("reviewBuild"), OutData.ReviewBuild)
+            && ReadOptionalString(Data, TEXT("notes"), OutData.Notes);
+    }
+
     bool ParseUnrealDataResponse(
         const FString& Payload,
         FCyTaskUnrealDataResult& OutResult)
@@ -76,41 +148,16 @@ namespace
         const TSharedPtr<FJsonObject>* Data = nullptr;
         double Revision = 0.0;
         if (!Root->TryGetObjectField(TEXT("data"), Data) || Data == nullptr || !Data->IsValid()
-            || !Root->TryGetNumberField(TEXT("revision"), Revision) || Revision < 0.0)
+            || !Root->TryGetNumberField(TEXT("revision"), Revision) || Revision < 0.0
+            || !ParseUnrealDataObject(*Data, OutResult.Data))
         {
             return false;
-        }
-
-        if (!ReadOptionalString(*Data, TEXT("engineVersion"), OutResult.Data.EngineVersion)
-            || !ReadOptionalString(*Data, TEXT("projectName"), OutResult.Data.ProjectName)
-            || !ReadOptionalString(*Data, TEXT("mapPath"), OutResult.Data.MapPath)
-            || !ReadOptionalString(*Data, TEXT("targetPlatform"), OutResult.Data.TargetPlatform)
-            || !ReadOptionalString(*Data, TEXT("reviewBuild"), OutResult.Data.ReviewBuild)
-            || !ReadOptionalString(*Data, TEXT("notes"), OutResult.Data.Notes))
-        {
-            return false;
-        }
-
-        OutResult.Data.AssetPaths.Reset();
-        const TArray<TSharedPtr<FJsonValue>>* Assets = nullptr;
-        if ((*Data)->TryGetArrayField(TEXT("assetPaths"), Assets) && Assets != nullptr)
-        {
-            for (const TSharedPtr<FJsonValue>& Asset : *Assets)
-            {
-                FString Path;
-                if (!Asset.IsValid() || !Asset->TryGetString(Path))
-                {
-                    return false;
-                }
-                OutResult.Data.AssetPaths.Add(MoveTemp(Path));
-            }
         }
 
         OutResult.Revision = static_cast<int64>(Revision);
         return true;
     }
 }
-
 FCyTaskApiClient::~FCyTaskApiClient()
 {
     ClearAccessToken();
@@ -243,7 +290,7 @@ void FCyTaskApiClient::GetCurrentIdentity(FIdentityCallback Callback) const
 {
     if (ServerUrl.IsEmpty() || AccessToken.IsEmpty())
     {
-        Callback({ false, 0, {}, {}, {}, TEXT("Compte CyTask non connecté.") });
+        Callback({ false, 0, {}, {}, {}, {}, TEXT("Compte CyTask non connecté.") });
         return;
     }
 
@@ -270,9 +317,11 @@ void FCyTaskApiClient::GetCurrentIdentity(FIdentityCallback Callback) const
             const TSharedRef<TJsonReader<>> Reader =
                 TJsonReaderFactory<>::Create(Response->GetContentAsString());
             if (!FJsonSerializer::Deserialize(Reader, Json) || !Json.IsValid()
+                || !Json->TryGetStringField(TEXT("userId"), Result.UserId)
                 || !Json->TryGetStringField(TEXT("displayName"), Result.DisplayName)
                 || !Json->TryGetStringField(TEXT("email"), Result.Email)
-                || !Json->TryGetStringField(TEXT("role"), Result.Role))
+                || !Json->TryGetStringField(TEXT("role"), Result.Role)
+                || !IsGuid(Result.UserId))
             {
                 Result.Message = TEXT("Réponse d'identité CyTask invalide.");
                 Callback(Result);
@@ -287,7 +336,7 @@ void FCyTaskApiClient::GetCurrentIdentity(FIdentityCallback Callback) const
 
     if (!Request->ProcessRequest())
     {
-        Callback({ false, 0, {}, {}, {}, TEXT("La requête d'identité n'a pas pu être démarrée.") });
+        Callback({ false, 0, {}, {}, {}, {}, TEXT("La requête d'identité n'a pas pu être démarrée.") });
     }
 }
 
@@ -400,14 +449,7 @@ void FCyTaskApiClient::ListTasks(const FString& ProjectId, FWorkItemsCallback Ca
             {
                 const TSharedPtr<FJsonObject> Json = JsonValue.IsValid() ? JsonValue->AsObject() : nullptr;
                 FCyTaskWorkItemSummary Task;
-                if (!Json.IsValid()
-                    || !Json->TryGetStringField(TEXT("id"), Task.Id)
-                    || !Json->TryGetStringField(TEXT("projectId"), Task.ProjectId)
-                    || !Json->TryGetStringField(TEXT("key"), Task.Key)
-                    || !Json->TryGetStringField(TEXT("title"), Task.Title)
-                    || !Json->TryGetStringField(TEXT("status"), Task.Status)
-                    || !IsGuid(Task.Id) || !IsGuid(Task.ProjectId)
-                    || Task.Key.IsEmpty() || Task.Title.IsEmpty() || !HasExpectedStatus(Task.Status))
+                if (!ParseWorkItemObject(Json, Task))
                 {
                     Result.Tasks.Reset();
                     Result.Message = TEXT("Une tâche reçue du serveur est invalide.");
@@ -425,6 +467,79 @@ void FCyTaskApiClient::ListTasks(const FString& ProjectId, FWorkItemsCallback Ca
     if (!Request->ProcessRequest())
     {
         Callback({ false, 0, {}, TEXT("La requête de tâches n'a pas pu être démarrée.") });
+    }
+}
+
+void FCyTaskApiClient::CreateTask(
+    const FString& ProjectId,
+    const FString& Title,
+    const FString& Description,
+    const FString& AssigneeId,
+    FWorkItemCallback Callback) const
+{
+    const FString CleanTitle = Title.TrimStartAndEnd();
+    if (ServerUrl.IsEmpty() || AccessToken.IsEmpty() || !IsGuid(ProjectId)
+        || CleanTitle.IsEmpty() || CleanTitle.Len() > 240
+        || (!AssigneeId.IsEmpty() && !IsGuid(AssigneeId)))
+    {
+        Callback({ false, 0, {}, TEXT("Titre, projet, responsable ou compte CyTask invalide.") });
+        return;
+    }
+
+    const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("title"), CleanTitle);
+    Root->SetStringField(TEXT("description"), Description.TrimStartAndEnd());
+    Root->SetStringField(TEXT("priority"), TEXT("normal"));
+    if (!AssigneeId.IsEmpty())
+    {
+        TArray<TSharedPtr<FJsonValue>> AssigneeIds;
+        AssigneeIds.Add(MakeShared<FJsonValueString>(AssigneeId));
+        Root->SetArrayField(TEXT("assigneeIds"), MoveTemp(AssigneeIds));
+    }
+
+    FString Body;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetVerb(TEXT("POST"));
+    Request->SetURL(ServerUrl + TEXT("/api/v1/projects/") + ProjectId + TEXT("/tasks"));
+    Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + AccessToken);
+    Request->SetContentAsString(Body);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnectedSuccessfully)
+        {
+            FCyTaskWorkItemResult Result;
+            Result.StatusCode = Response.IsValid() ? Response->GetResponseCode() : 0;
+            if (!bConnectedSuccessfully || Result.StatusCode < 200 || Result.StatusCode >= 300)
+            {
+                Result.Message = Result.StatusCode > 0
+                    ? FString::Printf(TEXT("Création de la tâche refusée (HTTP %d)."), Result.StatusCode)
+                    : TEXT("Connexion au serveur impossible.");
+                Callback(Result);
+                return;
+            }
+
+            TSharedPtr<FJsonObject> Json;
+            const TSharedRef<TJsonReader<>> Reader =
+                TJsonReaderFactory<>::Create(Response->GetContentAsString());
+            if (!FJsonSerializer::Deserialize(Reader, Json) || !ParseWorkItemObject(Json, Result.Task))
+            {
+                Result.Message = TEXT("Réponse de création de tâche invalide.");
+                Callback(Result);
+                return;
+            }
+
+            Result.bSucceeded = true;
+            Result.Message = FString::Printf(TEXT("Tâche %s créée et assignée."), *Result.Task.Key);
+            Callback(Result);
+        });
+
+    if (!Request->ProcessRequest())
+    {
+        Callback({ false, 0, {}, TEXT("La requête de création n'a pas pu être démarrée.") });
     }
 }
 
@@ -478,6 +593,83 @@ void FCyTaskApiClient::GetUnrealTaskData(
     }
 }
 
+void FCyTaskApiClient::GetUnrealTaskHistory(
+    const FString& TaskId,
+    FUnrealHistoryCallback Callback) const
+{
+    if (ServerUrl.IsEmpty() || AccessToken.IsEmpty() || !IsGuid(TaskId))
+    {
+        Callback({ false, 0, {}, TEXT("Tâche invalide ou compte CyTask non connecté.") });
+        return;
+    }
+
+    const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetVerb(TEXT("GET"));
+    Request->SetURL(ServerUrl + TEXT("/api/v1/tasks/") + TaskId
+        + TEXT("/plugins/dev.cytask.unreal/history"));
+    Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+    Request->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + AccessToken);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnectedSuccessfully)
+        {
+            FCyTaskUnrealHistoryResult Result;
+            Result.StatusCode = Response.IsValid() ? Response->GetResponseCode() : 0;
+            if (!bConnectedSuccessfully || Result.StatusCode < 200 || Result.StatusCode >= 300)
+            {
+                Result.Message = Result.StatusCode == 409
+                    ? TEXT("Activez d'abord le plugin Unreal dans ce projet sur CyTask.")
+                    : Result.StatusCode > 0
+                        ? FString::Printf(TEXT("Historique Unreal refusé (HTTP %d)."), Result.StatusCode)
+                        : TEXT("Connexion au serveur impossible.");
+                Callback(Result);
+                return;
+            }
+
+            TArray<TSharedPtr<FJsonValue>> JsonEntries;
+            const TSharedRef<TJsonReader<>> Reader =
+                TJsonReaderFactory<>::Create(Response->GetContentAsString());
+            if (!FJsonSerializer::Deserialize(Reader, JsonEntries))
+            {
+                Result.Message = TEXT("Réponse d'historique Unreal invalide.");
+                Callback(Result);
+                return;
+            }
+
+            Result.Entries.Reserve(JsonEntries.Num());
+            for (const TSharedPtr<FJsonValue>& Value : JsonEntries)
+            {
+                const TSharedPtr<FJsonObject> Json = Value.IsValid() ? Value->AsObject() : nullptr;
+                const TSharedPtr<FJsonObject>* Data = nullptr;
+                FCyTaskUnrealHistoryEntry Entry;
+                double Revision = 0.0;
+                if (!Json.IsValid()
+                    || !Json->TryGetObjectField(TEXT("data"), Data) || Data == nullptr || !Data->IsValid()
+                    || !Json->TryGetNumberField(TEXT("revision"), Revision) || Revision < 1.0
+                    || !Json->TryGetStringField(TEXT("updatedBy"), Entry.UpdatedBy)
+                    || !Json->TryGetStringField(TEXT("updatedAt"), Entry.UpdatedAt)
+                    || !IsGuid(Entry.UpdatedBy)
+                    || !ParseUnrealDataObject(*Data, Entry.Data))
+                {
+                    Result.Entries.Reset();
+                    Result.Message = TEXT("Une révision Unreal reçue est invalide.");
+                    Callback(Result);
+                    return;
+                }
+                Entry.Revision = static_cast<int64>(Revision);
+                Result.Entries.Add(MoveTemp(Entry));
+            }
+
+            Result.bSucceeded = true;
+            Result.Message = FString::Printf(TEXT("%d révision(s) Unreal chargée(s)."), Result.Entries.Num());
+            Callback(Result);
+        });
+
+    if (!Request->ProcessRequest())
+    {
+        Callback({ false, 0, {}, TEXT("La requête d'historique n'a pas pu être démarrée.") });
+    }
+}
+
 void FCyTaskApiClient::UpdateUnrealTaskData(
     const FString& TaskId,
     const FCyTaskUnrealData& Data,
@@ -501,6 +693,13 @@ void FCyTaskApiClient::UpdateUnrealTaskData(
         Assets.Add(MakeShared<FJsonValueString>(AssetPath));
     }
     DataJson->SetArrayField(TEXT("assetPaths"), MoveTemp(Assets));
+    TArray<TSharedPtr<FJsonValue>> Files;
+    Files.Reserve(Data.FilePaths.Num());
+    for (const FString& FilePath : Data.FilePaths)
+    {
+        Files.Add(MakeShared<FJsonValueString>(FilePath));
+    }
+    DataJson->SetArrayField(TEXT("filePaths"), MoveTemp(Files));
     DataJson->SetStringField(TEXT("targetPlatform"), Data.TargetPlatform);
     DataJson->SetStringField(TEXT("reviewBuild"), Data.ReviewBuild);
     DataJson->SetStringField(TEXT("notes"), Data.Notes);

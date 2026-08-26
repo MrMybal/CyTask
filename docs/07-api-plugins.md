@@ -90,7 +90,9 @@ Content-Type: application/json
 
 Le serveur refuse les champs inconnus, types invalides, chemins Unreal hors `/Game` et
 `/Plugins`, listes démesurées et objets de plus de 64 Kio. Une révision obsolète répond
-`409 Conflict`. Les données restent bornées à l'organisation et au projet du ticket.
+`409 Conflict`. Les données restent bornées à l'organisation et au projet du ticket. Chaque
+écriture réussie est aussi archivée et peut être relue avec
+`GET /api/v1/tasks/{taskId}/plugins/{pluginId}/history` (100 révisions récentes au maximum).
 
 Quatre plugins officiels servent de référence :
 
@@ -98,7 +100,7 @@ Quatre plugins officiels servent de référence :
   liaison de commits, branches, tags et demandes de fusion ;
 - `dev.cytask.ai-assistant` conserve l’objectif, les sources et le mode de sortie de
   l’assistant. Les clés de fournisseur n’appartiennent jamais aux données d’un ticket ;
-- `dev.cytask.unreal` partage moteur, projet, map, assets et build de revue entre le site et
+- `dev.cytask.unreal` partage moteur, projet, map, assets, fichiers du projet et historique entre le site et
   le panneau Unreal ;
 - `dev.cytask.cyrevision` expose dépôt, branche, commit, révision et fichiers modifiés. Son
   connecteur compagnon est distribué dans CyRevision et utilise la même API Bearer que les

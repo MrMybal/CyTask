@@ -65,10 +65,10 @@ public sealed class PluginCatalog
             UnrealPluginId,
             "Unreal Engine",
             "Ajoute aux tickets un contexte Unreal partagé avec le plugin de l’éditeur.",
-            "0.2.0",
+            "0.3.0",
             "v1",
             "ui-extension",
-            ["tasks:read", "tasks:plugin-data:write"],
+            ["tasks:read", "tasks:write", "tasks:plugin-data:write"],
             new PluginContributions(
             [
                 new PluginTaskTabDefinition(
@@ -80,6 +80,7 @@ public sealed class PluginCatalog
                         new("projectName", "Projet Unreal", "text", Placeholder: "NebulaStation", MaxLength: 160),
                         new("mapPath", "Map / niveau", "map-path", Placeholder: "/Game/Maps/Hangar", MaxLength: 1024),
                         new("assetPaths", "Assets concernés", "string-list", Description: "Un chemin Unreal par ligne.", Placeholder: "/Game/Characters/Hero", MaxLength: 1024),
+                        new("filePaths", "Fichiers du projet", "string-list", Description: "Un chemin relatif au projet Unreal par ligne.", Placeholder: "Source/Nebula/Hero.cpp", MaxLength: 2048),
                         new("targetPlatform", "Plateforme cible", "select", Options: ["Win64", "Linux", "Mac", "Android", "Toutes"]),
                         new("reviewBuild", "Build de revue", "text", Placeholder: "VerticalSlice-142", MaxLength: 240),
                         new("notes", "Notes Unreal", "textarea", Placeholder: "Contexte technique, étapes de reproduction…", MaxLength: 20000)

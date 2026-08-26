@@ -16,6 +16,7 @@ struct CYTASKCORE_API FCyTaskIdentityResult
 {
     bool bSucceeded = false;
     int32 StatusCode = 0;
+    FString UserId;
     FString DisplayName;
     FString Email;
     FString Role;
@@ -36,6 +37,7 @@ struct CYTASKCORE_API FCyTaskWorkItemSummary
     FString Key;
     FString Title;
     FString Status;
+    TArray<FString> AssigneeIds;
 };
 
 struct CYTASKCORE_API FCyTaskProjectsResult
@@ -60,6 +62,7 @@ struct CYTASKCORE_API FCyTaskUnrealData
     FString ProjectName;
     FString MapPath;
     TArray<FString> AssetPaths;
+    TArray<FString> FilePaths;
     FString TargetPlatform;
     FString ReviewBuild;
     FString Notes;
@@ -74,6 +77,30 @@ struct CYTASKCORE_API FCyTaskUnrealDataResult
     FString Message;
 };
 
+struct CYTASKCORE_API FCyTaskWorkItemResult
+{
+    bool bSucceeded = false;
+    int32 StatusCode = 0;
+    FCyTaskWorkItemSummary Task;
+    FString Message;
+};
+
+struct CYTASKCORE_API FCyTaskUnrealHistoryEntry
+{
+    FCyTaskUnrealData Data;
+    int64 Revision = 0;
+    FString UpdatedBy;
+    FString UpdatedAt;
+};
+
+struct CYTASKCORE_API FCyTaskUnrealHistoryResult
+{
+    bool bSucceeded = false;
+    int32 StatusCode = 0;
+    TArray<FCyTaskUnrealHistoryEntry> Entries;
+    FString Message;
+};
+
 class CYTASKCORE_API FCyTaskApiClient : public TSharedFromThis<FCyTaskApiClient>
 {
 public:
@@ -81,7 +108,9 @@ public:
     using FIdentityCallback = TFunction<void(const FCyTaskIdentityResult&)>;
     using FProjectsCallback = TFunction<void(const FCyTaskProjectsResult&)>;
     using FWorkItemsCallback = TFunction<void(const FCyTaskWorkItemsResult&)>;
+    using FWorkItemCallback = TFunction<void(const FCyTaskWorkItemResult&)>;
     using FUnrealDataCallback = TFunction<void(const FCyTaskUnrealDataResult&)>;
+    using FUnrealHistoryCallback = TFunction<void(const FCyTaskUnrealHistoryResult&)>;
 
     ~FCyTaskApiClient();
 
@@ -92,7 +121,10 @@ public:
     void GetCurrentIdentity(FIdentityCallback Callback) const;
     void ListProjects(FProjectsCallback Callback) const;
     void ListTasks(const FString& ProjectId, FWorkItemsCallback Callback) const;
+    void CreateTask(const FString& ProjectId, const FString& Title, const FString& Description,
+        const FString& AssigneeId, FWorkItemCallback Callback) const;
     void GetUnrealTaskData(const FString& TaskId, FUnrealDataCallback Callback) const;
+    void GetUnrealTaskHistory(const FString& TaskId, FUnrealHistoryCallback Callback) const;
     void UpdateUnrealTaskData(
         const FString& TaskId,
         const FCyTaskUnrealData& Data,
