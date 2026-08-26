@@ -13,14 +13,6 @@ import type {
   WorkItem
 } from "../api";
 
-const statusLabels: Record<WorkItem["status"], string> = {
-  todo: "À faire",
-  in_progress: "En cours",
-  blocked: "Bloquée",
-  done: "Terminée",
-  cancelled: "Annulée"
-};
-
 const priorityLabels: Record<WorkItem["priority"], string> = {
   low: "Basse",
   normal: "Normale",
@@ -31,6 +23,9 @@ const priorityLabels: Record<WorkItem["priority"], string> = {
 interface CompactTaskTableProps {
   tasks: WorkItem[];
   labelsByTask: ReadonlyMap<string, ProjectLabel[]>;
+  statusLabels: Readonly<Record<string, string>>;
+  statusColors: Readonly<Record<string, string>>;
+  statusOrder: readonly string[];
   selectedTaskId?: string;
   onOpenTask: (taskId: string) => void;
 }
@@ -40,11 +35,18 @@ type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder
 export function CompactTaskTable({
   tasks,
   labelsByTask,
+  statusLabels,
+  statusColors,
+  statusOrder,
   selectedTaskId,
   onOpenTask
 }: CompactTaskTableProps) {
   const [sortColumn, setSortColumn] = useState<CompactSort>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const statusRanks = useMemo(
+    () => new Map(statusOrder.map((status, index) => [status, index])),
+    [statusOrder]
+  );
   const groups = useMemo(() => {
     const grouped = new Map<string, { label?: ProjectLabel; tasks: WorkItem[] }>();
     for (const task of tasks) {
@@ -62,7 +64,6 @@ export function CompactTaskTable({
       )
     );
     const priorityOrder = { low: 0, normal: 1, high: 2, urgent: 3 };
-    const statusOrder = { todo: 0, in_progress: 1, blocked: 2, done: 3, cancelled: 4 };
     const direction = sortDirection === "asc" ? 1 : -1;
     for (const group of result) {
       group.tasks.sort((left, right) => {
@@ -71,13 +72,13 @@ export function CompactTaskTable({
           : sortColumn === "due" ? (left.dueAt ? Date.parse(left.dueAt) : Number.MAX_SAFE_INTEGER)
             - (right.dueAt ? Date.parse(right.dueAt) : Number.MAX_SAFE_INTEGER)
           : sortColumn === "priority" ? priorityOrder[left.priority] - priorityOrder[right.priority]
-          : sortColumn === "status" ? statusOrder[left.status] - statusOrder[right.status]
+          : sortColumn === "status" ? (statusRanks.get(left.status) ?? 99) - (statusRanks.get(right.status) ?? 99)
           : 0;
         return comparison * direction;
       });
     }
     return result;
-  }, [labelsByTask, sortColumn, sortDirection, tasks]);
+  }, [labelsByTask, sortColumn, sortDirection, statusRanks, tasks]);
 
   function sort(column: CompactSort) {
     if (column === sortColumn) setSortDirection((current) => current === "asc" ? "desc" : "asc");
@@ -122,7 +123,11 @@ export function CompactTaskTable({
               onClick={() => onOpenTask(task.id)}
             >
               <span className="compact-task-name">
-                <i className={`compact-status-dot status-dot-${task.status}`} aria-hidden="true" />
+                <i
+                  className={`compact-status-dot status-dot-${task.status}`}
+                  style={{ backgroundColor: statusColors[task.status] ?? "#94A3B8" }}
+                  aria-hidden="true"
+                />
                 <strong>{task.title}</strong>
                 <small>{task.key}</small>
               </span>
@@ -136,8 +141,11 @@ export function CompactTaskTable({
               <span className={`compact-priority priority-${task.priority}`}>
                 {priorityLabels[task.priority]}
               </span>
-              <span className={`compact-status status-${task.status}`}>
-                {statusLabels[task.status]}
+              <span
+                className={`compact-status status status-${task.status}`}
+                style={{ color: statusColors[task.status] ?? "#94A3B8", borderColor: statusColors[task.status] ?? "#94A3B8" }}
+              >
+                {statusLabels[task.status] ?? task.status}
               </span>
               <span className="compact-folder-value">
                 <i style={{ backgroundColor: group.label?.color ?? "#94A3B8" }} />

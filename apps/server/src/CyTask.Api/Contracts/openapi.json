@@ -304,6 +304,83 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/statuses": {
+      "get": {
+        "tags": ["tâches"],
+        "summary": "États configurés pour le projet",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "responses": {
+          "200": {
+            "description": "États ordonnés du projet",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectStatus" } }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["tâches"],
+        "summary": "Créer un état personnalisé",
+        "description": "Rôles owner et admin. Maximum 25 états par projet, états système inclus.",
+        "parameters": [{ "$ref": "#/components/parameters/projectId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "color"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+                  "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "examples": ["#8B5CF6"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "État créé", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectStatus" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/statuses/{statusKey}": {
+      "patch": {
+        "tags": ["tâches"],
+        "summary": "Modifier le nom et la couleur d'un état",
+        "description": "Rôles owner et admin. La clé stable de l'état ne change pas.",
+        "parameters": [
+          { "$ref": "#/components/parameters/projectId" },
+          { "name": "statusKey", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "color"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+                  "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "État modifié", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectStatus" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/labels": {
       "get": {
         "tags": ["tâches"],
@@ -379,7 +456,7 @@
         "parameters": [
           { "$ref": "#/components/parameters/projectId" },
           { "name": "query", "in": "query", "schema": { "type": "string", "maxLength": 240 } },
-          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["all", "todo", "in_progress", "blocked", "done", "cancelled"], "default": "all" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "pattern": "^(all|[a-z][a-z0-9_]{0,39})$", "default": "all" } },
           { "name": "priority", "in": "query", "schema": { "type": "string", "enum": ["all", "low", "normal", "high", "urgent"], "default": "all" } },
           { "name": "assignee", "in": "query", "description": "all, unassigned ou identifiant utilisateur UUID.", "schema": { "type": "string", "default": "all" } },
           { "name": "due", "in": "query", "schema": { "type": "string", "enum": ["all", "overdue", "today", "week", "none"], "default": "all" } },
@@ -450,7 +527,8 @@
                   "description": { "type": "string", "maxLength": 20000 },
                   "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
                   "dueAt": { "type": ["string", "null"], "format": "date-time" },
-                  "assigneeId": { "type": ["string", "null"], "format": "uuid" }
+                  "assigneeId": { "type": ["string", "null"], "format": "uuid", "deprecated": true },
+                  "assigneeIds": { "type": "array", "maxItems": 20, "uniqueItems": true, "items": { "type": "string", "format": "uuid" } }
                 }
               }
             }
@@ -476,7 +554,7 @@
       "patch": {
         "tags": ["tâches"],
         "summary": "Mettre à jour une tâche avec contrôle de révision",
-        "description": "`expectedRevision` doit égaler la révision courante, sinon 409. Les champs `priority`, `dueAt` et `assigneeId` omis conservent leur valeur ; envoyés à `null`, ils sont effacés.",
+        "description": "`expectedRevision` doit égaler la révision courante, sinon 409. Les champs `priority`, `dueAt` et `assigneeIds` omis conservent leur valeur.",
         "parameters": [{ "$ref": "#/components/parameters/taskId" }],
         "requestBody": {
           "required": true,
@@ -488,10 +566,11 @@
                 "properties": {
                   "title": { "type": "string", "maxLength": 240 },
                   "description": { "type": "string", "maxLength": 20000 },
-                  "status": { "type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"] },
+                  "status": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
                   "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
                   "dueAt": { "type": ["string", "null"], "format": "date-time" },
-                  "assigneeId": { "type": ["string", "null"], "format": "uuid" },
+                  "assigneeId": { "type": ["string", "null"], "format": "uuid", "deprecated": true },
+                  "assigneeIds": { "type": "array", "maxItems": 20, "uniqueItems": true, "items": { "type": "string", "format": "uuid" } },
                   "expectedRevision": { "type": "integer", "format": "int64" }
                 }
               }
@@ -938,6 +1017,27 @@
           "createdAt": { "type": "string", "format": "date-time" }
         }
       },
+      "ProjectStatus": {
+        "type": "object",
+        "required": ["organizationId", "projectId", "key", "name", "color", "position", "isSystem"],
+        "properties": {
+          "organizationId": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+          "color": { "type": "string", "pattern": "^#[0-9A-F]{6}$" },
+          "position": { "type": "integer", "minimum": 0 },
+          "isSystem": { "type": "boolean" }
+        }
+      },
+      "TaskAssignee": {
+        "type": "object",
+        "required": ["userId", "displayName"],
+        "properties": {
+          "userId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" }
+        }
+      },
       "ProjectLabel": {
         "type": "object",
         "required": ["id", "organizationId", "projectId", "name", "color", "createdBy", "createdAt"],
@@ -997,7 +1097,7 @@
           "projectId": { "type": "string", "format": "uuid" },
           "key": { "type": "string", "examples": ["NEB-12"] },
           "title": { "type": "string" },
-          "status": { "type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"] }
+          "status": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" }
         }
       },
       "TaskPage": {
@@ -1021,11 +1121,12 @@
           "key": { "type": "string", "examples": ["NEB-12"] },
           "title": { "type": "string" },
           "description": { "type": "string" },
-          "status": { "type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"] },
+          "status": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
           "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
           "dueAt": { "type": ["string", "null"], "format": "date-time" },
           "assigneeId": { "type": ["string", "null"], "format": "uuid" },
           "assigneeName": { "type": ["string", "null"] },
+          "assignees": { "type": ["array", "null"], "maxItems": 20, "items": { "$ref": "#/components/schemas/TaskAssignee" } },
           "revision": { "type": "integer", "format": "int64" },
           "createdBy": { "type": "string", "format": "uuid" },
           "createdAt": { "type": "string", "format": "date-time" },

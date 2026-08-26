@@ -765,6 +765,106 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task ProjectStatusesAndMultipleAssigneesCanBeConfigured()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var owner = factory.CreateClient();
+        var ownerCsrf = await BootstrapAsync(owner);
+        owner.DefaultRequestHeaders.Add("X-CSRF-Token", ownerCsrf);
+
+        using var membersResponse = await owner.GetAsync(
+            new Uri("/api/v1/members", UriKind.Relative), TestContext.Current.CancellationToken);
+        var ownerMembers = await ReadJsonAsync(membersResponse);
+        var ownerId = Assert.Single(ownerMembers.EnumerateArray()).GetProperty("userId").GetGuid();
+        var project = await PostAndReadAsync(
+            owner,
+            "/api/v1/projects",
+            new { name = "Workflow studio", key = "FLOW" });
+        var projectId = project.GetProperty("id").GetGuid();
+
+        using var defaultStatusesResponse = await owner.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/statuses", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, defaultStatusesResponse.StatusCode);
+        var defaultStatuses = await ReadJsonAsync(defaultStatusesResponse);
+        Assert.Equal(5, defaultStatuses.GetArrayLength());
+        Assert.All(defaultStatuses.EnumerateArray(), status =>
+            Assert.Matches("^#[0-9A-F]{6}$", status.GetProperty("color").GetString()!));
+
+        var validationStatus = await PostAndReadAsync(
+            owner,
+            $"/api/v1/projects/{projectId}/statuses",
+            new { name = "En validation", color = "#8B5CF6" });
+        var validationKey = validationStatus.GetProperty("key").GetString()!;
+        Assert.Equal("en_validation", validationKey);
+
+        using var updatedStatusResponse = await owner.PatchAsJsonAsync(
+            new Uri($"/api/v1/projects/{projectId}/statuses/{validationKey}", UriKind.Relative),
+            new { name = "Revue équipe", color = "#22C55E" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, updatedStatusResponse.StatusCode);
+        var updatedStatus = await ReadJsonAsync(updatedStatusResponse);
+        Assert.Equal("#22C55E", updatedStatus.GetProperty("color").GetString());
+
+        var invitation = await PostAndReadAsync(
+            owner,
+            "/api/v1/invitations",
+            new { email = "assignee@cytask.local", role = "member" });
+        using var member = factory.CreateClient();
+        using var acceptedResponse = await member.PostAsJsonAsync(
+            new Uri("/api/v1/invitations/accept", UriKind.Relative),
+            new
+            {
+                token = invitation.GetProperty("token").GetString(),
+                displayName = "Second Assignee",
+                password = "second assignee password is strong"
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, acceptedResponse.StatusCode);
+        var accepted = await ReadJsonAsync(acceptedResponse);
+        var memberId = accepted.GetProperty("userId").GetGuid();
+
+        var task = await PostAndReadAsync(
+            owner,
+            $"/api/v1/projects/{projectId}/tasks",
+            new
+            {
+                title = "Préparer la revue",
+                description = "Validation à deux",
+                assigneeIds = new[] { ownerId, memberId }
+            });
+        Assert.Equal(2, task.GetProperty("assignees").GetArrayLength());
+
+        using var updateTaskResponse = await owner.PatchAsJsonAsync(
+            new Uri($"/api/v1/tasks/{task.GetProperty("id").GetGuid()}", UriKind.Relative),
+            new
+            {
+                title = "Préparer la revue",
+                description = "Validation à deux",
+                status = validationKey,
+                assigneeIds = new[] { memberId, ownerId },
+                expectedRevision = 1
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, updateTaskResponse.StatusCode);
+        var updatedTask = await ReadJsonAsync(updateTaskResponse);
+        Assert.Equal(validationKey, updatedTask.GetProperty("status").GetString());
+        Assert.Equal(2, updatedTask.GetProperty("assignees").GetArrayLength());
+        Assert.Equal(memberId, updatedTask.GetProperty("assigneeId").GetGuid());
+
+        using var filteredTasksResponse = await owner.GetAsync(
+            new Uri(
+                $"/api/v1/projects/{projectId}/task-page?status={validationKey}&limit=50",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, filteredTasksResponse.StatusCode);
+        var filteredTasks = await ReadJsonAsync(filteredTasksResponse);
+        Assert.Equal(1, filteredTasks.GetProperty("totalCount").GetInt32());
+        Assert.Equal(validationKey, filteredTasks.GetProperty("items")[0].GetProperty("status").GetString());
+    }
+
+
+    [Fact]
     public async Task TaskUpdatesRejectStaleRevisions()
     {
         await using var factory = new CyTaskApiFactory();

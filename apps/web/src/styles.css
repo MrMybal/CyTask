@@ -1047,3 +1047,137 @@ input:focus, textarea:focus, select:focus { border-color: #4d8b75; box-shadow: 0
   .task-overview-media-grid { grid-template-columns: 1fr; }
   .task-overview-media-grid > img, .task-overview-media-grid > video, .task-overview-file { height: 190px; }
 }
+.status[style*="--status-color"] {
+  border-color: color-mix(in srgb, var(--status-color) 65%, transparent);
+  color: var(--status-color);
+  background: color-mix(in srgb, var(--status-color) 14%, transparent);
+}
+
+.quick-status-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.status-settings-trigger { white-space: nowrap; }
+
+.project-status-editor {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+.project-status-editor h3 { margin: 0 0 4px; font-size: 13px; }
+.project-status-editor header small { color: var(--muted); font-size: 10px; }
+.project-status-list { display: grid; gap: 7px; }
+.project-status-row,
+.project-status-create {
+  display: grid;
+  grid-template-columns: 38px minmax(160px, 1fr) minmax(90px, auto) auto;
+  align-items: center;
+  gap: 8px;
+}
+.project-status-row input[type="color"],
+.project-status-create input[type="color"] {
+  width: 38px;
+  height: 34px;
+  padding: 3px;
+  cursor: pointer;
+}
+.project-status-row input[name="name"],
+.project-status-create input[name="name"] { min-width: 0; height: 34px; }
+.project-status-row code { color: var(--muted); font-size: 9px; }
+.project-status-create {
+  grid-template-columns: 38px minmax(160px, 1fr) auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.edit-field-assignees { align-self: start; }
+.assignee-picker { position: relative; min-width: 0; font-weight: 400; text-transform: none; letter-spacing: normal; }
+.assignee-picker details { position: relative; }
+.assignee-picker summary {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+  list-style: none;
+}
+.assignee-picker summary::-webkit-details-marker { display: none; }
+.assignee-picker summary > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assignee-picker summary > b { color: var(--accent); font-size: 14px; }
+.assignee-picker-avatars { display: flex; flex: 0 0 auto; }
+.assignee-picker-avatars i,
+.assignee-picker-menu label > i {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  color: #07131a;
+  background: var(--accent);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 800;
+}
+.assignee-picker-avatars i + i { margin-left: -7px; }
+.assignee-picker-menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: min(340px, 78vw);
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: 0 18px 50px #0008;
+}
+.assignee-picker-menu header { display: grid; gap: 2px; padding: 7px 8px 10px; }
+.assignee-picker-menu header small { color: var(--muted); font-size: 9px; }
+.assignee-picker-menu label {
+  display: grid;
+  grid-template-columns: auto 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.assignee-picker-menu label:hover { background: var(--surface-hover); }
+.assignee-picker-menu label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.assignee-picker-menu label small { display: block; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; }
+.assignee-picker.compact summary { min-height: 30px; padding: 3px 6px; border: 0; background: transparent; }
+.task-assignee-fact { overflow: visible !important; }
+.task-assignee-fact dd { overflow: visible !important; white-space: normal !important; }
+.task-assignee-fact .assignee-picker-menu { right: auto; left: 0; }
+
+.theme-light .project-status-editor,
+.theme-light .assignee-picker-menu,
+.theme-light .assignee-picker summary { background: #fffdf8; }
+.theme-light .assignee-picker-menu { box-shadow: 0 18px 45px #4c59652e; }
+
+@media (max-width: 720px) {
+  .quick-status { align-items: flex-start; flex-direction: column; }
+  .quick-status-controls { width: 100%; align-items: stretch; flex-direction: column; }
+  .project-status-row { grid-template-columns: 38px minmax(0, 1fr) auto; }
+  .project-status-row code { display: none; }
+}
