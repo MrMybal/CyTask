@@ -23,7 +23,23 @@ const priorityLabels: Record<WorkItem["priority"], string> = {
   urgent: "Urgente"
 };
 
-interface CompactTaskBulkChanges extends Partial<Pick<WorkItem, "status" | "priority">> {
+type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder";
+
+const compactColumnDefinitions: readonly {
+  key: CompactSort;
+  label: string;
+  template: string;
+  minimumWidth: number;
+}[] = [
+  { key: "name", label: "Nom", template: "minmax(280px, 1.8fr)", minimumWidth: 280 },
+  { key: "assignee", label: "Assignée", template: "160px", minimumWidth: 160 },
+  { key: "due", label: "Échéance", template: "130px", minimumWidth: 130 },
+  { key: "priority", label: "Priorité", template: "110px", minimumWidth: 110 },
+  { key: "status", label: "Statut", template: "120px", minimumWidth: 120 },
+  { key: "folder", label: "Dossier", template: "150px", minimumWidth: 150 }
+];
+
+interface CompactTaskBulkChanges extends Partial<Pick<WorkItem, "status" | "priority" | "dueAt">> {
   assigneeIds?: string[];
 }
 
@@ -54,8 +70,6 @@ interface CompactTaskTableProps {
   ) => Promise<boolean>;
 }
 
-type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder";
-
 export function CompactTaskTable({
   tasks,
   labels,
@@ -81,6 +95,8 @@ export function CompactTaskTable({
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
   const [bulkAssigneeIds, setBulkAssigneeIds] = useState<Set<string>>(() => new Set());
   const [bulkLabelId, setBulkLabelId] = useState("");
+  const [bulkDueDate, setBulkDueDate] = useState("");
+  const [visibleColumns, setVisibleColumns] = useState<Set<CompactSort>>(readCompactColumns);
   const [bulkPending, setBulkPending] = useState(false);
   const bulkAssigneeDetails = useRef<HTMLDetailsElement>(null);
   const statusRanks = useMemo(
@@ -129,10 +145,28 @@ export function CompactTaskTable({
     });
   }, [tasks]);
 
+  useEffect(() => {
+    window.localStorage.setItem("cytask.compactColumns", JSON.stringify([...visibleColumns]));
+  }, [visibleColumns]);
+
   function sort(column: CompactSort) {
     if (column === sortColumn) setSortDirection((current) => current === "asc" ? "desc" : "asc");
     else {
       setSortColumn(column);
+      setSortDirection("asc");
+    }
+  }
+
+  function toggleColumn(column: CompactSort, visible: boolean) {
+    if (column === "name") return;
+    setVisibleColumns((current) => {
+      const next = new Set(current);
+      if (visible) next.add(column);
+      else next.delete(column);
+      return next;
+    });
+    if (!visible && sortColumn === column) {
+      setSortColumn("name");
       setSortDirection("asc");
     }
   }
@@ -165,6 +199,7 @@ export function CompactTaskTable({
       if (await onBulkChange(selectedTasks, changes)) {
         setSelectedRowIds(new Set());
         setBulkAssigneeIds(new Set());
+        setBulkDueDate("");
         bulkAssigneeDetails.current?.removeAttribute("open");
       }
     } finally {
@@ -196,9 +231,46 @@ export function CompactTaskTable({
   }
 
   const allRowsSelected = tasks.length > 0 && tasks.every((task) => selectedRowIds.has(task.id));
+  const displayedColumns = compactColumnDefinitions.filter((column) =>
+    column.key === "name" || visibleColumns.has(column.key)
+  );
+  const compactMinimumWidth = Math.max(
+    440,
+    displayedColumns.reduce((total, column) => total + column.minimumWidth, 0)
+      + Math.max(0, displayedColumns.length - 1) * 10
+      + 28
+  );
+  const compactTableStyle = {
+    "--compact-columns": displayedColumns.map((column) => column.template).join(" "),
+    "--compact-min-width": compactMinimumWidth + "px"
+  } as React.CSSProperties;
 
   return (
-    <section className="compact-table" aria-label="Tâches en tableau compact">
+    <section
+      className="compact-table"
+      aria-label="Tâches en tableau compact"
+      style={compactTableStyle}
+    >
+      <header className="compact-view-toolbar">
+        <details className="compact-column-picker">
+          <summary>Colonnes · {displayedColumns.length}/6</summary>
+          <div>
+            {compactColumnDefinitions.map((column) => (
+              <label key={column.key}>
+                <input
+                  type="checkbox"
+                  checked={column.key === "name" || visibleColumns.has(column.key)}
+                  disabled={column.key === "name"}
+                  onChange={(event) => toggleColumn(column.key, event.currentTarget.checked)}
+                />
+                <span>{column.label}</span>
+                {column.key === "name" && <small>Obligatoire</small>}
+              </label>
+            ))}
+          </div>
+        </details>
+        <small>Affichage mémorisé sur cet appareil</small>
+      </header>
       {canEdit && (
         <header className="compact-bulk-toolbar" aria-label="Actions groupées" aria-busy={bulkPending}>
           <label>
@@ -238,6 +310,25 @@ export function CompactTaskTable({
               <option value={priority} key={priority}>{priorityLabels[priority]}</option>
             ))}
           </select>
+          <span className="compact-bulk-due">
+            <input
+              type="date"
+              value={bulkDueDate}
+              disabled={selectedRowIds.size === 0 || bulkPending}
+              aria-label="Nouvelle échéance groupée"
+              onChange={(event) => setBulkDueDate(event.currentTarget.value)}
+            />
+            <button
+              type="button"
+              disabled={!bulkDueDate || selectedRowIds.size === 0 || bulkPending}
+              onClick={() => void applyBulk({ dueAt: dateInputToIso(bulkDueDate, null) })}
+            >Appliquer</button>
+            <button
+              type="button"
+              disabled={selectedRowIds.size === 0 || bulkPending}
+              onClick={() => void applyBulk({ dueAt: null })}
+            >Sans échéance</button>
+          </span>
           <details className="compact-bulk-assignees" ref={bulkAssigneeDetails}>
             <summary
               aria-disabled={selectedRowIds.size === 0 || bulkPending}
@@ -353,16 +444,9 @@ export function CompactTaskTable({
           {!collapsed && (
           <>
           <div className="compact-columns" aria-label="Trier les tâches par colonne">
-            {([
-              ["name", "Nom"],
-              ["assignee", "Assignée"],
-              ["due", "Échéance"],
-              ["priority", "Priorité"],
-              ["status", "Statut"],
-              ["folder", "Dossier"]
-            ] as const).map(([column, label]) => (
-              <button type="button" key={column} onClick={() => sort(column)}>
-                {label}{sortColumn === column ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
+            {displayedColumns.map((column) => (
+              <button type="button" key={column.key} onClick={() => sort(column.key)}>
+                {column.label}{sortColumn === column.key ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
               </button>
             ))}
           </div>
@@ -399,14 +483,16 @@ export function CompactTaskTable({
                   <small>{task.key}</small>
                 </button>
                 </div>
-                <TaskAssigneePicker
-                  compact
-                  members={members}
-                  selectedIds={taskAssigneeIds(task)}
-                  disabled={!canEdit || pending}
-                  onChange={(assigneeIds) => onChangeAssignees(task, assigneeIds)}
-                />
-                {canEdit ? (
+                {visibleColumns.has("assignee") && (
+                  <TaskAssigneePicker
+                    compact
+                    members={members}
+                    selectedIds={taskAssigneeIds(task)}
+                    disabled={!canEdit || pending}
+                    onChange={(assigneeIds) => onChangeAssignees(task, assigneeIds)}
+                  />
+                )}
+                {visibleColumns.has("due") && (canEdit ? (
                   <input
                     className="compact-due-input"
                     type="date"
@@ -417,8 +503,8 @@ export function CompactTaskTable({
                   />
                 ) : (
                   <span>{task.dueAt ? compactDate(task.dueAt) : "—"}</span>
-                )}
-                {canEdit ? (
+                ))}
+                {visibleColumns.has("priority") && (canEdit ? (
                   <select
                     className={"compact-priority-select priority-" + task.priority}
                     value={task.priority}
@@ -434,26 +520,30 @@ export function CompactTaskTable({
                   <span className={"compact-priority priority-" + task.priority}>
                     {priorityLabels[task.priority]}
                   </span>
+                ))}
+                {visibleColumns.has("status") && (
+                  <select
+                    className={"compact-status-select status-" + task.status}
+                    value={task.status}
+                    disabled={!canEdit || pending}
+                    aria-label={"Modifier le statut de " + task.key}
+                    style={{
+                      color: statusColors[task.status] ?? "#94A3B8",
+                      borderColor: statusColors[task.status] ?? "#94A3B8"
+                    }}
+                    onChange={(event) => onChangeStatus(task, event.currentTarget.value)}
+                  >
+                    {statusOrder.map((status) => (
+                      <option value={status} key={status}>{statusLabels[status] ?? status}</option>
+                    ))}
+                  </select>
                 )}
-                <select
-                  className={"compact-status-select status-" + task.status}
-                  value={task.status}
-                  disabled={!canEdit || pending}
-                  aria-label={"Modifier le statut de " + task.key}
-                  style={{
-                    color: statusColors[task.status] ?? "#94A3B8",
-                    borderColor: statusColors[task.status] ?? "#94A3B8"
-                  }}
-                  onChange={(event) => onChangeStatus(task, event.currentTarget.value)}
-                >
-                  {statusOrder.map((status) => (
-                    <option value={status} key={status}>{statusLabels[status] ?? status}</option>
-                  ))}
-                </select>
-                <span className="compact-folder-value">
-                  <i style={{ backgroundColor: group.label?.color ?? "#94A3B8" }} />
-                  {group.label?.name ?? "Sans dossier"}
-                </span>
+                {visibleColumns.has("folder") && (
+                  <span className="compact-folder-value">
+                    <i style={{ backgroundColor: group.label?.color ?? "#94A3B8" }} />
+                    {group.label?.name ?? "Sans dossier"}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -476,6 +566,24 @@ function taskAssigneeSortName(task: WorkItem): string {
   return task.assignees?.map((assignee) => assignee.displayName).join(" ")
     ?? task.assigneeName
     ?? "";
+}
+
+function readCompactColumns(): Set<CompactSort> {
+  const defaults = new Set(compactColumnDefinitions.map((column) => column.key));
+  try {
+    const saved = JSON.parse(window.localStorage.getItem("cytask.compactColumns") ?? "null");
+    if (!Array.isArray(saved)) return defaults;
+    const allowed = new Set(compactColumnDefinitions.map((column) => column.key));
+    const selected = new Set<CompactSort>(["name"]);
+    for (const column of saved) {
+      if (typeof column === "string" && allowed.has(column as CompactSort)) {
+        selected.add(column as CompactSort);
+      }
+    }
+    return selected;
+  } catch {
+    return defaults;
+  }
 }
 
 function memberInitials(displayName: string): string {

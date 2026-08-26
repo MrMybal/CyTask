@@ -749,8 +749,34 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 
 /* Vue compacte */
 .compact-table { margin: 16px 40px 60px; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }
+.compact-view-toolbar {
+  position: sticky; left: 0; z-index: 9; display: flex; min-width: var(--compact-min-width, 1050px);
+  min-height: 38px; align-items: center; justify-content: space-between; gap: 12px;
+  border-bottom: 1px solid var(--line-soft); padding: 5px 14px; background: var(--panel);
+}
+.compact-view-toolbar > small { color: var(--muted); font-size: 8px; }
+.compact-column-picker { position: relative; }
+.compact-column-picker summary {
+  display: flex; height: 27px; align-items: center; border: 1px solid var(--line); border-radius: 7px;
+  padding: 3px 25px 3px 8px; color: var(--muted); background: var(--surface);
+  cursor: pointer; list-style: none; font-size: 9px; font-weight: 800;
+}
+.compact-column-picker summary::-webkit-details-marker { display: none; }
+.compact-column-picker summary::after { position: absolute; right: 8px; content: "⌄"; }
+.compact-column-picker > div {
+  position: absolute; z-index: 100; top: calc(100% + 6px); left: 0; display: grid; width: 230px;
+  border: 1px solid var(--line); border-radius: 10px; padding: 7px;
+  background: var(--surface-raised); box-shadow: 0 18px 50px #0008;
+}
+.compact-column-picker label {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  border-radius: 6px; padding: 7px; color: var(--text); cursor: pointer; font-size: 9px;
+}
+.compact-column-picker label:hover { background: var(--surface-hover); }
+.compact-column-picker input { width: 15px; height: 15px; accent-color: var(--accent); }
+.compact-column-picker label small { color: var(--muted); font-size: 7px; }
 .compact-bulk-toolbar {
-  position: sticky; left: 0; z-index: 8; display: flex; min-width: 1050px; min-height: 46px;
+  position: sticky; left: 0; z-index: 8; display: flex; min-width: var(--compact-min-width, 1050px); min-height: 46px;
   flex-wrap: wrap; align-items: center; gap: 9px; border-bottom: 1px solid var(--line); padding: 7px 14px;
   background: var(--surface-raised); box-shadow: 0 7px 18px #0002;
 }
@@ -795,8 +821,15 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-bulk-assignee-menu > footer { display: flex; justify-content: flex-end; border-top: 1px solid var(--line-soft); margin-top: 6px; padding-top: 7px; }
 .compact-bulk-assignee-menu > footer button { color: #06140f; border-radius: 6px; background: var(--accent); font-weight: 800; }
 .compact-bulk-label-select { max-width: 220px; }
+.compact-bulk-due { display: flex; align-items: center; gap: 4px; }
+.compact-bulk-due input {
+  width: 126px; height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 3px 6px;
+  color: var(--text); color-scheme: dark; background: var(--surface); font-size: 9px;
+}
+.theme-light .compact-bulk-due input { color-scheme: light; }
+.compact-bulk-due button { padding-inline: 6px; font-size: 8px; }
 .compact-group-select input:disabled, .compact-row-select:disabled { cursor: wait; opacity: .5; }
-.compact-group { min-width: 1050px; }
+.compact-group { min-width: var(--compact-min-width, 1050px); }
 .compact-group + .compact-group { border-top: 10px solid var(--bg); }
 .compact-group-header { display: flex; align-items: center; justify-content: space-between; gap: 9px; min-height: 40px; border-bottom: 1px solid var(--line-soft); padding: 7px 14px; }
 .compact-group-toggle { display: flex; min-width: 0; align-items: center; gap: 9px; border: 0; padding: 0; color: var(--text); background: transparent; cursor: pointer; text-align: left; }
@@ -808,8 +841,8 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-group-toggle > span:last-child { color: var(--muted); font-size: 10px; }
 .compact-folder-mark { width: 14px; height: 8px; border-radius: 2px 2px 1px 1px; transform: skewX(-12deg); }
 .compact-columns, .compact-task-row {
-  display: grid; grid-template-columns: minmax(280px, 1.8fr) 160px 130px 110px 120px 150px;
-  align-items: center; gap: 10px; min-width: 1050px;
+  display: grid; grid-template-columns: var(--compact-columns, minmax(280px, 1.8fr) 160px 130px 110px 120px 150px);
+  align-items: center; gap: 10px; min-width: var(--compact-min-width, 1050px);
 }
 .compact-columns { min-height: 32px; border-bottom: 1px solid var(--line-soft); padding: 5px 14px; color: var(--muted); font-size: 9px; font-weight: 700; }
 .compact-task-row { position: relative; width: 100%; min-height: 42px; border: 0; border-bottom: 1px solid var(--line-soft); padding: 5px 14px; color: var(--text); background: transparent; font-size: 10px; text-align: left; }
@@ -841,6 +874,7 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .compact-task-row > .assignee-picker .assignee-picker-menu { right: auto; left: 0; }
 .compact-table:has(.assignee-picker details[open]) { padding-bottom: 340px; }
 .compact-table:has(.compact-bulk-assignees[open]) { padding-bottom: 370px; }
+.compact-table:has(.compact-column-picker[open]) { padding-bottom: 285px; }
 .compact-folder-value { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compact-folder-value i { width: 9px; height: 7px; flex: 0 0 9px; border-radius: 2px; }
 
