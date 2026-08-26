@@ -6,6 +6,9 @@
   text-rendering: optimizeLegibility;
   --bg: #0b1017;
   --panel: #101720;
+  --surface: #111923;
+  --surface-raised: #18232e;
+  --surface-hover: #22303d;
   --line: #24303d;
   --line-soft: #1b2632;
   --text: #eaf0f7;
@@ -941,6 +944,9 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
   background: #f4f6f8;
   --bg: #f4f6f8;
   --panel: #ffffff;
+  --surface: #f4f6f8;
+  --surface-raised: #ffffff;
+  --surface-hover: #e9edf2;
   --line: #d8dee6;
   --line-soft: #e7ebf0;
   --text: #18212c;
@@ -1126,6 +1132,9 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .workspace-shell.theme-dark {
   --bg: #121922;
   --panel: #19232e;
+  --surface: #17212b;
+  --surface-raised: #1d2935;
+  --surface-hover: #263544;
   --line: #3a4858;
   --line-soft: #2a3745;
   --text: #f2f5f8;
@@ -1148,6 +1157,9 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .workspace-shell.theme-light {
   --bg: #e9edf0;
   --panel: #f4f2ed;
+  --surface: #eeece7;
+  --surface-raised: #f8f6f1;
+  --surface-hover: #dfe4e6;
   --line: #aeb8c3;
   --line-soft: #c5cdd5;
   --text: #17222d;
