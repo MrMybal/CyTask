@@ -1438,6 +1438,99 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
   }
 
+  async function changeTasksBulk(
+    selectedTasks: WorkItem[],
+    changes: Partial<Pick<WorkItem, "status" | "priority">>
+  ): Promise<boolean> {
+    if (!canContribute) return false;
+    const eligible = selectedTasks.filter((task) =>
+      !pendingTaskIds.has(task.id)
+      && ((changes.status !== undefined && changes.status !== task.status)
+        || (changes.priority !== undefined && changes.priority !== task.priority))
+    );
+    if (eligible.length === 0) return true;
+
+    const eligibleIds = new Set(eligible.map((task) => task.id));
+    const originalById = new Map(eligible.map((task) => [task.id, task]));
+    const optimisticById = new Map(eligible.map((task) => [
+      task.id,
+      { ...task, ...changes }
+    ]));
+    setError("");
+    setPendingTaskIds((current) => new Set([...current, ...eligibleIds]));
+    setTasks((current) => current.map((task) => optimisticById.get(task.id) ?? task));
+    setDetails((current) => {
+      if (!current || !eligibleIds.has(current.task.id)) return current;
+      return { ...current, task: { ...current.task, ...changes } };
+    });
+
+    const updatedTasks: WorkItem[] = [];
+    const failures: unknown[] = [];
+    const failedIds = new Set<string>();
+    let cursor = 0;
+    async function worker() {
+      while (cursor < eligible.length) {
+        const task = eligible[cursor++];
+        if (!task) return;
+        const optimistic = optimisticById.get(task.id)!;
+        try {
+          updatedTasks.push(await api.updateTask(task.id, {
+            title: optimistic.title,
+            description: optimistic.description,
+            status: optimistic.status,
+            priority: optimistic.priority,
+            dueAt: optimistic.dueAt,
+            assigneeIds: taskAssigneeIds(optimistic),
+            expectedRevision: task.revision
+          }));
+        } catch (reason) {
+          failures.push(reason);
+          failedIds.add(task.id);
+        }
+      }
+    }
+
+    try {
+      await Promise.all(Array.from(
+        { length: Math.min(4, eligible.length) },
+        () => worker()
+      ));
+      const updatedById = new Map(updatedTasks.map((task) => [task.id, task]));
+      setTasks((current) => current.map((task) =>
+        updatedById.get(task.id)
+        ?? (failedIds.has(task.id) ? originalById.get(task.id) ?? task : task)
+      ));
+      setDetails((current) => {
+        if (!current) return current;
+        const updated = updatedById.get(current.task.id);
+        if (updated) return { ...current, task: updated };
+        const original = failedIds.has(current.task.id) ? originalById.get(current.task.id) : undefined;
+        return original ? { ...current, task: original } : current;
+      });
+      const projectId = selectedProjectId ?? eligible[0]?.projectId;
+      if (projectId) await loadTasks(projectId).catch(() => undefined);
+      if (selectedTaskId && eligibleIds.has(selectedTaskId)) {
+        await loadDetails(selectedTaskId).catch(() => undefined);
+      }
+
+      if (failures.length === 0) {
+        notify("success", eligible.length + " tâche(s) mise(s) à jour.");
+        return true;
+      }
+      notify(
+        "error",
+        updatedTasks.length + " tâche(s) mise(s) à jour, " + failures.length + " en conflit ou en erreur."
+      );
+      return false;
+    } finally {
+      setPendingTaskIds((current) => {
+        const next = new Set(current);
+        for (const taskId of eligibleIds) next.delete(taskId);
+        return next;
+      });
+    }
+  }
+
   function startTaskDrag(event: DragEvent<HTMLElement>, taskId: string) {
     if (!canContribute || pendingTaskIds.has(taskId)) {
       event.preventDefault();
@@ -2319,6 +2412,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 onChangePriority={(task, priority) => void changeTaskInline(task, { priority }, "Priorité modifiée.")}
                 onChangeDueAt={(task, dueAt) => void changeTaskInline(task, { dueAt }, "Échéance modifiée.")}
                 onChangeAssignees={(task, assigneeIds) => void changeTaskAssignees(task, assigneeIds)}
+                onBulkChange={changeTasksBulk}
               />
             ) : taskView === "canvas" ? (
               <ProjectCanvas

@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -37,6 +38,10 @@ interface CompactTaskTableProps {
   onChangePriority: (task: WorkItem, priority: WorkItem["priority"]) => void;
   onChangeDueAt: (task: WorkItem, dueAt: string | null) => void;
   onChangeAssignees: (task: WorkItem, assigneeIds: string[]) => void;
+  onBulkChange: (
+    tasks: WorkItem[],
+    changes: Partial<Pick<WorkItem, "status" | "priority">>
+  ) => Promise<boolean>;
 }
 
 type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder";
@@ -55,10 +60,14 @@ export function CompactTaskTable({
   onChangeStatus,
   onChangePriority,
   onChangeDueAt,
-  onChangeAssignees
+  onChangeAssignees,
+  onBulkChange
 }: CompactTaskTableProps) {
   const [sortColumn, setSortColumn] = useState<CompactSort>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set());
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
+  const [bulkPending, setBulkPending] = useState(false);
   const statusRanks = useMemo(
     () => new Map(statusOrder.map((status, index) => [status, index])),
     [statusOrder]
@@ -97,6 +106,14 @@ export function CompactTaskTable({
     return result;
   }, [labelsByTask, sortColumn, sortDirection, statusRanks, tasks]);
 
+  useEffect(() => {
+    const available = new Set(tasks.map((task) => task.id));
+    setSelectedRowIds((current) => {
+      const next = new Set([...current].filter((id) => available.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [tasks]);
+
   function sort(column: CompactSort) {
     if (column === sortColumn) setSortDirection((current) => current === "asc" ? "desc" : "asc");
     else {
@@ -105,19 +122,126 @@ export function CompactTaskTable({
     }
   }
 
+  function toggleRows(taskIds: string[], checked: boolean) {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      for (const taskId of taskIds) {
+        if (checked) next.add(taskId);
+        else next.delete(taskId);
+      }
+      return next;
+    });
+  }
+
+  function toggleGroup(groupId: string) {
+    setCollapsedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }
+
+  async function applyBulk(changes: Partial<Pick<WorkItem, "status" | "priority">>) {
+    const selectedTasks = tasks.filter((task) => selectedRowIds.has(task.id));
+    if (selectedTasks.length === 0 || bulkPending) return;
+    setBulkPending(true);
+    try {
+      if (await onBulkChange(selectedTasks, changes)) setSelectedRowIds(new Set());
+    } finally {
+      setBulkPending(false);
+    }
+  }
+
+  const allRowsSelected = tasks.length > 0 && tasks.every((task) => selectedRowIds.has(task.id));
+
   return (
     <section className="compact-table" aria-label="Tâches en tableau compact">
-      {groups.map((group) => (
-        <section className="compact-group" key={group.label?.id ?? "unfiled"}>
-          <header className="compact-group-header">
-            <span
-              className="compact-folder-mark"
-              style={{ backgroundColor: group.label?.color ?? "#94A3B8" }}
-              aria-hidden="true"
+      {canEdit && (
+        <header className="compact-bulk-toolbar" aria-label="Actions groupées">
+          <label>
+            <input
+              type="checkbox"
+              checked={allRowsSelected}
+              disabled={bulkPending || tasks.length === 0}
+              onChange={(event) => toggleRows(tasks.map((task) => task.id), event.currentTarget.checked)}
             />
-            <strong>{group.label?.name ?? "Sans dossier"}</strong>
-            <span>{group.tasks.length}</span>
+            <span>{selectedRowIds.size === 0
+              ? "Tout sélectionner"
+              : selectedRowIds.size === 1
+                ? "1 tâche sélectionnée"
+                : selectedRowIds.size + " tâches sélectionnées"}</span>
+          </label>
+          <select
+            value=""
+            disabled={selectedRowIds.size === 0 || bulkPending}
+            aria-label="Changer le statut des tâches sélectionnées"
+            onChange={(event) => void applyBulk({ status: event.currentTarget.value })}
+          >
+            <option value="">Changer le statut…</option>
+            {statusOrder.map((status) => (
+              <option value={status} key={status}>{statusLabels[status] ?? status}</option>
+            ))}
+          </select>
+          <select
+            value=""
+            disabled={selectedRowIds.size === 0 || bulkPending}
+            aria-label="Changer la priorité des tâches sélectionnées"
+            onChange={(event) => void applyBulk({
+              priority: event.currentTarget.value as WorkItem["priority"]
+            })}
+          >
+            <option value="">Changer la priorité…</option>
+            {(["low", "normal", "high", "urgent"] as const).map((priority) => (
+              <option value={priority} key={priority}>{priorityLabels[priority]}</option>
+            ))}
+          </select>
+          {selectedRowIds.size > 0 && (
+            <button type="button" disabled={bulkPending} onClick={() => setSelectedRowIds(new Set())}>
+              Effacer
+            </button>
+          )}
+          {bulkPending && <small role="status">Mise à jour en cours…</small>}
+        </header>
+      )}
+      {groups.map((group) => {
+        const groupId = group.label?.id ?? "unfiled";
+        const collapsed = collapsedGroupIds.has(groupId);
+        const groupTaskIds = group.tasks.map((task) => task.id);
+        const groupSelected = groupTaskIds.length > 0
+          && groupTaskIds.every((taskId) => selectedRowIds.has(taskId));
+        return (
+        <section className="compact-group" key={groupId}>
+          <header className="compact-group-header">
+            <button
+              className="compact-group-toggle"
+              type="button"
+              aria-expanded={!collapsed}
+              onClick={() => toggleGroup(groupId)}
+            >
+              <span className="compact-group-chevron" aria-hidden="true">{collapsed ? "›" : "⌄"}</span>
+              <span
+                className="compact-folder-mark"
+                style={{ backgroundColor: group.label?.color ?? "#94A3B8" }}
+                aria-hidden="true"
+              />
+              <strong>{group.label?.name ?? "Sans dossier"}</strong>
+              <span>{group.tasks.length}</span>
+            </button>
+            {canEdit && (
+              <label className="compact-group-select">
+                <input
+                  type="checkbox"
+                  checked={groupSelected}
+                  disabled={bulkPending}
+                  onChange={(event) => toggleRows(groupTaskIds, event.currentTarget.checked)}
+                />
+                <span>Sélectionner le dossier</span>
+              </label>
+            )}
           </header>
+          {!collapsed && (
+          <>
           <div className="compact-columns" aria-label="Trier les tâches par colonne">
             {([
               ["name", "Nom"],
@@ -140,6 +264,17 @@ export function CompactTaskTable({
                 key={task.id}
                 aria-busy={pending}
               >
+                <div className="compact-task-name-cell">
+                  {canEdit && (
+                    <input
+                      className="compact-row-select"
+                      type="checkbox"
+                      checked={selectedRowIds.has(task.id)}
+                      disabled={bulkPending}
+                      aria-label={"Sélectionner " + task.key}
+                      onChange={(event) => toggleRows([task.id], event.currentTarget.checked)}
+                    />
+                  )}
                 <button
                   className="compact-task-name compact-cell-button"
                   type="button"
@@ -153,6 +288,7 @@ export function CompactTaskTable({
                   <strong>{task.title}</strong>
                   <small>{task.key}</small>
                 </button>
+                </div>
                 <TaskAssigneePicker
                   compact
                   members={members}
@@ -211,8 +347,10 @@ export function CompactTaskTable({
               </div>
             );
           })}
+          </>
+          )}
         </section>
-      ))}
+      );})}
     </section>
   );
 }
