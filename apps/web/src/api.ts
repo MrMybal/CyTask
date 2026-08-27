@@ -189,6 +189,29 @@ export interface TaskPlugin {
   updatedAt: string | null;
 }
 
+export interface CyAnnotaDocumentSummary {
+  attachmentId: string;
+  mediaKind: "image" | "video";
+  annotationCount: number;
+  revision: number;
+  updatedAt: string;
+}
+
+export interface CyAnnotaWorkspace {
+  applicationUrl: string;
+  maximumDocumentBytes: number;
+  documents: CyAnnotaDocumentSummary[];
+}
+
+export interface CyAnnotaDocument {
+  attachmentId: string;
+  mediaKind: "image" | "video";
+  document: Record<string, unknown> | null;
+  annotationCount: number;
+  revision: number;
+  updatedAt: string | null;
+}
+
 
 export type AiProvider =
   | "openai"
@@ -526,6 +549,20 @@ export const api = {
     request<void>(`/api/v1/projects/${projectId}/plugins/${encodeURIComponent(pluginId)}`, {
       method: "DELETE"
     }),
+  cyAnnotaWorkspace: (taskId: string) =>
+    request<CyAnnotaWorkspace>(`/api/v1/tasks/${taskId}/plugins/cyannota/workspace`),
+  cyAnnotaDocument: (taskId: string, attachmentId: string) =>
+    request<CyAnnotaDocument>(
+      `/api/v1/tasks/${taskId}/plugins/cyannota/media/${attachmentId}`
+    ),
+  updateCyAnnotaDocument: (
+    taskId: string,
+    attachmentId: string,
+    body: { document: Record<string, unknown>; expectedRevision: number }
+  ) => request<CyAnnotaDocument>(
+    `/api/v1/tasks/${taskId}/plugins/cyannota/media/${attachmentId}`,
+    { method: "PUT", body: JSON.stringify(body) }
+  ),
   aiConnections: (projectId: string) =>
     request<AiProviderConnection[]>(
       `/api/v1/projects/${projectId}/plugins/ai-assistant/connections`
