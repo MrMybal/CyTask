@@ -162,6 +162,134 @@ public sealed class PostgresPluginStore(NpgsqlDataSource dataSource) : IPluginSt
         return await reader.ReadAsync(cancellationToken) ? ReadTaskPluginData(reader) : null;
     }
 
+
+    public async Task<IReadOnlyList<AiProviderConnection>> ListAiProviderConnectionsAsync(
+        Guid organizationId, Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT id, organization_id, project_id, name, provider, model, base_url,
+                   protected_secret, secret_hint, revision, created_by, created_at,
+                   updated_by, updated_at
+            FROM ai_provider_connections
+            WHERE organization_id = @organization_id AND project_id = @project_id
+            ORDER BY lower(name), id;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<AiProviderConnection>();
+        while (await reader.ReadAsync(cancellationToken)) result.Add(ReadAiProviderConnection(reader));
+        return result;
+    }
+
+    public async Task<AiProviderConnection?> GetAiProviderConnectionAsync(
+        Guid organizationId, Guid projectId, Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT id, organization_id, project_id, name, provider, model, base_url,
+                   protected_secret, secret_hint, revision, created_by, created_at,
+                   updated_by, updated_at
+            FROM ai_provider_connections
+            WHERE organization_id = @organization_id
+              AND project_id = @project_id
+              AND id = @id;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        command.Parameters.AddWithValue("id", connectionId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadAiProviderConnection(reader) : null;
+    }
+
+    public async Task<AiProviderConnection> CreateAiProviderConnectionAsync(
+        AiProviderConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            INSERT INTO ai_provider_connections(
+                id, organization_id, project_id, name, provider, model, base_url,
+                protected_secret, secret_hint, revision, created_by, created_at,
+                updated_by, updated_at)
+            VALUES (@id, @organization_id, @project_id, @name, @provider, @model, @base_url,
+                    @protected_secret, @secret_hint, 1, @created_by, @created_at,
+                    @updated_by, @updated_at)
+            RETURNING id, organization_id, project_id, name, provider, model, base_url,
+                      protected_secret, secret_hint, revision, created_by, created_at,
+                      updated_by, updated_at;
+            """);
+        AddAiParameters(command, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return ReadAiProviderConnection(reader);
+    }
+
+    public async Task<AiProviderConnection?> UpdateAiProviderConnectionAsync(
+        AiProviderConnection connection, long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            UPDATE ai_provider_connections
+            SET name = @name,
+                provider = @provider,
+                model = @model,
+                base_url = @base_url,
+                protected_secret = @protected_secret,
+                secret_hint = @secret_hint,
+                revision = revision + 1,
+                updated_by = @updated_by,
+                updated_at = @updated_at
+            WHERE id = @id
+              AND organization_id = @organization_id
+              AND project_id = @project_id
+              AND revision = @expected_revision
+            RETURNING id, organization_id, project_id, name, provider, model, base_url,
+                      protected_secret, secret_hint, revision, created_by, created_at,
+                      updated_by, updated_at;
+            """);
+        AddAiParameters(command, connection);
+        command.Parameters.AddWithValue("expected_revision", expectedRevision);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadAiProviderConnection(reader) : null;
+    }
+
+    public async Task<bool> DeleteAiProviderConnectionAsync(
+        Guid organizationId, Guid projectId, Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            DELETE FROM ai_provider_connections
+            WHERE id = @id AND organization_id = @organization_id AND project_id = @project_id;
+            """);
+        command.Parameters.AddWithValue("id", connectionId);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    private static void AddAiParameters(NpgsqlCommand command, AiProviderConnection connection)
+    {
+        command.Parameters.AddWithValue("id", connection.Id);
+        command.Parameters.AddWithValue("organization_id", connection.OrganizationId);
+        command.Parameters.AddWithValue("project_id", connection.ProjectId);
+        command.Parameters.AddWithValue("name", connection.Name);
+        command.Parameters.AddWithValue("provider", connection.Provider);
+        command.Parameters.AddWithValue("model", connection.Model);
+        command.Parameters.AddWithValue("base_url", (object?)connection.BaseUrl ?? DBNull.Value);
+        command.Parameters.AddWithValue("protected_secret", (object?)connection.ProtectedSecret ?? DBNull.Value);
+        command.Parameters.AddWithValue("secret_hint", (object?)connection.SecretHint ?? DBNull.Value);
+        command.Parameters.AddWithValue("created_by", connection.CreatedBy);
+        command.Parameters.AddWithValue("created_at", connection.CreatedAt);
+        command.Parameters.AddWithValue("updated_by", connection.UpdatedBy);
+        command.Parameters.AddWithValue("updated_at", connection.UpdatedAt);
+    }
+
+    private static AiProviderConnection ReadAiProviderConnection(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
+        reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
+        reader.IsDBNull(7) ? null : reader.GetString(7),
+        reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetInt64(9),
+        reader.GetGuid(10), reader.GetFieldValue<DateTimeOffset>(11),
+        reader.GetGuid(12), reader.GetFieldValue<DateTimeOffset>(13));
     private static TaskPluginData ReadTaskPluginData(NpgsqlDataReader reader)
     {
         using var document = JsonDocument.Parse(reader.GetString(4));

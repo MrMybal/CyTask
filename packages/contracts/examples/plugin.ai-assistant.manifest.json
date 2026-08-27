@@ -2,38 +2,29 @@
   "schemaVersion": 1,
   "id": "dev.cytask.ai-assistant",
   "name": "AI Assistant",
-  "description": "Ajoute un contexte d’assistance IA par ticket sans stocker de clé API dans CyTask.",
-  "version": "0.1.0",
+  "description": "Connecte les tickets à OpenAI, Anthropic, Ollama, LM Studio, Codex, Claude Code, OpenCode ou une API compatible.",
+  "version": "0.2.0",
   "apiVersion": "v1",
   "runtime": "service-connector",
   "entrypoints": {
     "service": "CyTask.Plugin.AiAssistant",
     "web": "builtin:ai-assistant"
   },
-  "permissions": [
-    "tasks:read",
-    "attachments:read",
-    "tasks:plugin-data:write",
-    "ai:invoke"
-  ],
+  "permissions": ["tasks:read", "tasks:plugin-data:write", "ai:invoke", "secrets:encrypted"],
   "contributes": {
-    "taskTabs": [
-      {
-        "id": "assistant",
-        "title": "AI Assistant",
-        "icon": "AI",
-        "fields": [
-          { "key": "provider", "label": "Fournisseur", "type": "select", "options": ["OpenAI", "Ollama", "LM Studio", "API compatible", "Désactivé"] },
-          { "key": "model", "label": "Modèle", "type": "text", "maxLength": 160 },
-          { "key": "goal", "label": "Objectif de l’assistant", "type": "textarea", "maxLength": 12000 },
-          { "key": "contextSources", "label": "Sources de contexte", "type": "string-list", "maxLength": 1024 },
-          { "key": "includeAttachments", "label": "Inclure les pièces jointes validées", "type": "boolean" },
-          { "key": "outputMode", "label": "Sortie attendue", "type": "select", "options": ["Plan", "Résumé", "Checklist", "Commentaire", "Revue technique"] },
-          { "key": "instructions", "label": "Instructions du projet", "type": "textarea", "maxLength": 12000 },
-          { "key": "lastSummary", "label": "Dernier résumé conservé", "type": "textarea", "maxLength": 20000 }
-        ]
-      }
-    ]
+    "taskTabs": [{
+      "id": "assistant",
+      "title": "AI Assistant",
+      "icon": "AI",
+      "fields": [
+        { "key": "connectionId", "label": "Connexion IA", "type": "text", "maxLength": 64 },
+        { "key": "goal", "label": "Objectif de l’assistant", "type": "textarea", "maxLength": 12000 },
+        { "key": "includeComments", "label": "Inclure les commentaires", "type": "boolean" },
+        { "key": "outputMode", "label": "Sortie attendue", "type": "select", "options": ["Plan", "Résumé", "Checklist", "Commentaire", "Revue technique"] },
+        { "key": "instructions", "label": "Instructions de l’équipe", "type": "textarea", "maxLength": 12000 },
+        { "key": "lastSummary", "label": "Dernière réponse conservée", "type": "textarea", "maxLength": 50000 }
+      ]
+    }]
   },
   "minimumCyTaskVersion": "0.2.0",
   "homepage": "https://github.com/MrMybal/CyTask"

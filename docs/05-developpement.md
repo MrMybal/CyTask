@@ -75,9 +75,23 @@ Clés de la section `CyTask` :
 | `OutboxRetentionDays` | `7` | durée de rejeu des événements traités |
 | `EventReplayBatchSize` | `256` | événements rejoués par lecture SSE |
 | `SseHeartbeatSeconds` | `15` | intervalle des commentaires keep-alive |
+| `PluginSecretKey` | vide | clé AES-256 en base64, obligatoire avec PostgreSQL pour les jetons de plugins |
+| `AiLocalAgentsEnabled` | `false` | autorise explicitement Codex, Claude Code et OpenCode sur la machine serveur |
+| `AiLocalWorkspacePath` | vide | dossier de travail imposé aux agents locaux |
+| `CodexExecutable` | `codex` | chemin ou nom de l’exécutable Codex CLI |
+| `ClaudeExecutable` | `claude` | chemin ou nom de l’exécutable Claude Code |
+| `OpenCodeExecutable` | `opencode` | chemin ou nom de l’exécutable OpenCode |
+| `AiAllowPrivateEndpoints` | `false` | autorise explicitement les endpoints privés pour Ollama/LM Studio |
+| `AiRequestTimeoutSeconds` | `120` | délai maximal d’un appel ou processus IA |
+| `AiMaxOutputCharacters` | `50000` | taille maximale de réponse conservée |
 
 Dans une variable d'environnement, `CyTask:DatabaseConnection` devient
 `CYTASK__DATABASECONNECTION`.
+
+Générer la clé des plugins avec
+`[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))`,
+puis la fournir via `CYTASK__PLUGINSECRETKEY`. Ne jamais la committer : sa perte rend
+les jetons déjà chiffrés illisibles.
 
 `AllowedHosts` n'autorise par défaut que `localhost` et `127.0.0.1`. Un déploiement
 d'équipe doit fournir son nom DNS explicite, par exemple `AllowedHosts=tasks.example.org`.

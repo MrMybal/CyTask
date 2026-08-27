@@ -2107,6 +2107,83 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task AiConnectionsEncryptAndNeverReturnProviderSecrets()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Assistant IA", key = "AIP" });
+        var projectId = project.GetProperty("id").GetGuid();
+
+        using var enable = await client.PutAsync(
+            new Uri($"/api/v1/projects/{projectId}/plugins/dev.cytask.ai-assistant", UriKind.Relative),
+            null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, enable.StatusCode);
+
+        const string providerSecret = "sk-test-super-secret-1234";
+        using var create = await client.PostAsJsonAsync(
+            new Uri($"/api/v1/projects/{projectId}/plugins/ai-assistant/connections", UriKind.Relative),
+            new
+            {
+                name = "OpenAI production",
+                provider = "openai",
+                model = "test-model",
+                baseUrl = (string?)null,
+                secret = providerSecret
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var createdPayload = await create.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(providerSecret, createdPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain("protectedSecret", createdPayload, StringComparison.Ordinal);
+        using var createdDocument = JsonDocument.Parse(createdPayload);
+        var created = createdDocument.RootElement;
+        Assert.True(created.GetProperty("hasSecret").GetBoolean());
+        Assert.Equal("••••1234", created.GetProperty("secretHint").GetString());
+
+        using var list = await client.GetAsync(
+            new Uri($"/api/v1/projects/{projectId}/plugins/ai-assistant/connections", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        var listPayload = await list.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(providerSecret, listPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain("protectedSecret", listPayload, StringComparison.Ordinal);
+
+        using var local = await client.PostAsJsonAsync(
+            new Uri($"/api/v1/projects/{projectId}/plugins/ai-assistant/connections", UriKind.Relative),
+            new
+            {
+                name = "Compte Codex du serveur",
+                provider = "codex",
+                model = "default",
+                baseUrl = (string?)null,
+                secret = (string?)null
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, local.StatusCode);
+        var localPayload = await ReadJsonAsync(local);
+        Assert.Equal("local-account", localPayload.GetProperty("authenticationMode").GetString());
+        Assert.False(localPayload.GetProperty("localExecutionEnabled").GetBoolean());
+
+        using var missingSecret = await client.PostAsJsonAsync(
+            new Uri($"/api/v1/projects/{projectId}/plugins/ai-assistant/connections", UriKind.Relative),
+            new
+            {
+                name = "Sans jeton",
+                provider = "anthropic",
+                model = "test-model",
+                baseUrl = (string?)null,
+                secret = (string?)null
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, missingSecret.StatusCode);
+    }
+    [Fact]
     public async Task TaskCreationIsPublishedInRealTime()
     {
         await using var factory = new CyTaskApiFactory();

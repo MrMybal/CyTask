@@ -37,11 +37,11 @@ public sealed class PluginCatalog
             1,
             AiAssistantPluginId,
             "AI Assistant",
-            "Ajoute un contexte d’assistance IA par ticket sans stocker de clé API dans CyTask.",
-            "0.1.0",
+            "Connecte les tickets à OpenAI, Anthropic, Ollama, LM Studio, Codex, Claude Code, OpenCode ou une API compatible.",
+            "0.2.0",
             "v1",
             "service-connector",
-            ["tasks:read", "attachments:read", "tasks:plugin-data:write", "ai:invoke"],
+            ["tasks:read", "tasks:plugin-data:write", "ai:invoke", "secrets:encrypted"],
             new PluginContributions(
             [
                 new PluginTaskTabDefinition(
@@ -49,18 +49,15 @@ public sealed class PluginCatalog
                     "AI Assistant",
                     "AI",
                     [
-                        new("provider", "Fournisseur", "select", Options: ["OpenAI", "Ollama", "LM Studio", "API compatible", "Désactivé"]),
-                        new("model", "Modèle", "text", Placeholder: "Modèle configuré côté serveur ou client", MaxLength: 160),
+                        new("connectionId", "Connexion IA", "text", Description: "Profil configuré au niveau du projet.", MaxLength: 64),
                         new("goal", "Objectif de l’assistant", "textarea", Placeholder: "Analyser le ticket, proposer un plan ou résumer les échanges…", MaxLength: 12000),
-                        new("contextSources", "Sources de contexte", "string-list", Description: "Une source ou un chemin autorisé par ligne.", MaxLength: 1024),
-                        new("includeAttachments", "Inclure les pièces jointes validées", "boolean", Description: "Seuls les fichiers déjà accessibles à l’utilisateur peuvent être utilisés."),
+                        new("includeComments", "Inclure les commentaires", "boolean", Description: "Ajoute les 100 commentaires les plus récents au contexte."),
                         new("outputMode", "Sortie attendue", "select", Options: ["Plan", "Résumé", "Checklist", "Commentaire", "Revue technique"]),
-                        new("instructions", "Instructions du projet", "textarea", Placeholder: "Contraintes, style et règles à respecter…", MaxLength: 12000),
-                        new("lastSummary", "Dernier résumé conservé", "textarea", Description: "Donnée partagée du ticket, jamais une clé API.", MaxLength: 20000)
+                        new("instructions", "Instructions de l’équipe", "textarea", Placeholder: "Contraintes, style et règles à respecter…", MaxLength: 12000),
+                        new("lastSummary", "Dernière réponse conservée", "textarea", Description: "Réponse partagée dans le ticket, jamais un secret.", MaxLength: 50000)
                     ])
             ]),
-            "https://github.com/MrMybal/CyTask"),
-        new(
+            "https://github.com/MrMybal/CyTask"),        new(
             1,
             UnrealPluginId,
             "Unreal Engine",

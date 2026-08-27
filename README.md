@@ -46,9 +46,7 @@ utilise un code unique et un jeton Bearer opaque révocable réservé au client
 `cytask-unreal` ; le jeton reste uniquement en mémoire dans l'éditeur.
 
 La première plateforme de plugins déclaratifs est également disponible. Un administrateur
-active Git, AI Assistant, Unreal Engine ou CyRevision par projet depuis la page **Plugins** ; CyTask ajoute alors
-les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de
-révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
+active Git, AI Assistant, Unreal Engine ou CyRevision par projet depuis la page **Plugins**. AI Assistant gère plusieurs profils OpenAI, Anthropic, API compatible, Ollama, LM Studio, Codex, Claude Code ou OpenCode ; les jetons restent chiffrés côté serveur et chaque ticket choisit sa connexion. CyTask ajoute les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
 et validés par le serveur sont rendus. Le connecteur compagnon CyRevision recherche les tickets,
 ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de fin après fusion.
 Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation

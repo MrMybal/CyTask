@@ -6,25 +6,33 @@ public interface IPluginStore
 {
     Task<IReadOnlyList<ProjectPluginState>> ListProjectPluginsAsync(
         Guid organizationId, Guid projectId, CancellationToken cancellationToken);
-
     Task<ProjectPluginState> EnableProjectPluginAsync(
         Guid organizationId, Guid projectId, string pluginId, Guid userId,
         CancellationToken cancellationToken);
-
     Task<bool> DisableProjectPluginAsync(
         Guid organizationId, Guid projectId, string pluginId,
         CancellationToken cancellationToken);
-
     Task<TaskPluginData?> GetTaskPluginDataAsync(
         Guid organizationId, Guid taskId, string pluginId,
         CancellationToken cancellationToken);
-
     Task<IReadOnlyList<TaskPluginData>> ListTaskPluginDataHistoryAsync(
         Guid organizationId, Guid taskId, string pluginId, int limit,
         CancellationToken cancellationToken);
-
     Task<TaskPluginData?> UpsertTaskPluginDataAsync(
         Guid organizationId, Guid projectId, Guid taskId, string pluginId,
         JsonElement data, long expectedRevision, Guid userId,
+        CancellationToken cancellationToken);
+    Task<IReadOnlyList<AiProviderConnection>> ListAiProviderConnectionsAsync(
+        Guid organizationId, Guid projectId, CancellationToken cancellationToken);
+    Task<AiProviderConnection?> GetAiProviderConnectionAsync(
+        Guid organizationId, Guid projectId, Guid connectionId,
+        CancellationToken cancellationToken);
+    Task<AiProviderConnection> CreateAiProviderConnectionAsync(
+        AiProviderConnection connection, CancellationToken cancellationToken);
+    Task<AiProviderConnection?> UpdateAiProviderConnectionAsync(
+        AiProviderConnection connection, long expectedRevision,
+        CancellationToken cancellationToken);
+    Task<bool> DeleteAiProviderConnectionAsync(
+        Guid organizationId, Guid projectId, Guid connectionId,
         CancellationToken cancellationToken);
 }

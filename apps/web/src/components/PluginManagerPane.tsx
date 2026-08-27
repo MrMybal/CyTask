@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type ProjectPlugin } from "../api";
+import { AiConnectionManager } from "./AiConnectionManager";
 
 interface PluginManagerPaneProps {
   projectId: string;
@@ -109,6 +110,16 @@ export function PluginManagerPane({
           <p className="empty-note">Aucun plugin compatible n’est publié sur ce serveur.</p>
         )}
       </div>
+      {plugins.some((plugin) =>
+        plugin.manifest.id === "dev.cytask.ai-assistant" && plugin.enabled
+      ) && (
+        <AiConnectionManager
+          projectId={projectId}
+          canAdminister={canAdminister}
+          onError={onError}
+          onNotice={onNotice}
+        />
+      )}
     </section>
   );
 }
