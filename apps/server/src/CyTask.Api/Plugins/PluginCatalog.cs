@@ -5,6 +5,7 @@ public sealed class PluginCatalog
     public const string GitPluginId = "dev.cytask.git";
     public const string AiAssistantPluginId = "dev.cytask.ai-assistant";
     public const string UnrealPluginId = "dev.cytask.unreal";
+    public const string CyAnnotaPluginId = "dev.cytask.cyannota";
 
     private readonly IReadOnlyList<PluginManifest> _plugins =
     [
@@ -84,6 +85,23 @@ public sealed class PluginCatalog
                     ])
             ]),
             "https://github.com/MrMybal/CyTask/tree/main/integrations/unreal/CyTask"),
+        new(
+            1,
+            CyAnnotaPluginId,
+            "CyAnnota",
+            "Ouvre les images et vidéos CyTask dans CyAnnota et conserve leurs annotations versionnées dans la tâche.",
+            "0.1.0",
+            "v1",
+            "ui-extension",
+            ["tasks:read", "attachments:read", "annotations:write"],
+            new PluginContributions(
+            [
+                new PluginTaskTabDefinition(
+                    "annotations",
+                    "Annotations",
+                    "CA",
+                    [])
+            ])),
         new(
             1,
             "dev.cytask.cyrevision",

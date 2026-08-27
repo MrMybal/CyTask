@@ -2012,10 +2012,10 @@ public sealed class CyTaskApiTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, catalogResponse.StatusCode);
         var catalog = await ReadJsonAsync(catalogResponse);
-        Assert.Equal(4, catalog.GetArrayLength());
+        Assert.Equal(5, catalog.GetArrayLength());
         Assert.All(catalog.EnumerateArray(), plugin => Assert.False(plugin.GetProperty("enabled").GetBoolean()));
 
-        foreach (var pluginId in new[] { "dev.cytask.git", "dev.cytask.ai-assistant", "dev.cytask.unreal", "dev.cytask.cyrevision" })
+        foreach (var pluginId in new[] { "dev.cytask.git", "dev.cytask.ai-assistant", "dev.cytask.unreal", "dev.cytask.cyrevision", "dev.cytask.cyannota" })
         {
             using var enable = await client.PutAsync(
                 new Uri($"/api/v1/projects/{projectId}/plugins/{pluginId}", UriKind.Relative),
@@ -2029,7 +2029,7 @@ public sealed class CyTaskApiTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, tabsResponse.StatusCode);
         var tabs = await ReadJsonAsync(tabsResponse);
-        Assert.Equal(4, tabs.GetArrayLength());
+        Assert.Equal(5, tabs.GetArrayLength());
         Assert.Contains(tabs.EnumerateArray(), tab =>
             tab.GetProperty("manifest").GetProperty("id").GetString() == "dev.cytask.unreal");
 
@@ -2104,6 +2104,130 @@ public sealed class CyTaskApiTests
             new { data = new { executableScript = "rm -rf" }, expectedRevision = 1 },
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
+    [Fact]
+    public async Task CyAnnotaPersistsVersionedAnnotationsOnlyForReviewedTaskMedia()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(
+            client,
+            "/api/v1/projects",
+            new { name = "Annotations", key = "ANN" });
+        var projectId = project.GetProperty("id").GetGuid();
+        var task = await PostAndReadAsync(
+            client,
+            $"/api/v1/projects/{projectId}/tasks",
+            new { title = "Annoter la capture", description = "" });
+        var taskId = task.GetProperty("id").GetGuid();
+
+        using var enable = await client.PutAsync(
+            new Uri($"/api/v1/projects/{projectId}/plugins/dev.cytask.cyannota", UriKind.Relative),
+            null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, enable.StatusCode);
+
+        var uploaded = await UploadAttachmentAsync(
+            client, taskId, "pixel.png", "image/png", SinglePixelPng());
+        var attachmentId = uploaded.GetProperty("id").GetGuid();
+
+        using var beforeReview = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}", UriKind.Relative),
+            new
+            {
+                document = new
+                {
+                    version = 1,
+                    title = "Pixel",
+                    globalInstructions = "",
+                    image = new { src = $"cytask-attachment:{attachmentId:D}", name = "pixel.png" },
+                    layers = Array.Empty<object>(),
+                    annotations = Array.Empty<object>()
+                },
+                expectedRevision = 0
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, beforeReview.StatusCode);
+
+        await factory.ReviewAttachmentsAsync();
+
+        using var workspaceResponse = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/cyannota/workspace", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, workspaceResponse.StatusCode);
+        var workspace = await ReadJsonAsync(workspaceResponse);
+        Assert.Equal("http://localhost:3000", workspace.GetProperty("applicationUrl").GetString());
+        Assert.Equal(4_194_304, workspace.GetProperty("maximumDocumentBytes").GetInt32());
+        Assert.Empty(workspace.GetProperty("documents").EnumerateArray());
+
+        var payload = new
+        {
+            version = 1,
+            title = "Pixel",
+            globalInstructions = "Corriger la couleur.",
+            image = new { src = $"cytask-attachment:{attachmentId:D}", name = "pixel.png" },
+            layers = new[] { new { id = "ui", name = "UI", color = "#ff5c49", visible = true } },
+            annotations = new[]
+            {
+                new
+                {
+                    id = "annotation-1",
+                    type = "rect",
+                    layerId = "ui",
+                    color = "#ff5c49",
+                    description = "Zone à corriger",
+                    category = "modifier",
+                    references = Array.Empty<object>(),
+                    createdAt = 1,
+                    x = 0,
+                    y = 0,
+                    w = 1,
+                    h = 1
+                }
+            }
+        };
+        using var save = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}", UriKind.Relative),
+            new { document = payload, expectedRevision = 0 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        var saved = await ReadJsonAsync(save);
+        Assert.Equal(1, saved.GetProperty("revision").GetInt64());
+        Assert.Equal(1, saved.GetProperty("annotationCount").GetInt32());
+
+        using var read = await client.GetAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var stored = await ReadJsonAsync(read);
+        Assert.Equal("Corriger la couleur.",
+            stored.GetProperty("document").GetProperty("globalInstructions").GetString());
+
+        using var conflict = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}", UriKind.Relative),
+            new { document = payload, expectedRevision = 0 },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+
+        using var embeddedMedia = await client.PutAsJsonAsync(
+            new Uri($"/api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}", UriKind.Relative),
+            new
+            {
+                document = new
+                {
+                    version = 1,
+                    title = "Pixel",
+                    globalInstructions = "",
+                    image = new { src = "data:image/png;base64,AAAA", name = "pixel.png" },
+                    layers = Array.Empty<object>(),
+                    annotations = Array.Empty<object>()
+                },
+                expectedRevision = 1
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, embeddedMedia.StatusCode);
     }
 
     [Fact]

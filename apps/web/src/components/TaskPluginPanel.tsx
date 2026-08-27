@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, type PluginFieldDefinition, type PluginTaskTabDefinition, type TaskPlugin } from "../api";
 import { TaskAiAssistantPanel } from "./TaskAiAssistantPanel";
+import { TaskCyAnnotaPanel } from "./TaskCyAnnotaPanel";
 
 interface TaskPluginPanelProps {
   taskId: string;
@@ -20,6 +21,16 @@ export function TaskPluginPanel(props: TaskPluginPanelProps) {
         plugin={props.plugin}
         canEdit={props.canEdit}
         onSaved={props.onSaved}
+        onError={props.onError}
+        onNotice={props.onNotice}
+      />
+    );
+  }
+  if (props.plugin.manifest.id === "dev.cytask.cyannota") {
+    return (
+      <TaskCyAnnotaPanel
+        taskId={props.taskId}
+        canEdit={props.canEdit}
         onError={props.onError}
         onNotice={props.onNotice}
       />

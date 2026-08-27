@@ -767,7 +767,7 @@ foreach ($reference in $references) {
     } | Out-Null
 }
 
-foreach ($pluginId in @("dev.cytask.git", "dev.cytask.ai-assistant", "dev.cytask.unreal", "dev.cytask.cyrevision")) {
+foreach ($pluginId in @("dev.cytask.git", "dev.cytask.ai-assistant", "dev.cytask.unreal", "dev.cytask.cyrevision", "dev.cytask.cyannota")) {
     Invoke-DemoApi -Method Put -Path "/api/v1/projects/$($project.id)/plugins/$pluginId" -Headers $csrfHeaders | Out-Null
 }
 
@@ -841,6 +841,6 @@ Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$($createdTasks["shader-optimiza
 Add-DemoMediaPreview -TaskId $createdTasks["art-direction"].id
 Add-DemoCollaborationContent -Project $project -LabelIds $labelIdsByName
 Write-Host "Projet de démonstration créé : $($project.name)"
-Write-Host "220 tâches, 7 états dont 2 personnalisés, 4 plugins officiels, responsables multiples, 10 dossiers, 6 contenus d’espace, 4 salons, 1 groupe privé, 4 membres, 9 dépendances et 3 références Git."
+Write-Host "220 tâches, 7 états dont 2 personnalisés, 5 plugins officiels, responsables multiples, 10 dossiers, 6 contenus d’espace, 4 salons, 1 groupe privé, 4 membres, 9 dépendances et 3 références Git."
 Write-Host "Connexion : $OwnerEmail / $Password"
 Write-Host "Ouvrez http://127.0.0.1:5173"

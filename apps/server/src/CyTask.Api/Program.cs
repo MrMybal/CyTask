@@ -92,6 +92,11 @@ builder.Services.AddOptions<CyTaskOptions>()
         "AiRequestTimeoutSeconds must be between 10 and 600.")
     .Validate(options => options.AiMaxOutputCharacters is >= 1_000 and <= 200_000,
         "AiMaxOutputCharacters must be between 1000 and 200000.")
+    .Validate(options => Uri.TryCreate(options.CyAnnotaUrl, UriKind.Absolute, out var cyAnnotaUri)
+        && cyAnnotaUri.Scheme is "http" or "https"
+        && string.IsNullOrEmpty(cyAnnotaUri.UserInfo)
+        && string.IsNullOrEmpty(cyAnnotaUri.Fragment),
+        "CyAnnotaUrl must be an absolute HTTP(S) URL without credentials or fragment.")
     .Validate(options => !options.AiLocalAgentsEnabled
         || !string.IsNullOrWhiteSpace(options.AiLocalWorkspacePath),
         "AiLocalWorkspacePath is required when local agents are enabled.")
@@ -177,6 +182,7 @@ if (cyTaskOptions.UseInMemoryStore)
     builder.Services.AddSingleton<IWorkspaceStore, InMemoryWorkspaceStore>();
     builder.Services.AddSingleton<ICollaborationStore, InMemoryCollaborationStore>();
     builder.Services.AddSingleton<IPluginStore, InMemoryPluginStore>();
+    builder.Services.AddSingleton<ICyAnnotaStore, InMemoryCyAnnotaStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<WorkspaceEventHub>());
 }
@@ -199,6 +205,7 @@ else
     builder.Services.AddSingleton<IWorkspaceStore, PostgresWorkspaceStore>();
     builder.Services.AddSingleton<ICollaborationStore, PostgresCollaborationStore>();
     builder.Services.AddSingleton<IPluginStore, PostgresPluginStore>();
+    builder.Services.AddSingleton<ICyAnnotaStore, PostgresCyAnnotaStore>();
     builder.Services.AddSingleton<PostgresOutboxEventStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<PostgresOutboxEventStore>());

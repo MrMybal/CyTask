@@ -26,6 +26,7 @@ public static class PluginEndpoints
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapAiAssistantEndpoints();
+        authenticated.MapCyAnnotaEndpoints();
         return authenticated;
     }
 

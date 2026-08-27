@@ -46,7 +46,7 @@ utilise un code unique et un jeton Bearer opaque révocable réservé au client
 `cytask-unreal` ; le jeton reste uniquement en mémoire dans l'éditeur.
 
 La première plateforme de plugins déclaratifs est également disponible. Un administrateur
-active Git, AI Assistant, Unreal Engine ou CyRevision par projet depuis la page **Plugins**. AI Assistant gère plusieurs profils OpenAI, Anthropic, API compatible, Ollama, LM Studio, Codex, Claude Code ou OpenCode ; les jetons restent chiffrés côté serveur et chaque ticket choisit sa connexion. CyTask ajoute les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
+active Git, AI Assistant, Unreal Engine, CyRevision ou CyAnnota par projet depuis la page **Plugins**. AI Assistant gère plusieurs profils OpenAI, Anthropic, API compatible, Ollama, LM Studio, Codex, Claude Code ou OpenCode ; les jetons restent chiffrés côté serveur et chaque ticket choisit sa connexion. CyTask ajoute les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
 et validés par le serveur sont rendus. Le connecteur compagnon CyRevision recherche les tickets,
 ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de fin après fusion.
 Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
@@ -108,8 +108,8 @@ pwsh ./scripts/seed-demo.ps1
 
 Le script crée une équipe et un jeu de charge de **220 tâches** réalistes avec états, priorités,
 échéances, responsables, dossiers et sous-dossiers, ainsi que des sous-tâches, checklists, commentaires,
-références Git et dépendances. Il active aussi les **4 plugins officiels** avec des données
-Git, AI Assistant, Unreal et CyRevision, puis ajoute **6 contenus d’espace**, **4 salons** et
+références Git et dépendances. Il active aussi les **5 plugins officiels** avec des données
+Git, AI Assistant, Unreal et CyRevision, ainsi que CyAnnota pour les médias, puis ajoute **6 contenus d’espace**, **4 salons** et
 une conversation d’exemple avec mentions et documents joints. Il est idempotent : une nouvelle exécution complète seulement les tâches
 Le jeu de démonstration ajoute également un groupe privé et un lien de tâche prévisualisable.
 manquantes. Les identifiants de démonstration sont affichés à la fin de son exécution.
@@ -132,6 +132,7 @@ curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/proj
 - [Guide de développement](docs/05-developpement.md)
 - [Interface des tâches](docs/06-interface-taches.md)
 - [API pour plugins et intégrations](docs/07-api-plugins.md)
+- [Annotations CyAnnota](docs/08-cyannota.md)
 - [Décisions d'architecture](docs/decisions)
 - [Contrats de plugins](packages/contracts)
 - [Plugin Unreal](integrations/unreal/README.md)

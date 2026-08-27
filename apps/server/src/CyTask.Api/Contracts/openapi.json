@@ -659,6 +659,63 @@
         }
       }
     },
+    "/api/v1/tasks/{taskId}/plugins/cyannota/workspace": {
+      "get": {
+        "tags": ["plugins"],
+        "summary": "Configuration CyAnnota et révisions des médias annotés",
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Espace CyAnnota", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CyAnnotaWorkspace" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}": {
+      "get": {
+        "tags": ["plugins"],
+        "summary": "Lire le document CyAnnota d'un média",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "$ref": "#/components/parameters/attachmentId" }
+        ],
+        "responses": {
+          "200": { "description": "Document ou état initial", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CyAnnotaDocument" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "put": {
+        "tags": ["plugins"],
+        "summary": "Sauver les annotations avec contrôle de révision",
+        "description": "Le média doit être une image ou vidéo validée de la tâche. Le document est limité à 4 Mio et 5 000 annotations.",
+        "parameters": [
+          { "$ref": "#/components/parameters/taskId" },
+          { "$ref": "#/components/parameters/attachmentId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["document", "expectedRevision"],
+                "properties": {
+                  "document": { "type": "object", "additionalProperties": true },
+                  "expectedRevision": { "type": "integer", "format": "int64", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Annotations enregistrées", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CyAnnotaDocument" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
     "/api/v1/tasks/{taskId}": {
       "get": {
         "tags": ["tâches"],
@@ -1083,6 +1140,7 @@
       "projectId": { "name": "projectId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "taskId": { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "pluginId": { "name": "pluginId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$" } },
+      "attachmentId": { "name": "attachmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "uploadId": { "name": "uploadId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "tokenId": { "name": "tokenId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
     },
@@ -1153,6 +1211,41 @@
           "revision": { "type": "integer", "format": "int64", "minimum": 1 },
           "updatedBy": { "type": "string", "format": "uuid" },
           "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CyAnnotaWorkspace": {
+        "type": "object",
+        "required": ["applicationUrl", "maximumDocumentBytes", "documents"],
+        "properties": {
+          "applicationUrl": { "type": "string", "format": "uri" },
+          "maximumDocumentBytes": { "type": "integer", "minimum": 1 },
+          "documents": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CyAnnotaDocumentSummary" }
+          }
+        }
+      },
+      "CyAnnotaDocumentSummary": {
+        "type": "object",
+        "required": ["attachmentId", "mediaKind", "annotationCount", "revision", "updatedAt"],
+        "properties": {
+          "attachmentId": { "type": "string", "format": "uuid" },
+          "mediaKind": { "type": "string", "enum": ["image", "video"] },
+          "annotationCount": { "type": "integer", "minimum": 0, "maximum": 5000 },
+          "revision": { "type": "integer", "format": "int64", "minimum": 1 },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CyAnnotaDocument": {
+        "type": "object",
+        "required": ["attachmentId", "mediaKind", "annotationCount", "revision"],
+        "properties": {
+          "attachmentId": { "type": "string", "format": "uuid" },
+          "mediaKind": { "type": "string", "enum": ["image", "video"] },
+          "document": { "type": ["object", "null"], "additionalProperties": true },
+          "annotationCount": { "type": "integer", "minimum": 0, "maximum": 5000 },
+          "revision": { "type": "integer", "format": "int64", "minimum": 0 },
+          "updatedAt": { "type": ["string", "null"], "format": "date-time" }
         }
       },
       "Session": {

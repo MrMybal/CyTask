@@ -94,7 +94,7 @@ Le serveur refuse les champs inconnus, types invalides, chemins Unreal hors `/Ga
 écriture réussie est aussi archivée et peut être relue avec
 `GET /api/v1/tasks/{taskId}/plugins/{pluginId}/history` (100 révisions récentes au maximum).
 
-Quatre plugins officiels servent de référence :
+Cinq plugins officiels servent de référence :
 
 - `dev.cytask.git` rend l’onglet Git activable par projet et regroupe configuration du dépôt,
   liaison de commits, branches, tags et demandes de fusion ;
@@ -105,7 +105,10 @@ Quatre plugins officiels servent de référence :
   le panneau Unreal ;
 - `dev.cytask.cyrevision` expose dépôt, branche, commit, révision et fichiers modifiés. Son
   connecteur compagnon est distribué dans CyRevision et utilise la même API Bearer que les
-  intégrations Jira et ClickUp.
+  intégrations Jira et ClickUp ;
+- `dev.cytask.cyannota` ouvre les images et vidéos validées dans CyAnnota. Le média passe
+  uniquement en mémoire dans une fenêtre liée par origine et nonce ; seul le JSON
+  d’annotations versionné revient dans CyTask.
 
 ### Connexions AI Assistant
 

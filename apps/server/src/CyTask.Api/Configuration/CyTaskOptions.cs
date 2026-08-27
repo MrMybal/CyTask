@@ -28,6 +28,7 @@ public sealed class CyTaskOptions
     public int EventReplayBatchSize { get; init; } = 256;
     public int SseHeartbeatSeconds { get; init; } = 15;
     public string? PluginSecretKey { get; init; }
+    public string CyAnnotaUrl { get; init; } = "http://localhost:3000";
     public bool AiLocalAgentsEnabled { get; init; }
     public string? AiLocalWorkspacePath { get; init; }
     public string CodexExecutable { get; init; } = "codex";

@@ -76,6 +76,7 @@ Clés de la section `CyTask` :
 | `EventReplayBatchSize` | `256` | événements rejoués par lecture SSE |
 | `SseHeartbeatSeconds` | `15` | intervalle des commentaires keep-alive |
 | `PluginSecretKey` | vide | clé AES-256 en base64, obligatoire avec PostgreSQL pour les jetons de plugins |
+| `CyAnnotaUrl` | `http://localhost:3000` | URL HTTP(S) exacte de l’application CyAnnota ouverte par le plugin |
 | `AiLocalAgentsEnabled` | `false` | autorise explicitement Codex, Claude Code et OpenCode sur la machine serveur |
 | `AiLocalWorkspacePath` | vide | dossier de travail imposé aux agents locaux |
 | `CodexExecutable` | `codex` | chemin ou nom de l’exécutable Codex CLI |
