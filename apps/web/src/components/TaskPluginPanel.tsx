@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, type PluginFieldDefinition, type PluginTaskTabDefinition, type TaskPlugin } from "../api";
+import { TaskAiAssistantPanel } from "./TaskAiAssistantPanel";
 
 interface TaskPluginPanelProps {
   taskId: string;
@@ -11,7 +12,22 @@ interface TaskPluginPanelProps {
   onNotice: (message: string) => void;
 }
 
-export function TaskPluginPanel({
+export function TaskPluginPanel(props: TaskPluginPanelProps) {
+  if (props.plugin.manifest.id === "dev.cytask.ai-assistant") {
+    return (
+      <TaskAiAssistantPanel
+        taskId={props.taskId}
+        plugin={props.plugin}
+        canEdit={props.canEdit}
+        onSaved={props.onSaved}
+        onError={props.onError}
+        onNotice={props.onNotice}
+      />
+    );
+  }
+  return <GenericTaskPluginPanel {...props} />;
+}
+function GenericTaskPluginPanel({
   taskId,
   plugin,
   tab,

@@ -25,6 +25,7 @@ public static class PluginEndpoints
         authenticated.MapPut("/tasks/{taskId:guid}/plugins/{pluginId}/data", UpdateTaskPluginDataAsync)
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapAiAssistantEndpoints();
         return authenticated;
     }
 

@@ -189,7 +189,37 @@ export interface TaskPlugin {
   updatedAt: string | null;
 }
 
-export interface TaskRelation {
+
+export type AiProvider =
+  | "openai"
+  | "anthropic"
+  | "openai-compatible"
+  | "ollama"
+  | "lm-studio"
+  | "codex"
+  | "claude-code"
+  | "opencode";
+
+export interface AiProviderConnection {
+  id: string;
+  name: string;
+  provider: AiProvider;
+  authenticationMode: "api-token" | "local-account" | "none";
+  model: string;
+  baseUrl: string | null;
+  hasSecret: boolean;
+  secretHint: string | null;
+  localExecutionEnabled: boolean;
+  revision: number;
+  updatedAt: string;
+}
+
+export interface AiAssistantRunResult {
+  text: string;
+  provider: AiProvider;
+  model: string;
+  durationMilliseconds: number;
+}export interface TaskRelation {
   id: string;
   projectId: string;
   key: string;
@@ -425,7 +455,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       details = undefined;
     }
-    throw new ApiError(`La requête a échoué (${response.status}).`, response.status, details);
+    const title = typeof details === "object" && details !== null
+      && "title" in details && typeof (details as { title?: unknown }).title === "string"
+      ? (details as { title: string }).title
+      : undefined;
+    throw new ApiError(title ?? `La requête a échoué (${response.status}).`, response.status, details);
   }
 
   if (response.status === 204) return undefined as T;
@@ -492,7 +526,37 @@ export const api = {
     request<void>(`/api/v1/projects/${projectId}/plugins/${encodeURIComponent(pluginId)}`, {
       method: "DELETE"
     }),
-  projectLabels: (projectId: string) =>
+  aiConnections: (projectId: string) =>
+    request<AiProviderConnection[]>(
+      `/api/v1/projects/${projectId}/plugins/ai-assistant/connections`
+    ),
+  createAiConnection: (projectId: string, body: {
+    name: string;
+    provider: AiProvider;
+    model: string;
+    baseUrl: string | null;
+    secret: string | null;
+  }) => request<AiProviderConnection>(
+    `/api/v1/projects/${projectId}/plugins/ai-assistant/connections`,
+    { method: "POST", body: JSON.stringify(body) }
+  ),
+  updateAiConnection: (projectId: string, connectionId: string, body: {
+    name: string;
+    provider: AiProvider;
+    model: string;
+    baseUrl: string | null;
+    secret: string | null;
+    clearSecret: boolean;
+    expectedRevision: number;
+  }) => request<AiProviderConnection>(
+    `/api/v1/projects/${projectId}/plugins/ai-assistant/connections/${connectionId}`,
+    { method: "PUT", body: JSON.stringify(body) }
+  ),
+  deleteAiConnection: (projectId: string, connectionId: string) =>
+    request<void>(
+      `/api/v1/projects/${projectId}/plugins/ai-assistant/connections/${connectionId}`,
+      { method: "DELETE" }
+    ),  projectLabels: (projectId: string) =>
     request<ProjectLabelOverview>(`/api/v1/projects/${projectId}/labels`),
   createProjectLabel: (projectId: string, body: { name: string; color: string; parentLabelId?: string | null }) =>
     request<ProjectLabel>(`/api/v1/projects/${projectId}/labels`, {
@@ -616,7 +680,20 @@ export const api = {
   ) => request<TaskPlugin>(`/api/v1/tasks/${taskId}/plugins/${encodeURIComponent(pluginId)}/data`, {
     method: "PUT", body: JSON.stringify(body)
   }),
-  taskDependencies: (taskId: string) =>
+  taskAiConnections: (taskId: string) =>
+    request<AiProviderConnection[]>(
+      `/api/v1/tasks/${taskId}/plugins/ai-assistant/connections`
+    ),
+  runAiAssistant: (taskId: string, body: {
+    connectionId: string;
+    goal: string;
+    outputMode: string;
+    instructions: string;
+    includeComments: boolean;
+  }) => request<AiAssistantRunResult>(
+    `/api/v1/tasks/${taskId}/plugins/ai-assistant/run`,
+    { method: "POST", body: JSON.stringify(body) }
+  ),  taskDependencies: (taskId: string) =>
     request<TaskDependencyOverview>(`/api/v1/tasks/${taskId}/dependencies`),
   addTaskDependency: (taskId: string, dependsOnTaskId: string) =>
     request<TaskRelation>(`/api/v1/tasks/${taskId}/dependencies`, {

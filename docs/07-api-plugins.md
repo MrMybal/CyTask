@@ -98,13 +98,46 @@ Quatre plugins officiels servent de référence :
 
 - `dev.cytask.git` rend l’onglet Git activable par projet et regroupe configuration du dépôt,
   liaison de commits, branches, tags et demandes de fusion ;
-- `dev.cytask.ai-assistant` conserve l’objectif, les sources et le mode de sortie de
-  l’assistant. Les clés de fournisseur n’appartiennent jamais aux données d’un ticket ;
+- `dev.cytask.ai-assistant` configure plusieurs fournisseurs chiffrés par projet et
+  exécute une analyse bornée depuis le ticket. Les clés de fournisseur n’appartiennent
+  jamais aux données d’un ticket ;
 - `dev.cytask.unreal` partage moteur, projet, map, assets, fichiers du projet et historique entre le site et
   le panneau Unreal ;
 - `dev.cytask.cyrevision` expose dépôt, branche, commit, révision et fichiers modifiés. Son
   connecteur compagnon est distribué dans CyRevision et utilise la même API Bearer que les
   intégrations Jira et ClickUp.
+
+### Connexions AI Assistant
+
+Le plugin `dev.cytask.ai-assistant` gère plusieurs profils par projet :
+
+- jeton API chiffré pour OpenAI, Anthropic et les API compatibles OpenAI ;
+- endpoint explicite pour Ollama et LM Studio ;
+- compte local déjà authentifié pour Codex CLI, Claude Code et OpenCode.
+
+Les administrateurs gèrent ces profils avec
+`/api/v1/projects/{projectId}/plugins/ai-assistant/connections`. Le client ne reçoit
+que `hasSecret` et les quatre derniers caractères masqués : ni le jeton en clair, ni
+sa valeur chiffrée ne quittent le serveur. En stockage PostgreSQL,
+`CYTASK__PLUGINSECRETKEY` est obligatoire et contient une clé aléatoire de 32 octets
+encodée en base64.
+
+Un membre lance une analyse avec
+`POST /api/v1/tasks/{taskId}/plugins/ai-assistant/run`. CyTask construit un contexte
+borné avec le titre, la description, l’état, la checklist et, sur demande, les 100
+commentaires récents. La réponse est limitée, puis peut être conservée dans les données
+révisionnées du ticket.
+
+Les agents locaux sont désactivés par défaut. Lorsqu’ils sont autorisés, CyTask lance
+directement l’exécutable configuré, sans shell : Codex utilise un sandbox en lecture seule,
+Claude Code le mode `plan` avec un seul tour, et OpenCode un agent `plan` dont les
+permissions d’outils sont refusées. CyTask ne lit jamais les fichiers d’authentification de
+ces outils ; il réutilise uniquement leur session existante sur le compte système du serveur.
+
+Les URLs personnalisées refusent les identifiants dans l’URL et bloquent par défaut les
+adresses privées/locales ainsi que les redirections. `AiAllowPrivateEndpoints=true` doit
+être un choix explicite de l’administrateur pour Ollama ou LM Studio.
+
 ## Bornes systématiques
 
 - toute réponse est limitée à l'organisation du compte propriétaire du jeton ;

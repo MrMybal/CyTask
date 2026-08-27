@@ -86,6 +86,15 @@ builder.Services.AddOptions<CyTaskOptions>()
         "EventReplayBatchSize must be between 16 and 1024.")
     .Validate(options => options.SseHeartbeatSeconds is >= 5 and <= 60,
         "SseHeartbeatSeconds must be between 5 and 60.")
+    .Validate(options => options.UseInMemoryStore || AiSecretProtector.IsValidKey(options.PluginSecretKey),
+        "PluginSecretKey must be a base64-encoded 32-byte key when persistent storage is enabled.")
+    .Validate(options => options.AiRequestTimeoutSeconds is >= 10 and <= 600,
+        "AiRequestTimeoutSeconds must be between 10 and 600.")
+    .Validate(options => options.AiMaxOutputCharacters is >= 1_000 and <= 200_000,
+        "AiMaxOutputCharacters must be between 1000 and 200000.")
+    .Validate(options => !options.AiLocalAgentsEnabled
+        || !string.IsNullOrWhiteSpace(options.AiLocalWorkspacePath),
+        "AiLocalWorkspacePath is required when local agents are enabled.")
     .ValidateOnStart();
 
 var cyTaskOptions = builder.Configuration
@@ -117,6 +126,16 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("ai-assistant", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 12,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
     options.AddPolicy("uploads", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -133,6 +152,17 @@ builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<OutboxDispatchSignal>();
 builder.Services.AddSingleton<WorkspaceEventHub>();
 builder.Services.AddSingleton<PluginCatalog>();
+builder.Services.AddSingleton<AiSecretProtector>();
+builder.Services.AddSingleton<AiAssistantExecutor>();
+builder.Services.AddHttpClient("ai-assistant", client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("CyTask-AI-Assistant/0.2");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false,
+    AutomaticDecompression = System.Net.DecompressionMethods.GZip
+        | System.Net.DecompressionMethods.Deflate
+});
 builder.Services.AddSingleton<LocalMediaStorage>();
 builder.Services.AddSingleton<ChatSignalHub>();
 builder.Services.AddSingleton<RequireSessionFilter>();

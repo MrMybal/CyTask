@@ -784,18 +784,28 @@ Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$($createdTasks["terminal-gamepl
     }
 } | Out-Null
 
+$aiConnections = @(Invoke-DemoApi -Method Get -Path "/api/v1/projects/$($project.id)/plugins/ai-assistant/connections")
+$demoAiConnection = $aiConnections | Where-Object { $_.name -eq "Ollama local · démonstration" } | Select-Object -First 1
+if ($null -eq $demoAiConnection) {
+    $demoAiConnection = Invoke-DemoApi -Method Post -Path "/api/v1/projects/$($project.id)/plugins/ai-assistant/connections" -Headers $csrfHeaders -Body @{
+        name = "Ollama local · démonstration"
+        provider = "ollama"
+        model = "qwen3-coder"
+        baseUrl = "http://127.0.0.1:11434"
+        secret = $null
+    }
+}
+
 $aiPlugin = Invoke-DemoApi -Method Get -Path "/api/v1/tasks/$($createdTasks["documentation"].id)/plugins/dev.cytask.ai-assistant/data"
 Invoke-DemoApi -Method Put -Path "/api/v1/tasks/$($createdTasks["documentation"].id)/plugins/dev.cytask.ai-assistant/data" -Headers $csrfHeaders -Body @{
     expectedRevision = $aiPlugin.revision
     data = @{
-        provider = "Ollama"
-        model = "qwen3-coder"
+        connectionId = [string]$demoAiConnection.id
         goal = "Préparer une checklist de documentation technique à partir du ticket."
-        contextSources = @("Commentaires du ticket", "Pièces jointes validées", "README du projet")
-        includeAttachments = $true
+        includeComments = $true
         outputMode = "Checklist"
         instructions = "Ne jamais inventer de chemin d’asset et signaler les informations manquantes."
-        lastSummary = "Démonstration : contexte prêt, aucune clé API enregistrée dans le ticket."
+        lastSummary = "Démonstration : profil Ollama prêt. L’exécution locale reste désactivée tant que l’administrateur ne l’autorise pas."
     }
 } | Out-Null
 
