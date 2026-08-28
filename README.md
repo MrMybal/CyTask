@@ -40,6 +40,9 @@ The Unreal source plugin includes a Slate panel, personal tasks, self-assigned t
 
 PostgreSQL is the production persistence target. Explicit in-memory storage is available for tests and fast local development.
 
+## Windows client
+
+Download the latest Windows x64 installer or portable client from [GitHub Releases](https://github.com/MrMybal/CyTask/releases/latest). Published releases include SHA-256 checksums. The current binaries are not yet Authenticode-signed, so Windows SmartScreen may display a warning.
 ## Languages
 
 English is the default language in the Web application, PWA metadata and Desktop workspace selector. French remains available from the **EN / FR** selector and the preference is saved locally on each client.

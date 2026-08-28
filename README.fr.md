@@ -92,6 +92,9 @@ parent/sous-tâches acyclique et des dépendances indiquant le travail qu'elles 
 PostgreSQL est la persistance cible ; un stockage mémoire explicite est disponible
 pour les tests et le développement rapide.
 
+## Client Windows
+
+Téléchargez le dernier installateur Windows x64 ou la version portable depuis les [releases GitHub](https://github.com/MrMybal/CyTask/releases/latest). Les releases fournissent les empreintes SHA-256. Les binaires actuels ne sont pas encore signés avec Authenticode ; Windows SmartScreen peut donc afficher un avertissement.
 ## Démarrage rapide
 
 Avec Node.js 22 et le SDK local `.tools/dotnet` déjà installé :
