@@ -10,6 +10,9 @@ files:
   - renderer/**/*
   - package.json
 artifactName: CyTask-${version}-${os}-${arch}.${ext}
+extraResources:
+  - from: server/current
+    to: server
 win:
   icon: build/icon.png
   target:

@@ -36,6 +36,122 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task LocalFolderSnapshotsRestoreWorkspaceOnAnotherDevice()
+    {
+        var localPath = Path.Combine(Path.GetTempPath(), "CyTask.LocalSync.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(localPath);
+        try
+        {
+            Guid projectId;
+            await using (var firstFactory = new CyTaskApiFactory(localPath, Guid.NewGuid()))
+            using (var firstClient = firstFactory.CreateClient())
+            {
+                var csrf = await BootstrapAsync(firstClient);
+                firstClient.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+                var project = await PostAndReadAsync(firstClient, "/api/v1/projects",
+                    new { name = "Projet local", key = "LOCAL" });
+                projectId = project.GetProperty("id").GetGuid();
+                await PostAndReadAsync(firstClient, $"/api/v1/projects/{projectId}/tasks",
+                    new { title = "Tâche transportée", description = "Snapshot immuable" });
+                using var flush = await firstClient.PostAsync(
+                    new Uri("/api/v1/local-sync/flush", UriKind.Relative), null,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, flush.StatusCode);
+            }
+
+            await using (var secondFactory = new CyTaskApiFactory(localPath, Guid.NewGuid()))
+            using (var secondClient = secondFactory.CreateClient())
+            {
+                using var login = await secondClient.PostAsJsonAsync(
+                    new Uri("/api/v1/sessions", UriKind.Relative),
+                    new { email = "owner@cytask.local", password = "correct horse battery staple" },
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+                var session = await ReadJsonAsync(login);
+                secondClient.DefaultRequestHeaders.Add("X-CSRF-Token", session.GetProperty("csrfToken").GetString());
+
+                using var tasks = await secondClient.GetAsync(
+                    new Uri($"/api/v1/projects/{projectId}/tasks", UriKind.Relative),
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, tasks.StatusCode);
+                var restored = await ReadJsonAsync(tasks);
+                Assert.Contains(restored.EnumerateArray(), item =>
+                    item.GetProperty("title").GetString() == "Tâche transportée");
+
+                using var statusResponse = await secondClient.GetAsync(
+                    new Uri("/api/v1/local-sync/status", UriKind.Relative),
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
+                var status = await ReadJsonAsync(statusResponse);
+                Assert.True(status.GetProperty("enabled").GetBoolean());
+                Assert.True(status.GetProperty("peerDeviceCount").GetInt32() >= 2);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(localPath)) Directory.Delete(localPath, recursive: true);
+        }
+    }
+    [Fact]
+    public async Task LocalFolderTombstonesPropagateLabelDeletion()
+    {
+        var localPath = Path.Combine(Path.GetTempPath(), "CyTask.LocalDelete.Tests", Guid.NewGuid().ToString("N"));
+        var firstDevice = Guid.NewGuid();
+        Directory.CreateDirectory(localPath);
+        try
+        {
+            Guid projectId;
+            Guid labelId;
+            await using (var firstFactory = new CyTaskApiFactory(localPath, firstDevice))
+            using (var firstClient = firstFactory.CreateClient())
+            {
+                var csrf = await BootstrapAsync(firstClient);
+                firstClient.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+                var project = await PostAndReadAsync(firstClient, "/api/v1/projects",
+                    new { name = "Suppressions locales", key = "DEL" });
+                projectId = project.GetProperty("id").GetGuid();
+                var label = await PostAndReadAsync(firstClient, $"/api/v1/projects/{projectId}/labels",
+                    new { name = "Temporaire", color = "#44AA88" });
+                labelId = label.GetProperty("id").GetGuid();
+                using var flush = await firstClient.PostAsync(
+                    new Uri("/api/v1/local-sync/flush", UriKind.Relative), null,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, flush.StatusCode);
+            }
+
+            await using (var secondFactory = new CyTaskApiFactory(localPath, Guid.NewGuid()))
+            using (var secondClient = secondFactory.CreateClient())
+            {
+                var csrf = await LoginAsync(secondClient);
+                secondClient.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+                using var delete = await secondClient.DeleteAsync(
+                    new Uri($"/api/v1/projects/{projectId}/labels/{labelId}", UriKind.Relative),
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+                using var flush = await secondClient.PostAsync(
+                    new Uri("/api/v1/local-sync/flush", UriKind.Relative), null,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, flush.StatusCode);
+            }
+
+            await using (var reopenedFactory = new CyTaskApiFactory(localPath, firstDevice))
+            using (var reopenedClient = reopenedFactory.CreateClient())
+            {
+                await LoginAsync(reopenedClient);
+                using var response = await reopenedClient.GetAsync(
+                    new Uri($"/api/v1/projects/{projectId}/labels", UriKind.Relative),
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var overview = await ReadJsonAsync(response);
+                Assert.Empty(overview.GetProperty("labels").EnumerateArray());
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(localPath)) Directory.Delete(localPath, recursive: true);
+        }
+    }
+    [Fact]
     public async Task ProtectedRoutesRejectAnonymousRequests()
     {
         await using var factory = new CyTaskApiFactory();
@@ -2580,6 +2696,16 @@ public sealed class CyTaskApiTests
         organizationName = "CyTask Studio"
     };
 
+    private static async Task<string> LoginAsync(HttpClient client)
+    {
+        using var response = await client.PostAsJsonAsync(
+            new Uri("/api/v1/sessions", UriKind.Relative),
+            new { email = "owner@cytask.local", password = "correct horse battery staple" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var session = await ReadJsonAsync(response);
+        return session.GetProperty("csrfToken").GetString()!;
+    }
     private static async Task<string> BootstrapAsync(HttpClient client)
     {
         using var response = await client.PostAsJsonAsync(
@@ -2774,13 +2900,29 @@ public sealed class CyTaskApiTests
     {
         private readonly string _mediaPath = Path.Combine(
             Path.GetTempPath(), "CyTask.Tests", Guid.NewGuid().ToString("N"));
+        private readonly string? _localPath;
+        private readonly Guid? _deviceId;
+
+        public CyTaskApiFactory(string? localPath = null, Guid? deviceId = null)
+        {
+            _localPath = localPath;
+            _deviceId = deviceId;
+        }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
-            builder.UseSetting("CyTask:MediaStoragePath", _mediaPath);
+            builder.UseSetting("CyTask:MediaStoragePath", _localPath is null
+                ? _mediaPath : Path.Combine(_localPath, ".cytask", "media"));
             builder.UseSetting("CyTask:MediaReviewSeconds", "3600");
             builder.UseSetting("CyTask:UploadChunkBytes", "65536");
+            if (_localPath is not null)
+            {
+                builder.UseSetting("CyTask:LocalMode", "true");
+                builder.UseSetting("CyTask:LocalWorkspacePath", _localPath);
+                builder.UseSetting("CyTask:LocalDeviceId", (_deviceId ?? Guid.NewGuid()).ToString("D"));
+                builder.UseSetting("CyTask:LocalSyncSeconds", "60");
+            }
         }
 
         public Task<int> ReviewAttachmentsAsync() =>

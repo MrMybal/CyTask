@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CyTask.Api.LocalSync;
 
 namespace CyTask.Api.Plugins;
 
@@ -164,6 +165,35 @@ public sealed class InMemoryPluginStore : IPluginStore
             var item = _aiConnections.GetValueOrDefault(connectionId);
             return Task.FromResult(item?.OrganizationId == organizationId
                 && item.ProjectId == projectId && _aiConnections.Remove(connectionId));
+        }
+    }
+
+    internal PluginLocalState CaptureLocalState()
+    {
+        lock (_gate)
+        {
+            return new PluginLocalState(
+                _projects.Values.OrderBy(item => item.ProjectId).ThenBy(item => item.PluginId).ToArray(),
+                _tasks.Values.OrderBy(item => item.TaskId).ThenBy(item => item.PluginId).ToArray(),
+                _history.Values.SelectMany(items => items)
+                    .OrderBy(item => item.TaskId).ThenBy(item => item.PluginId).ThenBy(item => item.Revision)
+                    .ToArray());
+        }
+    }
+
+    internal void RestoreLocalState(PluginLocalState state)
+    {
+        lock (_gate)
+        {
+            _projects.Clear();
+            foreach (var item in state.ProjectPlugins)
+                _projects[(item.ProjectId, item.PluginId)] = item;
+            _tasks.Clear();
+            foreach (var item in state.TaskData)
+                _tasks[(item.TaskId, item.PluginId)] = item;
+            _history.Clear();
+            foreach (var group in state.TaskDataHistory.GroupBy(item => (item.TaskId, item.PluginId)))
+                _history[group.Key] = group.OrderBy(item => item.Revision).ToList();
         }
     }
 }

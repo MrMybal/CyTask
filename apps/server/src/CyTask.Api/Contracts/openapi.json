@@ -140,7 +140,28 @@
         }
       }
     },
-    "/api/v1/tokens": {
+    "/api/v1/local-sync/status": {
+      "get": {
+        "tags": ["synchronisation locale"],
+        "summary": "Lire l’état du dossier local",
+        "responses": {
+          "200": { "description": "Mode serveur ou état Sync", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalSyncStatus" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/local-sync/flush": {
+      "post": {
+        "tags": ["synchronisation locale"],
+        "summary": "Fusionner les snapshots et sauvegarder immédiatement",
+        "description": "Session authentifiée et jeton CSRF requis. Sans effet destructif en mode serveur central.",
+        "responses": {
+          "200": { "description": "État Sync après sauvegarde", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocalSyncStatus" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },    "/api/v1/tokens": {
       "get": {
         "tags": ["jetons"],
         "summary": "Lister ses jetons d'API",
@@ -1152,6 +1173,22 @@
       "Validation": { "description": "Corps invalide, détails par champ dans `errors`" }
     },
     "schemas": {
+      "LocalSyncStatus": {
+        "type": "object",
+        "required": ["enabled", "mode", "peerDeviceCount", "snapshotCount", "conflictCount"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "mode": { "type": "string", "enum": ["server", "local-sync"] },
+          "workspacePath": { "type": ["string", "null"] },
+          "workspaceId": { "type": ["string", "null"], "format": "uuid" },
+          "deviceId": { "type": ["string", "null"], "format": "uuid" },
+          "peerDeviceCount": { "type": "integer", "minimum": 0 },
+          "snapshotCount": { "type": "integer", "minimum": 0 },
+          "conflictCount": { "type": "integer", "minimum": 0 },
+          "lastSnapshotAt": { "type": ["string", "null"], "format": "date-time" },
+          "message": { "type": ["string", "null"] }
+        }
+      },
       "PluginManifest": {
         "type": "object",
         "required": ["schemaVersion", "id", "name", "version", "apiVersion", "runtime", "permissions", "contributes"],

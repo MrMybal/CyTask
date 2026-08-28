@@ -7,6 +7,18 @@ export interface Session {
   csrfToken: string;
 }
 
+export interface LocalSyncStatus {
+  enabled: boolean;
+  mode: "server" | "local-sync";
+  workspacePath: string | null;
+  workspaceId: string | null;
+  deviceId: string | null;
+  peerDeviceCount: number;
+  snapshotCount: number;
+  conflictCount: number;
+  lastSnapshotAt: string | null;
+  message: string | null;
+}
 export interface Project {
   id: string;
   organizationId: string;
@@ -510,6 +522,8 @@ export const api = {
       body: JSON.stringify(body)
     }),
   me: () => request<Session>("/api/v1/me"),
+  localSyncStatus: () => request<LocalSyncStatus>("/api/v1/local-sync/status"),
+  flushLocalSync: () => request<LocalSyncStatus>("/api/v1/local-sync/flush", { method: "POST" }),
   logout: () => request<void>("/api/v1/session", { method: "DELETE" }),
   createNativeAuthorization: (body: NativeAuthorizationRequest) =>
     request<NativeAuthorizationResponse>("/api/v1/oauth/native/authorizations", {

@@ -1,4 +1,5 @@
 using CyTask.Api.Infrastructure;
+using CyTask.Api.LocalSync;
 
 namespace CyTask.Api.Collaboration;
 
@@ -324,6 +325,33 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
     }
 
 
+    internal CollaborationLocalState CaptureLocalState()
+    {
+        lock (_gate)
+        {
+            return new CollaborationLocalState(
+                _resources.Values.Where(item => item.Status != "uploading")
+                    .OrderBy(item => item.Id).ToArray(),
+                _channels.Values.OrderBy(item => item.Id).ToArray(),
+                _messages.Values.OrderBy(item => item.Id).ToArray());
+        }
+    }
+
+    internal void RestoreLocalState(CollaborationLocalState state)
+    {
+        lock (_gate)
+        {
+            var activeResources = _resources.Values
+                .Where(item => item.Status == "uploading").ToArray();
+            _resources.Clear();
+            foreach (var item in state.Resources) _resources[item.Id] = item;
+            foreach (var item in activeResources) _resources.TryAdd(item.Id, item);
+            _channels.Clear();
+            foreach (var item in state.Channels) _channels[item.Id] = item;
+            _messages.Clear();
+            foreach (var item in state.Messages) _messages[item.Id] = item;
+        }
+    }
     private static bool CanAccess(ChatChannel channel, Guid userId) =>
         channel.ChannelType == "channel" || channel.MemberIds.Contains(userId);
     private async Task<bool> ProjectExistsAsync(

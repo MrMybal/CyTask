@@ -52,8 +52,10 @@ ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de
 Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
 du moteur complète.
 Le client Web responsive et installable consomme la même API que CyTask Desktop
-Electron et le plugin Unreal. Le client desktop mémorise plusieurs IP ou domaines,
-isole les sessions par origine et charge le site distant sans accès Node. Son interface de tâches propose maintenant cinq vues :
+Electron et le plugin Unreal. Le client desktop mémorise plusieurs IP ou domaines, isole les sessions par origine et
+charge le site distant sans accès Node. Il peut aussi ouvrir un **dossier local** : un sidecar
+auto-contenu limité à `127.0.0.1` conserve des snapshots immuables et des médias compatibles
+avec Syncthing ou le moteur Sync de CyRevision, sans jamais répliquer une base active. Son interface de tâches propose maintenant cinq vues :
 Liste, Compacte en colonnes, Kanban, Canvas libre multimédia et graphe relationnel.
 Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
 des labels colorés, priorités, échéances, assignations multiples, vues rapides et filtres nommés mémorisés localement.
@@ -144,6 +146,7 @@ curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/proj
 - [Interface des tâches](docs/06-interface-taches.md)
 - [API pour plugins et intégrations](docs/07-api-plugins.md)
 - [Annotations CyAnnota](docs/08-cyannota.md)
+- [Mode local et synchronisation par dossier](docs/09-mode-local-sync.md)
 - [Client desktop](apps/client/README.md)
 - [Décisions d'architecture](docs/decisions)
 - [Contrats de plugins](packages/contracts)
