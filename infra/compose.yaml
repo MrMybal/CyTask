@@ -33,7 +33,7 @@ services:
       CYTASK__APPLYMIGRATIONS: "true"
       CYTASK__USEINMEMORYSTORE: "false"
       CYTASK__MEDIASTORAGEPATH: /var/lib/cytask/media
-      CYTASK__CYANNOTAURL: ${CYTASK_CYANNOTA_URL:-http://localhost:3000}
+      CYTASK__CYANNOTAURL: ${CYTASK_CYANNOTA_URL:-/plugins/cyannota/}
       ALLOWEDHOSTS: ${CYTASK_ALLOWED_HOSTS:-localhost;127.0.0.1}
     volumes:
       - cytask-media:/var/lib/cytask/media

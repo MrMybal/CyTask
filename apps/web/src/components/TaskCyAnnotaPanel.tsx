@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type Attachment,
@@ -22,6 +22,14 @@ type BridgeMessage = {
   document?: unknown;
 };
 
+interface EmbeddedEditorProps extends TaskCyAnnotaPanelProps {
+  attachment: Attachment;
+  workspace: CyAnnotaWorkspace;
+  initialRevision: number;
+  onClose: () => void;
+  onSaved: (document: CyAnnotaDocument) => void;
+}
+
 export function TaskCyAnnotaPanel({
   taskId,
   canEdit,
@@ -31,7 +39,7 @@ export function TaskCyAnnotaPanel({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [workspace, setWorkspace] = useState<CyAnnotaWorkspace>();
   const [loading, setLoading] = useState(true);
-  const [openingId, setOpeningId] = useState<string>();
+  const [activeAttachment, setActiveAttachment] = useState<Attachment>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +58,7 @@ export function TaskCyAnnotaPanel({
   }, [onError, taskId]);
 
   useEffect(() => {
+    setActiveAttachment(undefined);
     void load();
   }, [load]);
 
@@ -58,180 +67,40 @@ export function TaskCyAnnotaPanel({
     [workspace]
   );
 
-  async function openCyAnnota(attachment: Attachment) {
-    if (!workspace || openingId) return;
-
-    let applicationUrl: URL;
-    try {
-      applicationUrl = new URL(workspace.applicationUrl);
-      if (!["http:", "https:"].includes(applicationUrl.protocol) || applicationUrl.username
-        || applicationUrl.password) {
-        throw new Error();
-      }
-    } catch {
-      onError("L’URL CyAnnota configurée par le serveur est invalide.");
-      return;
-    }
-
-    const session = crypto.randomUUID();
-    applicationUrl.searchParams.set("integration", "cytask");
-    applicationUrl.searchParams.set("session", session);
-    applicationUrl.searchParams.set("parentOrigin", window.location.origin);
-    applicationUrl.searchParams.set("attachmentId", attachment.id);
-    const targetOrigin = applicationUrl.origin;
-    const popup = window.open(
-      applicationUrl.toString(),
-      `cyannota-${session}`,
-      "popup=yes,width=1680,height=980,resizable=yes,scrollbars=yes"
-    );
-    if (!popup) {
-      onError("CyAnnota n’a pas pu s’ouvrir. Autorisez les fenêtres contextuelles pour CyTask.");
-      return;
-    }
-
-    setOpeningId(attachment.id);
-    let ready = false;
-    let initialPayload: Record<string, unknown> | undefined;
-    let revision = documents.get(attachment.id)?.revision ?? 0;
-    let stopped = false;
-
-    const cleanup = () => {
-      stopped = true;
-      window.removeEventListener("message", receive);
-      window.clearTimeout(timeout);
-      window.clearInterval(closedWatcher);
-      setOpeningId((current) => current === attachment.id ? undefined : current);
-    };
-
-    const sendInitialPayload = () => {
-      if (!ready || !initialPayload || stopped || popup.closed) return;
-      popup.postMessage(initialPayload, targetOrigin);
-      initialPayload = undefined;
-      setOpeningId((current) => current === attachment.id ? undefined : current);
-    };
-
-    const receive = (event: MessageEvent<unknown>) => {
-      if (event.source !== popup || event.origin !== targetOrigin || !isRecord(event.data)) return;
-      const message = event.data as BridgeMessage;
-      if (message.source !== "cyannota" || message.session !== session) return;
-
-      if (message.type === "ready") {
-        ready = true;
-        sendInitialPayload();
-        return;
-      }
-
-      if (message.type !== "save-annotations" || message.attachmentId !== attachment.id
-        || !isRecord(message.document)) {
-        return;
-      }
-      if (!canEdit) {
-        popup.postMessage({
-          source: "cytask",
-          type: "save-result",
-          session,
-          ok: false,
-          error: "Votre rôle autorise la consultation, pas la modification."
-        }, targetOrigin);
-        return;
-      }
-
-      void api.updateCyAnnotaDocument(taskId, attachment.id, {
-        document: message.document,
-        expectedRevision: revision
-      }).then((updated) => {
-        revision = updated.revision;
-        updateSummary(updated);
-        popup.postMessage({
-          source: "cytask",
-          type: "save-result",
-          session,
-          ok: true,
-          revision: updated.revision,
-          updatedAt: updated.updatedAt
-        }, targetOrigin);
-        onNotice(`Annotations de « ${attachment.fileName} » enregistrées.`);
-      }).catch((reason) => {
-        const error = messageFor(reason);
-        popup.postMessage({
-          source: "cytask",
-          type: "save-result",
-          session,
-          ok: false,
-          error
-        }, targetOrigin);
-        onError(error);
-      });
-    };
-
-    window.addEventListener("message", receive);
-    const timeout = window.setTimeout(() => {
-      if (!ready) {
-        onError("CyAnnota ne répond pas. Vérifiez qu’il est démarré et que son URL est correcte.");
-        cleanup();
-      }
-    }, 20_000);
-    const closedWatcher = window.setInterval(() => {
-      if (popup.closed) cleanup();
-    }, 1_000);
-
-    try {
-      const [contentResponse, stored] = await Promise.all([
-        fetch(api.attachmentContentUrl(attachment.id), {
-          credentials: "same-origin",
-          headers: { Accept: attachment.detectedContentType ?? attachment.declaredContentType }
-        }),
-        api.cyAnnotaDocument(taskId, attachment.id)
-      ]);
-      if (!contentResponse.ok) throw new Error("Le média CyTask n’est plus disponible.");
-      const contentType = attachment.detectedContentType
-        ?? contentResponse.headers.get("content-type")
-        ?? attachment.declaredContentType;
-      const blob = await contentResponse.blob();
-      const file = new File([blob], attachment.fileName, {
-        type: contentType,
-        lastModified: Date.parse(attachment.reviewedAt ?? attachment.createdAt)
-      });
-      revision = stored.revision;
-      initialPayload = {
-        source: "cytask",
-        type: "open-media",
-        session,
-        attachmentId: attachment.id,
-        taskId,
-        title: attachment.fileName,
-        mediaKind: stored.mediaKind,
-        file,
-        document: stored.document,
-        readOnly: !canEdit,
-        maximumDocumentBytes: workspace.maximumDocumentBytes
+  const updateSummary = useCallback((updated: CyAnnotaDocument) => {
+    setWorkspace((current) => {
+      if (!current) return current;
+      const summary: CyAnnotaDocumentSummary = {
+        attachmentId: updated.attachmentId,
+        mediaKind: updated.mediaKind,
+        annotationCount: updated.annotationCount,
+        revision: updated.revision,
+        updatedAt: updated.updatedAt ?? new Date().toISOString()
       };
-      sendInitialPayload();
-    } catch (reason) {
-      onError(messageFor(reason));
-      popup.close();
-      cleanup();
-    }
+      return {
+        ...current,
+        documents: [
+          summary,
+          ...current.documents.filter((item) => item.attachmentId !== updated.attachmentId)
+        ]
+      };
+    });
+  }, []);
 
-    function updateSummary(updated: CyAnnotaDocument) {
-      setWorkspace((current) => {
-        if (!current) return current;
-        const summary: CyAnnotaDocumentSummary = {
-          attachmentId: updated.attachmentId,
-          mediaKind: updated.mediaKind,
-          annotationCount: updated.annotationCount,
-          revision: updated.revision,
-          updatedAt: updated.updatedAt ?? new Date().toISOString()
-        };
-        return {
-          ...current,
-          documents: [
-            summary,
-            ...current.documents.filter((item) => item.attachmentId !== updated.attachmentId)
-          ]
-        };
-      });
-    }
+  if (activeAttachment && workspace) {
+    return (
+      <EmbeddedCyAnnotaEditor
+        taskId={taskId}
+        attachment={activeAttachment}
+        workspace={workspace}
+        initialRevision={documents.get(activeAttachment.id)?.revision ?? 0}
+        canEdit={canEdit}
+        onClose={() => setActiveAttachment(undefined)}
+        onSaved={updateSummary}
+        onError={onError}
+        onNotice={onNotice}
+      />
+    );
   }
 
   return (
@@ -242,12 +111,12 @@ export function TaskCyAnnotaPanel({
           <h3>Annotations CyAnnota</h3>
           <p>Cadrez, dessinez et commentez les images ou vidéos liées à cette tâche.</p>
         </div>
-        <span className="plugin-security-badge">Pont local sécurisé</span>
+        <span className="plugin-security-badge">Plugin intégré</span>
       </header>
 
       <div className="cyannota-security-note">
-        <strong>Le média reste dans CyTask.</strong>
-        <span>CyAnnota reçoit une copie en mémoire par session, sans cookie ni token CyTask.</span>
+        <strong>CyAnnota s’ouvre directement dans la tâche.</strong>
+        <span>Le média est transféré en mémoire avec contrôle de l’origine et de la session.</span>
       </div>
 
       <div className="cyannota-media-grid">
@@ -276,12 +145,10 @@ export function TaskCyAnnotaPanel({
               <button
                 className="primary-button small"
                 type="button"
-                disabled={!workspace || Boolean(openingId)}
-                onClick={() => void openCyAnnota(attachment)}
+                disabled={!workspace}
+                onClick={() => setActiveAttachment(attachment)}
               >
-                {openingId === attachment.id
-                  ? "Ouverture…"
-                  : document ? (canEdit ? "Continuer" : "Consulter") : (canEdit ? "Annoter" : "Consulter")}
+                {document ? (canEdit ? "Continuer" : "Consulter") : (canEdit ? "Annoter" : "Consulter")}
               </button>
             </article>
           );
@@ -295,9 +162,205 @@ export function TaskCyAnnotaPanel({
       )}
       {workspace && (
         <footer className="cyannota-footer">
-          <span>Application : {workspace.applicationUrl}</span>
+          <span>Module : {workspace.applicationUrl}</span>
           <span>Document maximal : {formatBytes(workspace.maximumDocumentBytes)}</span>
         </footer>
+      )}
+    </section>
+  );
+}
+
+function EmbeddedCyAnnotaEditor({
+  taskId,
+  attachment,
+  workspace,
+  initialRevision,
+  canEdit,
+  onClose,
+  onSaved,
+  onError,
+  onNotice
+}: EmbeddedEditorProps) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const shellRef = useRef<HTMLElement>(null);
+  const revisionRef = useRef(initialRevision);
+  const session = useMemo(() => crypto.randomUUID(), [attachment.id]);
+  const [status, setStatus] = useState("Chargement du plugin…");
+
+  const launch = useMemo(() => {
+    try {
+      const url = new URL(workspace.applicationUrl, window.location.href);
+      if (url.origin !== window.location.origin || url.username || url.password) return undefined;
+      url.hash = "";
+      url.searchParams.set("integration", "cytask");
+      url.searchParams.set("presentation", "embedded");
+      url.searchParams.set("session", session);
+      url.searchParams.set("parentOrigin", window.location.origin);
+      url.searchParams.set("attachmentId", attachment.id);
+      return { url: url.toString(), origin: url.origin };
+    } catch {
+      return undefined;
+    }
+  }, [attachment.id, session, workspace.applicationUrl]);
+
+  useEffect(() => {
+    if (!launch) {
+      setStatus("Configuration CyAnnota invalide");
+      onError("L’URL CyAnnota configurée par le serveur est invalide.");
+      return;
+    }
+
+    let ready = false;
+    let stopped = false;
+    let initialPayload: Record<string, unknown> | undefined;
+
+    const post = (message: Record<string, unknown>) => {
+      frameRef.current?.contentWindow?.postMessage(message, launch.origin);
+    };
+
+    const sendInitialPayload = () => {
+      if (!ready || !initialPayload || stopped) return;
+      post(initialPayload);
+      initialPayload = undefined;
+      setStatus(canEdit ? "Prêt à annoter" : "Consultation seule");
+    };
+
+    const receive = (event: MessageEvent<unknown>) => {
+      if (event.source !== frameRef.current?.contentWindow || event.origin !== launch.origin
+        || !isRecord(event.data)) return;
+      const message = event.data as BridgeMessage;
+      if (message.source !== "cyannota" || message.session !== session) return;
+
+      if (message.type === "ready") {
+        ready = true;
+        setStatus("Ouverture du média…");
+        sendInitialPayload();
+        return;
+      }
+
+      if (message.type !== "save-annotations" || message.attachmentId !== attachment.id
+        || !isRecord(message.document)) return;
+
+      if (!canEdit) {
+        post({
+          source: "cytask",
+          type: "save-result",
+          session,
+          ok: false,
+          error: "Votre rôle autorise la consultation, pas la modification."
+        });
+        return;
+      }
+
+      setStatus("Enregistrement…");
+      void api.updateCyAnnotaDocument(taskId, attachment.id, {
+        document: message.document,
+        expectedRevision: revisionRef.current
+      }).then((updated) => {
+        revisionRef.current = updated.revision;
+        onSaved(updated);
+        post({
+          source: "cytask",
+          type: "save-result",
+          session,
+          ok: true,
+          revision: updated.revision,
+          updatedAt: updated.updatedAt
+        });
+        setStatus(`Enregistré · rév. ${updated.revision}`);
+        onNotice(`Annotations de « ${attachment.fileName} » enregistrées.`);
+      }).catch((reason) => {
+        const error = messageFor(reason);
+        post({ source: "cytask", type: "save-result", session, ok: false, error });
+        setStatus("Échec de l’enregistrement");
+        onError(error);
+      });
+    };
+
+    window.addEventListener("message", receive);
+    const timeout = window.setTimeout(() => {
+      if (!ready && !stopped) {
+        setStatus("Le plugin ne répond pas");
+        onError("CyAnnota ne répond pas. Vérifiez que le module intégré est disponible.");
+      }
+    }, 20_000);
+
+    void Promise.all([
+      fetch(api.attachmentContentUrl(attachment.id), {
+        credentials: "same-origin",
+        headers: { Accept: attachment.detectedContentType ?? attachment.declaredContentType }
+      }),
+      api.cyAnnotaDocument(taskId, attachment.id)
+    ]).then(async ([contentResponse, stored]) => {
+      if (!contentResponse.ok) throw new Error("Le média CyTask n’est plus disponible.");
+      const contentType = attachment.detectedContentType
+        ?? contentResponse.headers.get("content-type")
+        ?? attachment.declaredContentType;
+      const blob = await contentResponse.blob();
+      const file = new File([blob], attachment.fileName, {
+        type: contentType,
+        lastModified: Date.parse(attachment.reviewedAt ?? attachment.createdAt)
+      });
+      revisionRef.current = stored.revision;
+      initialPayload = {
+        source: "cytask",
+        type: "open-media",
+        session,
+        attachmentId: attachment.id,
+        taskId,
+        title: attachment.fileName,
+        mediaKind: stored.mediaKind,
+        file,
+        document: stored.document,
+        readOnly: !canEdit,
+        maximumDocumentBytes: workspace.maximumDocumentBytes
+      };
+      sendInitialPayload();
+    }).catch((reason) => {
+      if (stopped) return;
+      setStatus("Impossible de charger le média");
+      onError(messageFor(reason));
+    });
+
+    return () => {
+      stopped = true;
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", receive);
+    };
+  }, [attachment, canEdit, launch, onError, onNotice, onSaved, session, taskId, workspace.maximumDocumentBytes]);
+
+  return (
+    <section ref={shellRef} className="cyannota-embedded-shell detail-section">
+      <header className="cyannota-embedded-toolbar">
+        <button className="text-button" type="button" onClick={onClose}>← Médias</button>
+        <div>
+          <strong>{attachment.fileName}</strong>
+          <small>{status}</small>
+        </div>
+        <div className="cyannota-embedded-actions">
+          <span className="plugin-security-badge">{canEdit ? "Édition" : "Lecture seule"}</span>
+          <button
+            className="secondary-button small"
+            type="button"
+            onClick={() => void shellRef.current?.requestFullscreen()}
+          >
+            Plein écran
+          </button>
+          <button className="secondary-button small" type="button" onClick={onClose}>Fermer</button>
+        </div>
+      </header>
+      {launch ? (
+        <iframe
+          ref={frameRef}
+          className="cyannota-embedded-frame"
+          src={launch.url}
+          title={`CyAnnota — ${attachment.fileName}`}
+          sandbox="allow-scripts allow-same-origin allow-downloads"
+          allow="fullscreen"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <div className="cyannota-embedded-error">Configuration CyAnnota invalide.</div>
       )}
     </section>
   );

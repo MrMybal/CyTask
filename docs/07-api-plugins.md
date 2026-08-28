@@ -106,9 +106,9 @@ Cinq plugins officiels servent de référence :
 - `dev.cytask.cyrevision` expose dépôt, branche, commit, révision et fichiers modifiés. Son
   connecteur compagnon est distribué dans CyRevision et utilise la même API Bearer que les
   intégrations Jira et ClickUp ;
-- `dev.cytask.cyannota` ouvre les images et vidéos validées dans CyAnnota. Le média passe
-  uniquement en mémoire dans une fenêtre liée par origine et nonce ; seul le JSON
-  d’annotations versionné revient dans CyTask.
+- `dev.cytask.cyannota` affiche la copie intégrée de CyAnnota dans un iframe de la tâche.
+  Le média passe uniquement en mémoire dans une session liée par origine et nonce ; seul
+  le document JSON versionné revient dans CyTask.
 
 ### Connexions AI Assistant
 

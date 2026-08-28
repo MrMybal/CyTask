@@ -5,6 +5,13 @@ RUN npm ci --no-fund --no-audit
 COPY apps/web/ ./
 RUN npm run build
 
+FROM node:22.17.1-alpine AS cyannota-build
+WORKDIR /source/plugins/cyannota/web
+COPY plugins/cyannota/web/package.json plugins/cyannota/web/package-lock.json ./
+RUN npm ci --no-fund --no-audit
+COPY plugins/cyannota/web/ ./
+RUN npm run build
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0.302 AS server-build
 WORKDIR /source
 COPY global.json Directory.Build.props Directory.Packages.props ./
@@ -20,6 +27,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-noble-chiseled AS runtime
 WORKDIR /app
 COPY --from=server-build /out/server/ ./
 COPY --from=web-build /source/apps/web/dist/ ./wwwroot/
+COPY --from=cyannota-build /source/plugins/cyannota/web/dist/ ./wwwroot/plugins/cyannota/
 COPY --chown=$APP_UID:$APP_UID infra/media/ /var/lib/cytask/media/
 
 ENV ASPNETCORE_URLS=http://+:8080 \

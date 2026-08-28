@@ -13,7 +13,7 @@ cœur qui reste utilisable seul.
 
 ## Objectifs
 
-- application Web rapide et installable, puis clients Windows, Linux, macOS et Android ;
+- application Web rapide et installable, client Electron Windows/Linux/macOS, puis Android ;
 - serveur d'équipe auto-hébergeable avec une sécurité vérifiable ;
 - tâches, projets, sous-tâches, labels, commentaires, dépendances, pièces jointes et temps réel ;
 - images et vidéos avec conversion locale optionnelle et traitement serveur ;
@@ -51,8 +51,9 @@ et validés par le serveur sont rendus. Le connecteur compagnon CyRevision reche
 ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de fin après fusion.
 Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
 du moteur complète.
-Le client Web responsive et installable consomme la même API que les futurs
-clients et le plugin Unreal. Son interface de tâches propose maintenant cinq vues :
+Le client Web responsive et installable consomme la même API que CyTask Desktop
+Electron et le plugin Unreal. Le client desktop mémorise plusieurs IP ou domaines,
+isole les sessions par origine et charge le site distant sans accès Node. Son interface de tâches propose maintenant cinq vues :
 Liste, Compacte en colonnes, Kanban, Canvas libre multimédia et graphe relationnel.
 Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
 des labels colorés, priorités, échéances, assignations multiples, vues rapides et filtres nommés mémorisés localement.
@@ -66,24 +67,23 @@ peuvent être rangés dans les mêmes dossiers que les tâches, filtrés, regrou
 par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même passage en
 quarantaine que les pièces jointes de tâches.
 La discussion d’équipe fournit des salons par projet, messages, mentions, images, vidéos
-et fichiers issus de cette bibliothèque. Le vocal et le partage d’écran reposent sur WebRTC
-Des groupes privés limitent côté serveur la liste des salons, les messages et la
-signalisation aux seuls membres invités. Les liens de tâches génèrent une carte ouvrable ;
-images et vidéos disposent d’un aperçu, d’une visionneuse agrandie, d’un lecteur intégré
-et d’un téléchargement direct.
-avec une signalisation WebSocket authentifiée. Le mode actuel est pair-à-pair direct ;
-un relais TURN privé sera nécessaire pour les déploiements dont les membres sont séparés
-par des NAT ou pare-feu stricts.
+et fichiers issus de cette bibliothèque. Le vocal et le partage d’écran reposent sur WebRTC avec une signalisation
+WebSocket authentifiée. Le mode actuel est pair-à-pair direct ; un relais TURN privé
+sera nécessaire pour les déploiements dont les membres sont séparés par des NAT ou
+pare-feu stricts. Des groupes privés limitent côté serveur la liste des salons, les
+messages et la signalisation aux seuls membres invités. Les liens de tâches génèrent
+une carte ouvrable ; images et vidéos disposent d’un aperçu, d’une visionneuse
+agrandie, d’un lecteur intégré et d’un téléchargement direct.
 Elle propose aussi des vignettes et le téléchargement des fichiers validés, un motif pour les fichiers refusés,
 drag-and-drop multi-fichier sur toute la fenêtre de tâche, galerie intégrée aux détails
 et jusqu'à quatre aperçus image/vidéo par carte Kanban. Le Canvas permet d'ajouter
 et déplacer des textes, formes, tâches, images et vidéos, ainsi que de dessiner à main
-levée ; ses objets et blobs multimédias sont conservés localement dans le navigateur,
-palette de commandes `Ctrl/⌘ + K`, ajout rapide d'une tâche en une ligne, préchargement du détail
-au survol, pagination serveur à curseur avec filtres, chargement progressif et
-notifications non bloquantes,
-déplacement optimiste avec contrôle de révision, détail en onglets et liens directs
-partageables. Les tâches intègrent des checklists avec progression, une hiérarchie
+levée ; ses objets et blobs multimédias sont conservés localement dans le navigateur.
+L’interface comprend aussi une palette de commandes `Ctrl/⌘ + K`, l’ajout rapide
+d’une tâche en une ligne, le préchargement du détail au survol, la pagination serveur
+à curseur avec filtres, le chargement progressif et des notifications non bloquantes.
+Le déplacement optimiste utilise le contrôle de révision ; le détail reste organisé
+en onglets et possède des liens directs partageables. Les tâches intègrent des checklists avec progression, une hiérarchie
 parent/sous-tâches acyclique et des dépendances indiquant le travail qu'elles bloquent.
 PostgreSQL est la persistance cible ; un stockage mémoire explicite est disponible
 pour les tests et le développement rapide.
@@ -97,7 +97,18 @@ Avec Node.js 22 et le SDK local `.tools/dotnet` déjà installé :
 ```
 
 Ouvrir ensuite `http://127.0.0.1:5173`. Ce mode perd ses données au redémarrage.
+Le même script lance la copie CyAnnota sur le port 5174 et la sert sous
+`/plugins/cyannota/` via le domaine CyTask.
 Pour PostgreSQL et le déploiement conteneurisé, voir [infra/README.md](infra/README.md).
+
+Le client desktop se construit depuis `apps/client` :
+
+```powershell
+Push-Location apps/client
+npm ci
+npm run dist:win
+Pop-Location
+```
 
 Pour remplir le serveur local avec le projet fictif **Nebula Station**, lancer dans
 un second terminal pendant que le mode développement fonctionne :
@@ -111,8 +122,8 @@ Le script crée une équipe et un jeu de charge de **220 tâches** réalistes av
 références Git et dépendances. Il active aussi les **5 plugins officiels** avec des données
 Git, AI Assistant, Unreal et CyRevision, ainsi que CyAnnota pour les médias, puis ajoute **6 contenus d’espace**, **4 salons** et
 une conversation d’exemple avec mentions et documents joints. Il est idempotent : une nouvelle exécution complète seulement les tâches
-Le jeu de démonstration ajoute également un groupe privé et un lien de tâche prévisualisable.
-manquantes. Les identifiants de démonstration sont affichés à la fin de son exécution.
+manquantes. Le jeu de démonstration ajoute également un groupe privé et un lien de
+tâche prévisualisable. Les identifiants de démonstration sont affichés à la fin de son exécution.
 
 L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :
 un jeton personnel `cytask_pat_…` se crée depuis la section **API** du client Web,
@@ -133,6 +144,7 @@ curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/proj
 - [Interface des tâches](docs/06-interface-taches.md)
 - [API pour plugins et intégrations](docs/07-api-plugins.md)
 - [Annotations CyAnnota](docs/08-cyannota.md)
+- [Client desktop](apps/client/README.md)
 - [Décisions d'architecture](docs/decisions)
 - [Contrats de plugins](packages/contracts)
 - [Plugin Unreal](integrations/unreal/README.md)
@@ -153,6 +165,8 @@ docs/                  produit, architecture, sécurité et décisions
 ```powershell
 ./.tools/dotnet/dotnet test CyTask.slnx
 Push-Location apps/web; npm run build; Pop-Location
+Push-Location plugins/cyannota/web; npm run build; Pop-Location
+Push-Location apps/client; npm run check; Pop-Location
 ```
 
 Les commandes de construction et de tests Unreal sont documentées dans

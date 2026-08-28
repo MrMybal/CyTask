@@ -17,7 +17,8 @@ devant CyTask, même pour la recette finale d’une installation d’équipe, et
 le port applicatif inaccessible depuis Internet. Pour une évaluation sans Docker
 ni TLS, utiliser `scripts/dev.ps1` et le stockage temporaire en mémoire.
 
-`CYTASK_CYANNOTA_URL` doit pointer vers l’URL HTTP(S) réellement accessible par les navigateurs de l’équipe ; CyTask valide ensuite exactement cette origine lors de chaque session d’annotation.
+CyAnnota est inclus dans le serveur sous `/plugins/cyannota/`, valeur par
+défaut de `CYTASK_CYANNOTA_URL`. Le chemin reste sur la même origine CyTask.
 
 Le mot de passe présent dans `.env.example` est volontairement invalide pour une
 production. Le fichier `infra/.env` est ignoré par Git via la règle globale `.env`.

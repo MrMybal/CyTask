@@ -2159,7 +2159,7 @@ public sealed class CyTaskApiTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, workspaceResponse.StatusCode);
         var workspace = await ReadJsonAsync(workspaceResponse);
-        Assert.Equal("http://localhost:3000", workspace.GetProperty("applicationUrl").GetString());
+        Assert.Equal("/plugins/cyannota/", workspace.GetProperty("applicationUrl").GetString());
         Assert.Equal(4_194_304, workspace.GetProperty("maximumDocumentBytes").GetInt32());
         Assert.Empty(workspace.GetProperty("documents").EnumerateArray());
 

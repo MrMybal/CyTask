@@ -43,7 +43,7 @@ public static class CyAnnotaEndpoints
         var documents = await annotations.ListTaskDocumentsAsync(
             context.GetUser()!.OrganizationId, taskId, cancellationToken);
         return Results.Ok(new CyAnnotaWorkspaceView(
-            options.Value.CyAnnotaUrl.TrimEnd('/'),
+            options.Value.CyAnnotaUrl.Trim(),
             MaximumDocumentBytes,
             documents.Select(ToSummary).ToArray()));
     }

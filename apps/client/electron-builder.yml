@@ -1,0 +1,38 @@
+appId: dev.cytask.desktop
+productName: CyTask
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - main.cjs
+  - preload.cjs
+  - renderer/**/*
+  - package.json
+artifactName: CyTask-${version}-${os}-${arch}.${ext}
+win:
+  icon: build/icon.png
+  target:
+    - portable
+    - nsis
+portable:
+  artifactName: CyTask-${version}-portable-${arch}.${ext}
+nsis:
+  artifactName: CyTask-${version}-setup-${arch}.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+linux:
+  icon: build/icon.png
+  category: Office
+  synopsis: Client CyTask pour serveur auto-hébergé
+  target:
+    - AppImage
+    - deb
+mac:
+  icon: build/icon.png
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
