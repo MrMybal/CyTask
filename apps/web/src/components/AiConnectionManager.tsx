@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, type AiProvider, type AiProviderConnection } from "../api";
+import { useI18n } from "../i18n";
 
 interface AiConnectionManagerProps {
   projectId: string;
@@ -14,14 +15,14 @@ const providerOptions: Array<{
   mode: string;
   defaultUrl?: string;
 }> = [
-  { id: "openai", label: "OpenAI", mode: "Jeton API chiffré" },
-  { id: "anthropic", label: "Anthropic", mode: "Jeton API chiffré" },
-  { id: "openai-compatible", label: "API compatible OpenAI", mode: "URL + jeton chiffré" },
-  { id: "ollama", label: "Ollama", mode: "Serveur local", defaultUrl: "http://127.0.0.1:11434" },
-  { id: "lm-studio", label: "LM Studio", mode: "Serveur local", defaultUrl: "http://127.0.0.1:1234/v1" },
-  { id: "codex", label: "Codex CLI", mode: "Compte local du serveur" },
-  { id: "claude-code", label: "Claude Code", mode: "Compte local du serveur" },
-  { id: "opencode", label: "OpenCode", mode: "Compte local du serveur" }
+  { id: "openai", label: "OpenAI", mode: "Encrypted API token" },
+  { id: "anthropic", label: "Anthropic", mode: "Encrypted API token" },
+  { id: "openai-compatible", label: "API compatible OpenAI", mode: "URL + encrypted token" },
+  { id: "ollama", label: "Ollama", mode: "Local server", defaultUrl: "http://127.0.0.1:11434" },
+  { id: "lm-studio", label: "LM Studio", mode: "Local server", defaultUrl: "http://127.0.0.1:1234/v1" },
+  { id: "codex", label: "Codex CLI", mode: "Server local account" },
+  { id: "claude-code", label: "Claude Code", mode: "Server local account" },
+  { id: "opencode", label: "OpenCode", mode: "Server local account" }
 ];
 
 export function AiConnectionManager({
@@ -30,6 +31,7 @@ export function AiConnectionManager({
   onError,
   onNotice
 }: AiConnectionManagerProps) {
+  const { t } = useI18n();
   const [connections, setConnections] = useState<AiProviderConnection[]>([]);
   const [editing, setEditing] = useState<AiProviderConnection | null>(null);
   const [provider, setProvider] = useState<AiProvider>("openai");
@@ -104,7 +106,7 @@ export function AiConnectionManager({
           clearSecret: false,
           expectedRevision: editing.revision
         });
-        onNotice("Connexion IA mise à jour.");
+        onNotice(t("AI connection updated."));
       } else {
         await api.createAiConnection(projectId, {
           name: name.trim(),
@@ -113,7 +115,7 @@ export function AiConnectionManager({
           baseUrl: needsUrl ? baseUrl.trim() || null : null,
           secret: secret.trim() || null
         });
-        onNotice("Connexion IA créée. Le secret n’est plus accessible depuis le navigateur.");
+        onNotice(t("AI connection created. The secret is no longer accessible from the browser."));
       }
       reset();
       await load();
@@ -125,12 +127,12 @@ export function AiConnectionManager({
   }
 
   async function remove(connection: AiProviderConnection) {
-    if (!window.confirm(`Supprimer la connexion « ${connection.name} » ?`)) return;
+    if (!window.confirm(t("Delete connection “{name}”?", { name: connection.name }))) return;
     try {
       await api.deleteAiConnection(projectId, connection.id);
       if (editing?.id === connection.id) reset();
       await load();
-      onNotice("Connexion IA supprimée.");
+      onNotice(t("AI connection deleted."));
     } catch (reason) {
       onError(messageFor(reason));
     }
@@ -141,13 +143,12 @@ export function AiConnectionManager({
       <header className="ai-manager-heading">
         <div>
           <span className="eyebrow">AI ASSISTANT</span>
-          <h3>Connexions du projet</h3>
+          <h3>{t("Project connections")}</h3>
           <p>
-            Chaque ticket choisit un profil. Les jetons sont chiffrés côté serveur et ne sont
-            jamais renvoyés au navigateur.
+            {t("Each task chooses a profile. Tokens are encrypted server-side and never returned to the browser.")}
           </p>
         </div>
-        <span className="ai-security-pill">Secrets chiffrés</span>
+        <span className="ai-security-pill">{t("Encrypted secrets")}</span>
       </header>
 
       <div className="ai-connection-list" aria-busy={loading}>
@@ -161,90 +162,89 @@ export function AiConnectionManager({
               <span>{providerLabel(connection.provider)} · {connection.model}</span>
               <small>
                 {connection.authenticationMode === "api-token"
-                  ? connection.hasSecret ? `Jeton ${connection.secretHint ?? "enregistré"}` : "Jeton manquant"
+                  ? connection.hasSecret ? t("Token {hint}", { hint: connection.secretHint ?? t("saved") }) : t("Missing token")
                   : connection.authenticationMode === "local-account"
-                    ? "Compte connecté sur la machine serveur"
+                    ? t("Account connected on the server machine")
                     : connection.baseUrl}
               </small>
               {!connection.localExecutionEnabled && (
-                <em>L’exécution locale doit être autorisée dans la configuration du serveur.</em>
+                <em>{t("Local execution must be enabled in the server configuration.")}</em>
               )}
             </div>
             {canAdminister && (
               <div className="ai-connection-actions">
                 <button className="secondary-button small" type="button" onClick={() => beginEdit(connection)}>
-                  Modifier
+                  {t("Edit")}
                 </button>
                 <button className="text-button" type="button" onClick={() => void remove(connection)}>
-                  Supprimer
+                  {t("Delete")}
                 </button>
               </div>
             )}
           </article>
         ))}
         {!loading && connections.length === 0 && (
-          <p className="empty-note">Aucune connexion IA. Ajoutez un fournisseur ci-dessous.</p>
+          <p className="empty-note">{t("No AI connection. Add a provider below.")}</p>
         )}
       </div>
 
       {canAdminister ? (
         <form className="ai-connection-form" onSubmit={save}>
           <div className="ai-form-heading">
-            <strong>{editing ? "Modifier la connexion" : "Nouvelle connexion"}</strong>
-            {editing && <button className="text-button" type="button" onClick={reset}>Annuler</button>}
+            <strong>{t(editing ? "Edit connection" : "New connection")}</strong>
+            {editing && <button className="text-button" type="button" onClick={reset}>{t("Cancel")}</button>}
           </div>
           <label>
-            <span>Nom du profil</span>
+            <span>{t("Profile name")}</span>
             <input value={name} maxLength={120} required placeholder="Production · OpenAI" onChange={(event) => setName(event.currentTarget.value)} />
           </label>
           <label>
-            <span>Fournisseur</span>
+            <span>{t("Provider")}</span>
             <select value={provider} onChange={(event) => changeProvider(event.currentTarget.value as AiProvider)}>
               {providerOptions.map((item) => (
                 <option value={item.id} key={item.id}>{item.label}</option>
               ))}
             </select>
-            <small>{selectedProvider.mode}</small>
+            <small>{t(selectedProvider.mode)}</small>
           </label>
           <label>
-            <span>Modèle</span>
-            <input value={model} maxLength={200} required placeholder="Nom exact du modèle" onChange={(event) => setModel(event.currentTarget.value)} />
+            <span>{t("Model")}</span>
+            <input value={model} maxLength={200} required placeholder={t("Exact model name")} onChange={(event) => setModel(event.currentTarget.value)} />
           </label>
           {needsUrl && (
             <label>
-              <span>URL du serveur</span>
+              <span>{t("Server URL")}</span>
               <input type="url" value={baseUrl} maxLength={2048} required placeholder="https://ai.example.org/v1" onChange={(event) => setBaseUrl(event.currentTarget.value)} />
             </label>
           )}
           {needsSecret && (
             <label className="ai-secret-field">
-              <span>Jeton API</span>
+              <span>{t("API token")}</span>
               <input
                 type="password"
                 value={secret}
                 maxLength={8192}
                 required={!editing?.hasSecret}
                 autoComplete="new-password"
-                placeholder={editing?.hasSecret ? "Laisser vide pour conserver le jeton" : "Coller le jeton"}
+                placeholder={t(editing?.hasSecret ? "Leave blank to keep the token" : "Paste the token")}
                 onChange={(event) => setSecret(event.currentTarget.value)}
               />
-              <small>Le jeton est envoyé une seule fois et stocké chiffré.</small>
+              <small>{t("The token is sent once and stored encrypted.")}</small>
             </label>
           )}
           {selectedProvider.id === "codex" || selectedProvider.id === "claude-code" || selectedProvider.id === "opencode" ? (
             <p className="ai-local-note">
-              CyTask utilisera le compte déjà connecté à ce CLI sur le serveur. Aucun fichier
-              d’authentification n’est lu ni transmis au client.
+              {t("CyTask will use the account already connected to this CLI on the server. No authentication file is read or sent to the client.")}
             </p>
           ) : null}
           <div className="ai-form-actions">
             <button className="primary-button small" type="submit" disabled={saving}>
-              {saving ? "Enregistrement…" : editing ? "Enregistrer" : "Ajouter la connexion"}
+              {t(saving ? "Saving…" : editing ? "Save" : "Add connection")}
             </button>
           </div>
         </form>
       ) : (
-        <p className="empty-note">Seul un administrateur peut gérer les connexions et les jetons.</p>
+        <p className="empty-note">{t("Only an administrator can manage connections and tokens.")}</p>
       )}
     </section>
   );
@@ -255,5 +255,5 @@ function providerLabel(provider: AiProvider) {
 }
 
 function messageFor(reason: unknown) {
-  return reason instanceof Error ? reason.message : "La connexion IA n’a pas pu être mise à jour.";
+  return reason instanceof Error ? reason.message : "The AI connection could not be updated.";
 }

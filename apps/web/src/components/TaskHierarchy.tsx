@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type { TaskOption, WorkItem } from "../api";
+import { useI18n } from "../i18n";
 
 interface TaskHierarchyMetaProps {
   parent?: TaskOption;
@@ -7,13 +8,14 @@ interface TaskHierarchyMetaProps {
 }
 
 export function TaskHierarchyMeta({ parent, childCount }: TaskHierarchyMetaProps) {
+  const { t } = useI18n();
   if (!parent && childCount === 0) return null;
 
   return (
-    <span className="task-hierarchy-meta" aria-label="Hiérarchie de la tâche">
-      {parent && <span title={`Sous-tâche de ${parent.key}`}>↳ {parent.key}</span>}
+    <span className="task-hierarchy-meta" aria-label={t("Task hierarchy")}>
+      {parent && <span title={t("Subtask of {key}", { key: parent.key })}>↳ {parent.key}</span>}
       {childCount > 0 && (
-        <span>{childCount} sous-tâche{childCount > 1 ? "s" : ""}</span>
+        <span>{t(childCount === 1 ? "{count} subtask" : "{count} subtasks", { count: childCount })}</span>
       )}
     </span>
   );
@@ -44,6 +46,7 @@ export function TaskHierarchySection({
   onRemoveParent,
   onCreateSubtask
 }: TaskHierarchySectionProps) {
+  const { t } = useI18n();
   const [parentTaskId, setParentTaskId] = useState(parent?.id ?? "");
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [creating, setCreating] = useState(false);
@@ -75,15 +78,15 @@ export function TaskHierarchySection({
     <section className="task-hierarchy-section" aria-labelledby="task-hierarchy-title">
       <div className="hierarchy-heading">
         <div>
-          <h3 id="task-hierarchy-title">Sous-tâches</h3>
-          <p>{children.length} enfant{children.length > 1 ? "s" : ""}</p>
+          <h3 id="task-hierarchy-title">{t("Subtasks")}</h3>
+          <p>{t(children.length === 1 ? "{count} child" : "{count} children", { count: children.length })}</p>
         </div>
         <TaskHierarchyMeta parent={parent} childCount={children.length} />
       </div>
 
       {parent && (
         <div className="hierarchy-parent">
-          <span>Parent</span>
+          <span>{t("Parent")}</span>
           <button type="button" onClick={() => onOpenTask(parent.id)}>
             <strong>{parent.key}</strong>
             <span>{parent.title}</span>
@@ -93,7 +96,7 @@ export function TaskHierarchySection({
               className="icon-button quiet"
               type="button"
               disabled={pending}
-              aria-label="Retirer le parent"
+              aria-label={t("Remove parent")}
               onClick={() => void onRemoveParent()}
             >×</button>
           )}
@@ -106,12 +109,12 @@ export function TaskHierarchySection({
             <span className={`status-dot status-dot-${child.status}`} aria-hidden="true" />
             <span>
               <strong>{child.key} · {child.title}</strong>
-              <small>{child.status === "done" ? "Terminée" : "Ouvrir la sous-tâche"}</small>
+              <small>{t(child.status === "done" ? "Done" : "Open subtask")}</small>
             </span>
           </button>
         ))}
         {children.length === 0 && (
-          <p className="empty-note">Cette tâche ne possède pas encore de sous-tâche.</p>
+          <p className="empty-note">{t("This task has no subtasks yet.")}</p>
         )}
       </div>
 
@@ -122,9 +125,9 @@ export function TaskHierarchySection({
               value={parentTaskId}
               onChange={(event) => setParentTaskId(event.currentTarget.value)}
               disabled={pending || parentCandidates.length === 0}
-              aria-label="Choisir la tâche parente"
+              aria-label={t("Choose parent task")}
             >
-              <option value="">Choisir un parent…</option>
+              <option value="">{t("Choose a parent…")}</option>
               {parentCandidates.map((candidate) => (
                 <option value={candidate.id} key={candidate.id}>
                   {candidate.key} — {candidate.title}
@@ -135,7 +138,7 @@ export function TaskHierarchySection({
               className="text-button"
               type="submit"
               disabled={pending || !parentTaskId}
-            >Rattacher</button>
+            >{t("Attach")}</button>
           </form>
 
           <form className="hierarchy-create-form" onSubmit={createSubtask}>
@@ -143,8 +146,8 @@ export function TaskHierarchySection({
               value={subtaskTitle}
               onChange={(event) => setSubtaskTitle(event.currentTarget.value)}
               maxLength={240}
-              placeholder="Créer une sous-tâche…"
-              aria-label="Titre de la nouvelle sous-tâche"
+              placeholder={t("Create a subtask…")}
+              aria-label={t("New subtask title")}
               disabled={creating || pending}
               required
             />
@@ -152,7 +155,7 @@ export function TaskHierarchySection({
               className="primary-button small"
               type="submit"
               disabled={creating || pending}
-            >{creating ? "Création…" : "Créer"}</button>
+            >{t(creating ? "Creating…" : "Create")}</button>
           </form>
         </div>
       )}

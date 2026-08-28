@@ -3,6 +3,7 @@ import {
   api, type ChatMessage, type OrganizationMember,
   type ProjectResource, type TaskOption
 } from "../api";
+import { localizedStatusName, useI18n } from "../i18n";
 
 interface Props {
   messages: ChatMessage[];
@@ -15,6 +16,7 @@ interface Props {
 export function ChatMessageList({
   messages, members, currentUserId, tasks, onOpenTask
 }: Props) {
+  const { locale, t } = useI18n();
   const [viewerResource, setViewerResource] = useState<ProjectResource>();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -48,8 +50,8 @@ export function ChatMessageList({
               {!compact && (
                 <header>
                   <strong>{message.authorName}</strong>
-                  <time dateTime={message.createdAt}>{formatDate(message.createdAt)}</time>
-                  {pinged && <em>vous a mentionné</em>}
+                  <time dateTime={message.createdAt}>{formatDate(message.createdAt, locale)}</time>
+                  {pinged && <em>{t("mentioned you")}</em>}
                 </header>
               )}
               <p>{highlightMentions(message.body, members)}</p>
@@ -59,7 +61,7 @@ export function ChatMessageList({
                     <button type="button" className="chat-task-preview" key={task.id}
                       onClick={() => onOpenTask(task.id)}>
                       <span>{task.key}</span><strong>{task.title}</strong>
-                      <small data-status={task.status}>{statusLabel(task.status)}</small>
+                      <small data-status={task.status}>{localizedStatusName(locale, task.status, task.status)}</small>
                     </button>
                   ))}
                 </div>
@@ -74,7 +76,7 @@ export function ChatMessageList({
               )}
               {message.mentionedUserIds.length > 0 && (
                 <span className="sr-only">
-                  Mentions : {message.mentionedUserIds.map((id) => membersById.get(id)?.displayName).filter(Boolean).join(", ")}
+                  {t("Mentions:")}  {message.mentionedUserIds.map((id) => membersById.get(id)?.displayName).filter(Boolean).join(", ")}
                 </span>
               )}
             </div>
@@ -82,7 +84,7 @@ export function ChatMessageList({
         );
       })}
       {messages.length === 0 && (
-        <div className="chat-empty"><span>#</span><strong>Commencez la discussion</strong><p>Les messages et fichiers de ce salon seront partagés avec l’équipe.</p></div>
+        <div className="chat-empty"><span>#</span><strong>{t("Start the conversation")}</strong><p>{t("Messages and files in this channel are shared with the team.")}</p></div>
       )}
       {viewerResource && (
         <MediaViewer resource={viewerResource} onClose={() => setViewerResource(undefined)} />
@@ -113,8 +115,8 @@ function initials(value: string) {
   return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
+function formatDate(value: string, locale: "en" | "fr") {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-US", {
     weekday: "short", hour: "2-digit", minute: "2-digit"
   }).format(new Date(value));
 }
@@ -132,6 +134,7 @@ function ChatAttachment({
   resource: ProjectResource;
   onPreview: () => void;
 }) {
+  const { t } = useI18n();
   const url = api.resourceContentUrl(resource.id);
   const type = resource.detectedContentType ?? resource.declaredContentType ?? "";
   const isImage = resource.resourceType === "file" && type.startsWith("image/");
@@ -142,9 +145,9 @@ function ChatAttachment({
     return (
       <article className="chat-media-card image">
         <button type="button" className="chat-image-preview" onClick={onPreview}
-          aria-label={"Agrandir " + resource.name}>
+          aria-label={t("Enlarge {name}", { name: resource.name })}>
           <img src={url} alt={resource.name} loading="lazy" />
-          <span>Agrandir</span>
+          <span>{t("Enlarge")}</span>
         </button>
         <AttachmentFooter resource={resource} url={url} canDownload />
       </article>
@@ -156,8 +159,8 @@ function ChatAttachment({
       <article className="chat-media-card video">
         <video src={url} preload="metadata" controls playsInline />
         <div className="chat-video-actions">
-          <button type="button" onClick={onPreview}>Agrandir</button>
-          <a href={url} download={resource.name}>Télécharger</a>
+          <button type="button" onClick={onPreview}>{t("Enlarge")}</button>
+          <a href={url} download={resource.name}>{t("Download")}</a>
         </div>
         <AttachmentFooter resource={resource} url={url} canDownload={false} />
       </article>
@@ -174,10 +177,10 @@ function ChatAttachment({
         <strong>{resource.name}</strong>
         <small>{resource.resourceType === "file"
           ? formatBytes(resource.sizeBytes)
-          : resource.resourceType === "canvas" ? "Canvas CyTask" : "Document CyTask"}</small>
+          : resource.resourceType === "canvas" ? "CyTask Canvas" : "CyTask Document"}</small>
         {resource.body && <p>{resource.body.slice(0, 140)}</p>}
       </div>
-      {canDownload && <a href={url} download={resource.name}>Télécharger</a>}
+      {canDownload && <a href={url} download={resource.name}>{t("Download")}</a>}
     </article>
   );
 }
@@ -191,10 +194,11 @@ function AttachmentFooter({
   url: string;
   canDownload: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <footer className="chat-attachment-footer">
       <span><strong>{resource.name}</strong><small>{formatBytes(resource.sizeBytes)}</small></span>
-      {canDownload && <a href={url} download={resource.name}>Télécharger</a>}
+      {canDownload && <a href={url} download={resource.name}>{t("Download")}</a>}
     </footer>
   );
 }
@@ -206,16 +210,17 @@ function MediaViewer({
   resource: ProjectResource;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const url = api.resourceContentUrl(resource.id);
   const type = resource.detectedContentType ?? resource.declaredContentType ?? "";
   return (
     <div className="chat-media-viewer" role="dialog" aria-modal="true"
-      aria-label={"Aperçu de " + resource.name}
+      aria-label={t("Preview of {name}", { name: resource.name })}
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section>
         <header>
           <div><strong>{resource.name}</strong><small>{formatBytes(resource.sizeBytes)}</small></div>
-          <button type="button" onClick={onClose} aria-label="Fermer l’aperçu">×</button>
+          <button type="button" onClick={onClose} aria-label={t("Close preview")}>×</button>
         </header>
         <div className="chat-media-viewer-content">
           {type.startsWith("image/")
@@ -224,9 +229,9 @@ function MediaViewer({
         </div>
         <footer>
           <a className="primary-button small" href={url} download={resource.name}>
-            ↓ Télécharger
+            ↓ {t("Download")}
           </a>
-          <button type="button" onClick={onClose}>Fermer</button>
+          <button type="button" onClick={onClose}>{t("Close")}</button>
         </footer>
       </section>
     </div>
@@ -243,11 +248,4 @@ function referencedTasks(body: string, tasks: TaskOption[]) {
     if (task) result.set(task.id, task);
   }
   return [...result.values()];
-}
-
-function statusLabel(status: TaskOption["status"]) {
-  return {
-    todo: "À faire", in_progress: "En cours", blocked: "Bloquée",
-    done: "Terminée", cancelled: "Annulée"
-  }[status];
 }

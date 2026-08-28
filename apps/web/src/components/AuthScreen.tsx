@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { ApiError, api, type Session } from "../api";
+import { LanguageSwitcher, useI18n } from "../i18n";
 
 interface AuthScreenProps {
   bootstrapRequired: boolean;
@@ -7,6 +8,7 @@ interface AuthScreenProps {
 }
 
 export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenProps) {
+  const { t } = useI18n();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -30,7 +32,7 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
           });
       onAuthenticated(session);
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : "Connexion impossible.");
+      setError(reason instanceof ApiError ? reason.message : t("Unable to sign in."));
     } finally {
       setPending(false);
     }
@@ -39,51 +41,50 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
   return (
     <main className="auth-shell">
       <section className="auth-story">
-        <a className="brand" href="/" aria-label="CyTask, accueil">
+        <a className="brand" href="/" aria-label="CyTask">
           <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
           <span>CyTask</span>
         </a>
         <div>
-          <p className="eyebrow">Production connectée</p>
-          <h1>Du travail clair, du commit à l’asset.</h1>
-          <p className="hero-copy">
-            Un espace rapide et auto-hébergeable pour piloter les tâches, les médias et Unreal.
-          </p>
+          <p className="eyebrow">{t("Connected production")}</p>
+          <h1>{t("Clear work, from commit to asset.")}</h1>
+          <p className="hero-copy">{t("A fast, self-hosted workspace for tasks, media and Unreal.")}</p>
         </div>
-        <p className="auth-footnote">Open source · Hébergeable · Extensible</p>
+        <p className="auth-footnote">{t("Open source · Self-hosted · Extensible")}</p>
       </section>
 
       <section className="auth-panel">
         <form className="auth-card" onSubmit={submit}>
+          <div className="auth-language"><LanguageSwitcher /></div>
           <div>
-            <p className="eyebrow">{bootstrapRequired ? "Première ouverture" : "Bon retour"}</p>
-            <h2>{bootstrapRequired ? "Créer votre espace" : "Se connecter"}</h2>
+            <p className="eyebrow">{t(bootstrapRequired ? "First launch" : "Welcome back")}</p>
+            <h2>{t(bootstrapRequired ? "Create your workspace" : "Sign in")}</h2>
             <p className="muted">
-              {bootstrapRequired
-                ? "Le premier compte devient propriétaire de l’installation."
-                : "Accédez à votre espace de production."}
+              {t(bootstrapRequired
+                ? "The first account becomes the owner of this installation."
+                : "Open your production workspace.")}
             </p>
           </div>
 
           {bootstrapRequired && (
             <>
               <label>
-                Nom affiché
+                {t("Display name")}
                 <input name="displayName" autoComplete="name" minLength={1} maxLength={80} required />
               </label>
               <label>
-                Organisation
+                {t("Organization")}
                 <input name="organizationName" autoComplete="organization" minLength={2} maxLength={120} required />
               </label>
             </>
           )}
 
           <label>
-            Adresse e-mail
+            {t("Email address")}
             <input name="email" type="email" autoComplete="email" maxLength={254} required />
           </label>
           <label>
-            Mot de passe
+            {t("Password")}
             <input
               name="password"
               type="password"
@@ -92,12 +93,12 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
               maxLength={200}
               required
             />
-            {bootstrapRequired && <small>12 caractères minimum. Une phrase longue fonctionne très bien.</small>}
+            {bootstrapRequired && <small>{t("At least 12 characters. A long passphrase works very well.")}</small>}
           </label>
 
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="primary-button" disabled={pending} type="submit">
-            {pending ? "Un instant…" : bootstrapRequired ? "Initialiser CyTask" : "Continuer"}
+            {pending ? t("Just a moment…") : t(bootstrapRequired ? "Initialize CyTask" : "Continue")}
           </button>
         </form>
       </section>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, type AiAssistantRunResult, type AiProviderConnection, type TaskPlugin } from "../api";
+import { useI18n } from "../i18n";
 
 interface TaskAiAssistantPanelProps {
   taskId: string;
@@ -10,7 +11,13 @@ interface TaskAiAssistantPanelProps {
   onNotice: (message: string) => void;
 }
 
-const outputModes = ["Plan", "Résumé", "Checklist", "Commentaire", "Revue technique"];
+const outputModes = [
+  { value: "Plan", label: "Plan" },
+  { value: "Résumé", label: "Summary" },
+  { value: "Checklist", label: "Checklist" },
+  { value: "Commentaire", label: "Comment" },
+  { value: "Revue technique", label: "Technical review" }
+];
 
 export function TaskAiAssistantPanel({
   taskId,
@@ -20,6 +27,7 @@ export function TaskAiAssistantPanel({
   onError,
   onNotice
 }: TaskAiAssistantPanelProps) {
+  const { t } = useI18n();
   const [connections, setConnections] = useState<AiProviderConnection[]>([]);
   const [connectionId, setConnectionId] = useState(readString(plugin.data.connectionId));
   const [goal, setGoal] = useState(readString(plugin.data.goal));
@@ -93,7 +101,7 @@ export function TaskAiAssistantPanel({
     setSaving(true);
     try {
       await persist();
-      onNotice("Configuration de l’assistant enregistrée dans le ticket.");
+      onNotice(t("Assistant configuration saved in the task."));
     } catch (reason) {
       onError(messageFor(reason));
     } finally {
@@ -116,7 +124,7 @@ export function TaskAiAssistantPanel({
       setResult(response);
       setLastSummary(response.text);
       await persist(response.text);
-      onNotice(`Réponse reçue en ${formatDuration(response.durationMilliseconds)} et conservée dans le ticket.`);
+      onNotice(t("Response received in {duration} and saved in the task.", { duration: formatDuration(response.durationMilliseconds) }));
     } catch (reason) {
       onError(messageFor(reason));
     } finally {
@@ -130,21 +138,21 @@ export function TaskAiAssistantPanel({
         <span className="task-plugin-icon" aria-hidden="true">AI</span>
         <div>
           <h3>AI Assistant</h3>
-          <p>Analyse ce ticket avec une connexion contrôlée par le projet.</p>
+          <p>{t("Analyze this task with a project-controlled connection.")}</p>
         </div>
-        <span className="plugin-revision">rév. {revision}</span>
+        <span className="plugin-revision">{t("rev.")} {revision}</span>
       </header>
 
       <form className="task-ai-form" onSubmit={save}>
         <label className="plugin-field">
-          <span>Connexion IA</span>
+          <span>{t("AI connection")}</span>
           <select
             value={connectionId}
             disabled={!canEdit || saving || running || loading}
             required
             onChange={(event) => setConnectionId(event.currentTarget.value)}
           >
-            <option value="">{loading ? "Chargement…" : "Choisir une connexion"}</option>
+            <option value="">{t(loading ? "Loading…" : "Choose a connection")}</option>
             {connections.map((connection) => (
               <option value={connection.id} key={connection.id}>
                 {connection.name} · {providerLabel(connection.provider)} · {connection.model}
@@ -154,42 +162,42 @@ export function TaskAiAssistantPanel({
           {selectedConnection && (
             <small>
               {selectedConnection.authenticationMode === "local-account"
-                ? "Compte local du serveur · exécution lecture seule/plan"
+                ? t("Local server account · read-only/planning execution")
                 : selectedConnection.hasSecret
-                  ? `Jeton chiffré ${selectedConnection.secretHint ?? ""}`
+                  ? t("Encrypted token {hint}", { hint: selectedConnection.secretHint ?? "" })
                   : selectedConnection.baseUrl}
             </small>
           )}
         </label>
 
         <label className="plugin-field">
-          <span>Sortie attendue</span>
+          <span>{t("Expected output")}</span>
           <select value={outputMode} disabled={!canEdit || saving || running} onChange={(event) => setOutputMode(event.currentTarget.value)}>
-            {outputModes.map((mode) => <option value={mode} key={mode}>{mode}</option>)}
+            {outputModes.map((mode) => <option value={mode.value} key={mode.value}>{t(mode.label)}</option>)}
           </select>
         </label>
 
         <label className="plugin-field plugin-field-wide">
-          <span>Objectif</span>
+          <span>{t("Goal")}</span>
           <textarea
             value={goal}
             disabled={!canEdit || saving || running}
             required
             rows={5}
             maxLength={12000}
-            placeholder="Analyse le ticket et propose les prochaines étapes concrètes…"
+            placeholder={t("Analyze the task and suggest concrete next steps…")}
             onChange={(event) => setGoal(event.currentTarget.value)}
           />
         </label>
 
         <label className="plugin-field plugin-field-wide">
-          <span>Instructions de l’équipe</span>
+          <span>{t("Team instructions")}</span>
           <textarea
             value={instructions}
             disabled={!canEdit || saving || running}
             rows={4}
             maxLength={12000}
-            placeholder="Contraintes techniques, format de réponse, règles du projet…"
+            placeholder={t("Technical constraints, response format, project rules…")}
             onChange={(event) => setInstructions(event.currentTarget.value)}
           />
         </label>
@@ -197,23 +205,23 @@ export function TaskAiAssistantPanel({
         <label className="plugin-field plugin-field-checkbox">
           <input type="checkbox" checked={includeComments} disabled={!canEdit || saving || running} onChange={(event) => setIncludeComments(event.currentTarget.checked)} />
           <span>
-            <strong>Inclure les commentaires</strong>
-            <small>Les 100 commentaires les plus récents sont ajoutés au contexte.</small>
+            <strong>{t("Include comments")}</strong>
+            <small>{t("The 100 most recent comments are added to the context.")}</small>
           </span>
         </label>
 
         {connections.length === 0 && !loading && (
           <p className="ai-empty-warning">
-            Aucune connexion n’est configurée. Un administrateur doit en créer une dans Plugins.
+            {t("No connection is configured. An administrator must create one in Plugins.")}
           </p>
         )}
 
         <div className="task-ai-actions">
-          <small>Le fournisseur reçoit uniquement le contexte affiché et les options ci-dessus.</small>
+          <small>{t("The provider only receives the displayed context and options above.")}</small>
           {canEdit && (
             <div>
               <button className="secondary-button small" type="submit" disabled={saving || running}>
-                {saving ? "Enregistrement…" : "Enregistrer"}
+                {t(saving ? "Saving…" : "Save")}
               </button>
               <button
                 className="primary-button small"
@@ -222,7 +230,7 @@ export function TaskAiAssistantPanel({
                   || selectedConnection.localExecutionEnabled === false}
                 onClick={() => void run()}
               >
-                {running ? "Analyse en cours…" : "Lancer l’assistant"}
+                {t(running ? "Analyzing…" : "Run assistant")}
               </button>
             </div>
           )}
@@ -233,15 +241,15 @@ export function TaskAiAssistantPanel({
         <section className="ai-result">
           <header>
             <div>
-              <span className="eyebrow">DERNIÈRE RÉPONSE</span>
+              <span className="eyebrow">{t("LATEST RESPONSE")}</span>
               <strong>
                 {result
                   ? `${providerLabel(result.provider)} · ${result.model} · ${formatDuration(result.durationMilliseconds)}`
-                  : "Réponse conservée dans le ticket"}
+                  : t("Response saved in the task")}
               </strong>
             </div>
             <button className="secondary-button small" type="button" onClick={() => void navigator.clipboard.writeText(result?.text ?? lastSummary)}>
-              Copier
+              {t("Copy")}
             </button>
           </header>
           <pre>{result?.text ?? lastSummary}</pre>
@@ -273,5 +281,5 @@ function formatDuration(milliseconds: number) {
 }
 
 function messageFor(reason: unknown) {
-  return reason instanceof Error ? reason.message : "L’assistant IA n’a pas pu terminer l’opération.";
+  return reason instanceof Error ? reason.message : "The AI assistant could not complete the operation.";
 }

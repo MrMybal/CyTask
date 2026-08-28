@@ -47,6 +47,7 @@ import { ProjectContentPane } from "./ProjectContentPane";
 import { TeamChatPane } from "./TeamChatPane";
 import { PluginManagerPane } from "./PluginManagerPane";
 import { TaskPluginPanel } from "./TaskPluginPanel";
+import { LanguageSwitcher, localizedStatusName, useI18n } from "../i18n";
 import {
   parseSavedTaskViews,
   savedTaskViewsStorageKey,
@@ -63,18 +64,18 @@ interface WorkspaceProps {
 }
 
 const defaultProjectStatuses: ProjectStatus[] = [
-  { organizationId: "", projectId: "", key: "todo", name: "À faire", color: "#7C8B9A", position: 0, isSystem: true },
-  { organizationId: "", projectId: "", key: "in_progress", name: "En cours", color: "#F2A93B", position: 1, isSystem: true },
-  { organizationId: "", projectId: "", key: "blocked", name: "Bloquée", color: "#FF5C6C", position: 2, isSystem: true },
-  { organizationId: "", projectId: "", key: "done", name: "Terminée", color: "#61E6B5", position: 3, isSystem: true },
-  { organizationId: "", projectId: "", key: "cancelled", name: "Annulée", color: "#7B8491", position: 4, isSystem: true }
+  { organizationId: "", projectId: "", key: "todo", name: "To do", color: "#7C8B9A", position: 0, isSystem: true },
+  { organizationId: "", projectId: "", key: "in_progress", name: "In progress", color: "#F2A93B", position: 1, isSystem: true },
+  { organizationId: "", projectId: "", key: "blocked", name: "Blocked", color: "#FF5C6C", position: 2, isSystem: true },
+  { organizationId: "", projectId: "", key: "done", name: "Done", color: "#61E6B5", position: 3, isSystem: true },
+  { organizationId: "", projectId: "", key: "cancelled", name: "Cancelled", color: "#7B8491", position: 4, isSystem: true }
 ];
 
-const priorityLabels: Record<WorkItem["priority"], string> = {
-  low: "Basse",
-  normal: "Normale",
-  high: "Haute",
-  urgent: "Urgente"
+const priorityLabelKeys: Record<WorkItem["priority"], string> = {
+  low: "Low",
+  normal: "Normal",
+  high: "High",
+  urgent: "Urgent"
 };
 
 const priorities: WorkItem["priority"][] = ["urgent", "high", "normal", "low"];
@@ -107,6 +108,13 @@ type DetailBundle = [
 ];
 
 export function Workspace({ session, onLogout }: WorkspaceProps) {
+  const { locale, t } = useI18n();
+  const priorityLabels = useMemo(() => Object.fromEntries(
+    Object.entries(priorityLabelKeys).map(([key, label]) => [key, t(label)])
+  ) as Record<WorkItem["priority"], string>, [t]);
+  const relativeDate = useCallback((value: string) => formatRelativeDate(value, locale), [locale]);
+  const fullDate = useCallback((value: string) => formatFullDate(value, locale), [locale]);
+  const shortDate = useCallback((value: string) => formatShortDate(value, locale), [locale]);
   const [localSync, setLocalSync] = useState<LocalSyncStatus>();
   const [localSyncFlushing, setLocalSyncFlushing] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -135,7 +143,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [pluginConfigurationRevision, setPluginConfigurationRevision] = useState(0);
   const [searchHits, setSearchHits] = useState<SearchHit[]>();
   const [invitationLink, setInvitationLink] = useState("");
-  const [copyLabel, setCopyLabel] = useState("Copier le lien");
+  const [copyLabel, setCopyLabel] = useState("Copy link");
   const [isEditing, setIsEditing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ label: string; percent: number }>();
   const { toasts, notify, dismiss } = useToasts();
@@ -177,7 +185,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [pendingStatusKeys, setPendingStatusKeys] = useState<Set<string>>(() => new Set());
   const [hierarchyPending, setHierarchyPending] = useState(false);
   const [checklistCreating, setChecklistCreating] = useState(false);
-  const [taskLinkLabel, setTaskLinkLabel] = useState("Copier le lien");
+  const [taskLinkLabel, setTaskLinkLabel] = useState("Copy link");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     window.localStorage.getItem("cytask.sidebarCollapsed") === "true"
   );
@@ -209,7 +217,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   async function flushLocalSync() {
     setLocalSyncFlushing(true);
     try { setLocalSync(await api.flushLocalSync()); }
-    catch { setError("Impossible de sauvegarder le dossier local."); }
+    catch { setError(t("Unable to save the local folder.")); }
     finally { setLocalSyncFlushing(false); }
   }
   const canAdminister = session.role === "owner" || session.role === "admin";
@@ -220,12 +228,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     [projects, selectedProjectId]
   );
   const statusLabels = useMemo(() => Object.fromEntries(
-    projectStatuses.map((status) => [status.key, status.name])
-  ) as Record<string, string>, [projectStatuses]);
+    projectStatuses.map((status) => [status.key, status.isSystem
+      ? localizedStatusName(locale, status.key, status.name)
+      : status.name])
+  ) as Record<string, string>, [locale, projectStatuses]);
   const boardStatuses = useMemo(() => projectStatuses.map((status) => status.key), [projectStatuses]);
   const statusColors = useMemo(() => Object.fromEntries(
     projectStatuses.map((status) => [status.key, status.color])
-  ) as Record<string, string>, [projectStatuses]);
+  ) as Record<string, string>, [locale, projectStatuses]);
   function taskStatusStyle(status: string): CSSProperties {
     const color = statusColors[status] ?? "#7C8B9A";
     return { color, borderColor: color, "--status-color": color } as CSSProperties;
@@ -249,18 +259,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     ? undefined
     : projectLabels.labels.find((label) => label.id === taskLabelFilter);
   const workspaceAreaTitle = workspaceArea === "contents"
-    ? (selectedFolder ? "Contenus · " + selectedFolder.name : "Contenus de l’espace")
+    ? (selectedFolder ? t("Contents") + " · " + selectedFolder.name : t("Workspace contents"))
     : workspaceArea === "chat"
-      ? "Discussion d’équipe"
-      : workspaceArea === "plugins" ? "Plugins du projet" : undefined;
+      ? t("Team chat")
+      : workspaceArea === "plugins" ? t("Project plugins") : undefined;
   const workspaceTitle = selectedFolder?.name ?? (sidebarSection === "project"
     ? selectedProject?.name
     : {
-        inbox: "Boîte de réception",
-        mine: "Mes tâches",
-        today: "Aujourd’hui",
-        later: "Plus tard",
-        completed: "Terminées"
+        inbox: t("Inbox"),
+        mine: t("My tasks"),
+        today: t("Today"),
+        later: t("Later"),
+        completed: t("Completed")
       }[sidebarSection]);
   const taskViewsStorageKey = selectedProjectId
     ? savedTaskViewsStorageKey(session.organizationId, session.userId, selectedProjectId)
@@ -268,25 +278,25 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const taskViewPresets = useMemo<TaskViewDefinition[]>(() => [
     {
       id: "preset:mine",
-      name: "Mes tâches",
+      name: t("My tasks"),
       filters: createTaskFilterSnapshot({ assignee: session.userId, sort: "due" })
     },
     {
       id: "preset:overdue",
-      name: "En retard",
+      name: t("Overdue"),
       filters: createTaskFilterSnapshot({ due: "overdue", sort: "due" })
     },
     {
       id: "preset:blocked",
-      name: "Bloquées",
+      name: t("Blocked"),
       filters: createTaskFilterSnapshot({ status: "blocked", view: "board" })
     },
     {
       id: "preset:unassigned",
-      name: "Sans responsable",
+      name: t("Unassigned"),
       filters: createTaskFilterSnapshot({ assignee: "unassigned", sort: "created" })
     }
-  ], [session.userId]);
+  ], [session.userId, t]);
 
   const selectedTaskId = details?.task.id;
   const labelsByTask = useMemo(() => {
@@ -300,10 +310,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       result.set(assignment.taskId, taskLabels);
     }
     for (const taskLabels of result.values()) {
-      taskLabels.sort((left, right) => left.name.localeCompare(right.name, "fr"));
+      taskLabels.sort((left, right) => left.name.localeCompare(right.name, locale));
     }
     return result;
-  }, [projectLabels]);
+  }, [locale, projectLabels]);
   const mediaByTask = useMemo(() => {
     const result = new Map<string, Attachment[]>();
     for (const attachment of taskMediaPreviews) {
@@ -332,10 +342,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       childrenByParent.set(parent.id, children);
     }
     for (const children of childrenByParent.values()) {
-      children.sort((left, right) => left.key.localeCompare(right.key, "fr", { numeric: true }));
+      children.sort((left, right) => left.key.localeCompare(right.key, locale, { numeric: true }));
     }
     return { parentsByTask, childrenByParent };
-  }, [taskHierarchy.relations, taskOptions]);
+  }, [locale, taskHierarchy.relations, taskOptions]);
   const selectedParent = selectedTaskId
     ? hierarchyIndex.parentsByTask.get(selectedTaskId)
     : undefined;
@@ -523,11 +533,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   }, []);
 
   useEffect(() => {
-    loadProjects().catch(() => setError("Impossible de charger les projets."));
+    loadProjects().catch(() => setError(t("Unable to load projects.")));
   }, [loadProjects]);
 
   useEffect(() => {
-    loadMembers().catch(() => setError("Impossible de charger les membres de l’équipe."));
+    loadMembers().catch(() => setError(t("Unable to load team members.")));
   }, [loadMembers]);
 
   useEffect(() => {
@@ -544,7 +554,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setTasksLoadingMore(false);
     if (selectedProjectId) {
       loadTaskSupport(selectedProjectId)
-        .catch(() => setError("Impossible de charger les informations du projet."));
+        .catch(() => setError(t("Unable to load project information.")));
     } else {
       taskSupportRequestSequence.current += 1;
       setTasksLoading(false);
@@ -566,7 +576,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     if (!selectedProjectId) return;
     const timeout = window.setTimeout(() => {
       void loadTaskPage(selectedProjectId, taskFiltersRef.current)
-        .catch(() => setError("Impossible de charger les tâches."));
+        .catch(() => setError(t("Unable to load tasks.")));
     }, taskQuery.trim().length > 0 ? 250 : 0);
     return () => window.clearTimeout(timeout);
   }, [
@@ -619,7 +629,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLocaleLowerCase("fr") === "k") {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLocaleLowerCase(locale) === "k") {
         event.preventDefault();
         setPaletteOpen((value) => !value);
         return;
@@ -632,10 +642,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       if (event.key === "/") {
         event.preventDefault();
         taskFilterInput.current?.focus();
-      } else if (event.key.toLocaleLowerCase("fr") === "n" && selectedProjectId && canContribute) {
+      } else if (event.key.toLocaleLowerCase(locale) === "n" && selectedProjectId && canContribute) {
         event.preventDefault();
         setShowTaskForm(true);
-      } else if (event.key.toLocaleLowerCase("fr") === "b") {
+      } else if (event.key.toLocaleLowerCase(locale) === "b") {
         event.preventDefault();
         setSidebarCollapsed((value) => !value);
       } else if (event.key === "Escape") {
@@ -670,7 +680,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       detailRequestSequence.current += 1;
       setDetailsLoading(false);
       setIsEditing(false);
-      setTaskLinkLabel("Copier le lien");
+      setTaskLinkLabel("Copy link");
       if (!taskId) {
         setDetails(undefined);
         return;
@@ -828,30 +838,30 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       setSavedTaskViews(nextViews);
       return true;
     } catch {
-      notify("error", "Le navigateur ne permet pas d’enregistrer cette vue.");
+      notify("error", t("The browser cannot save this view."));
       return false;
     }
   }
 
   function taskViewNameIsAvailable(name: string, excludedId?: string) {
-    const normalized = name.trim().toLocaleLowerCase("fr");
+    const normalized = name.trim().toLocaleLowerCase(locale);
     return !savedTaskViews.some((view) =>
-      view.id !== excludedId && view.name.toLocaleLowerCase("fr") === normalized
+      view.id !== excludedId && view.name.toLocaleLowerCase(locale) === normalized
     );
   }
 
   function saveTaskView(name: string) {
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 40) {
-      notify("error", "Le nom de la vue doit contenir entre 1 et 40 caractères.");
+      notify("error", t("The view name must contain between 1 and 40 characters."));
       return false;
     }
     if (!taskViewNameIsAvailable(trimmed)) {
-      notify("error", "Une vue porte déjà ce nom dans ce projet.");
+      notify("error", t("A view already has this name in the project."));
       return false;
     }
     if (savedTaskViews.length >= 20) {
-      notify("error", "Ce projet possède déjà le maximum de 20 vues personnelles.");
+      notify("error", t("This project already has the maximum of 20 personal views."));
       return false;
     }
     const now = new Date().toISOString();
@@ -864,7 +874,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     };
     if (!persistSavedTaskViews([...savedTaskViews, view])) return false;
     setActiveTaskViewId(view.id);
-    notify("success", `Vue « ${view.name} » enregistrée.`);
+    notify("success", t("View “{name}” saved.", { name: view.name }));
     return true;
   }
 
@@ -877,7 +887,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         : view
     );
     if (persistSavedTaskViews(nextViews)) {
-      notify("success", `Vue « ${active.name} » mise à jour.`);
+      notify("success", t("View “{name}” updated.", { name: active.name }));
     }
   }
 
@@ -885,11 +895,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     const active = savedTaskViews.find((view) => view.id === activeTaskViewId);
     const trimmed = name.trim();
     if (!active || !trimmed || trimmed.length > 40) {
-      notify("error", "Le nom de la vue doit contenir entre 1 et 40 caractères.");
+      notify("error", t("The view name must contain between 1 and 40 characters."));
       return false;
     }
     if (!taskViewNameIsAvailable(trimmed, active.id)) {
-      notify("error", "Une vue porte déjà ce nom dans ce projet.");
+      notify("error", t("A view already has this name in the project."));
       return false;
     }
     const nextViews = savedTaskViews.map((view) =>
@@ -898,7 +908,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         : view
     );
     if (!persistSavedTaskViews(nextViews)) return false;
-    notify("success", `Vue renommée « ${trimmed} ».`);
+    notify("success", t("View renamed to “{name}”.", { name: trimmed }));
     return true;
   }
 
@@ -908,7 +918,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     const nextViews = savedTaskViews.filter((view) => view.id !== active.id);
     if (!persistSavedTaskViews(nextViews)) return;
     setActiveTaskViewId(undefined);
-    notify("success", `Vue « ${active.name} » supprimée.`);
+    notify("success", t("View “{name}” deleted.", { name: active.name }));
   }
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
@@ -946,7 +956,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
       form.reset();
       setShowTaskForm(false);
-      notify("success", `${task.key} créée.`);
+      notify("success", t("{key} created.", { key: task.key }));
       await loadTasks(selectedProjectId);
       setDetailTab("overview");
       setDetails(undefined);
@@ -972,7 +982,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         assigneeId: null
       });
       await loadTasks(selectedProjectId);
-      notify("success", `${task.key} créée.`);
+      notify("success", t("{key} created.", { key: task.key }));
     } catch (reason) {
       setError(messageFor(reason));
       if (selectedProjectId) await loadTasks(selectedProjectId).catch(() => undefined);
@@ -1009,7 +1019,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     try {
       await api.createChecklistItem(taskId, title);
       form.reset();
-      notify("success", "Élément ajouté à la checklist.");
+      notify("success", t("Checklist item added."));
       await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
     } catch (reason) {
       setError(messageFor(reason));
@@ -1041,7 +1051,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     } catch (reason) {
       await loadDetails(taskId).catch(() => undefined);
       setError(reason instanceof ApiError && reason.status === 409
-        ? "La checklist a changé. Sa dernière version a été rechargée."
+        ? t("The checklist changed. Its latest version has been reloaded.")
         : messageFor(reason));
     } finally {
       setPendingChecklistItemIds((current) => {
@@ -1054,19 +1064,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   async function deleteChecklistItem(item: TaskChecklistItem) {
     if (!details || pendingChecklistItemIds.has(item.id)) return;
-    if (!window.confirm(`Supprimer « ${item.title} » de la checklist ?`)) return;
+    if (!window.confirm(t("Remove “{title}” from the checklist?", { title: item.title }))) return;
     const taskId = details.task.id;
     const projectId = details.task.projectId;
     setError("");
     setPendingChecklistItemIds((current) => new Set(current).add(item.id));
     try {
       await api.deleteChecklistItem(taskId, item.id, item.revision);
-      notify("success", "Élément supprimé de la checklist.");
+      notify("success", t("Checklist item removed."));
       await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 409) {
         await loadDetails(taskId).catch(() => undefined);
-        setError("La checklist a changé. Sa dernière version a été rechargée.");
+        setError(t("The checklist changed. Its latest version has been reloaded."));
       } else {
         setError(messageFor(reason));
       }
@@ -1114,7 +1124,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
       form.reset();
       setProjectStatuses(await api.projectStatuses(selectedProjectId));
-      notify("success", "Nouvel état ajouté au projet.");
+      notify("success", t("New status added to the project."));
     } catch (reason) {
       setError(messageFor(reason));
     }
@@ -1136,7 +1146,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
       setProjectStatuses((current) => current.map((candidate) =>
         candidate.key === updated.key ? updated : candidate));
-      notify("success", `État « ${updated.name} » mis à jour.`);
+      notify("success", t("Status “{name}” updated.", { name: updated.name }));
     } catch (reason) {
       setError(messageFor(reason));
     } finally {
@@ -1156,7 +1166,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     try {
       const label = await api.createProjectLabel(projectId, { name, color });
       await api.addTaskLabel(taskId, label.id);
-      notify("success", `Label « ${label.name} » créé et attribué.`);
+      notify("success", t("Label “{name}” created and assigned.", { name: label.name }));
       await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
       return true;
     } catch (reason) {
@@ -1189,8 +1199,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       notify(
         "success",
         parentLabelId
-          ? `Sous-dossier « ${folder.name} » créé.`
-          : `Dossier « ${folder.name} » créé.`
+          ? t("Subfolder “{name}” created.", { name: folder.name })
+          : t("Folder “{name}” created.", { name: folder.name })
       );
     } catch (reason) {
       setError(messageFor(reason));
@@ -1204,7 +1214,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setPendingLabelIds((current) => new Set(current).add(label.id));
     try {
       await api.deleteProjectLabel(projectId, label.id);
-      notify("success", `Label « ${label.name} » supprimé du projet.`);
+      notify("success", t("Label “{name}” removed from project.", { name: label.name }));
       await loadTasks(projectId);
       if (selectedTaskId) await loadDetails(selectedTaskId).catch(() => undefined);
     } catch (reason) {
@@ -1226,7 +1236,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setHierarchyPending(true);
     try {
       await api.setTaskParent(taskId, parentTaskId);
-      notify("success", "Tâche parente mise à jour.");
+      notify("success", t("Parent task updated."));
       await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
     } catch (reason) {
       setError(messageFor(reason));
@@ -1244,7 +1254,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setHierarchyPending(true);
     try {
       await api.removeTaskParent(taskId);
-      notify("success", "La tâche est maintenant à la racine du projet.");
+      notify("success", t("The task is now at the project root."));
       await Promise.all([loadDetails(taskId), loadTasks(projectId)]);
     } catch (reason) {
       setError(messageFor(reason));
@@ -1269,7 +1279,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         assigneeId: null
       });
       await api.setTaskParent(subtask.id, parentTaskId);
-      notify("success", `Sous-tâche « ${subtask.title} » créée.`);
+      notify("success", t("Subtask “{name}” created.", { name: subtask.title }));
       await loadTasks(projectId);
       return true;
     } catch (reason) {
@@ -1338,7 +1348,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       if (reason instanceof ApiError && reason.status === 409) {
         await loadDetails(details.task.id);
         setIsEditing(false);
-        setError("Cette tâche a changé pendant votre édition. La dernière version a été rechargée.");
+        setError(t("This task changed while you were editing. The latest version has been reloaded."));
       } else {
         setError(messageFor(reason));
       }
@@ -1370,7 +1380,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       if (selectedProjectId) await loadTasks(selectedProjectId).catch(() => undefined);
       if (selectedTaskId === task.id) await loadDetails(task.id);
       setError(reason instanceof ApiError && reason.status === 409
-        ? "Cette tâche a été modifiée ailleurs. Son état actuel a été rechargé."
+        ? t("This task was changed elsewhere. Its current status has been reloaded.")
         : messageFor(reason));
     } finally {
       setPendingTaskIds((current) => {
@@ -1399,12 +1409,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       setDetails((current) => current?.task.id === updated.id ? { ...current, task: updated } : current);
       await loadTasks(updated.projectId);
       notify("success", assigneeIds.length > 1
-        ? `${assigneeIds.length} responsables assignés.`
-        : assigneeIds.length === 1 ? "Responsable assigné." : "Responsables retirés.");
+        ? t("{count} assignees assigned.", { count: assigneeIds.length })
+        : assigneeIds.length === 1 ? t("Assignee assigned.") : t("Assignees removed."));
     } catch (reason) {
       if (selectedTaskId === task.id) await loadDetails(task.id).catch(() => undefined);
       setError(reason instanceof ApiError && reason.status === 409
-        ? "Cette tâche a été modifiée ailleurs. Sa dernière version a été rechargée."
+        ? t("This task was changed elsewhere. Its latest version has been reloaded.")
         : messageFor(reason));
     } finally {
       setPendingTaskIds((current) => {
@@ -1447,7 +1457,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       if (selectedProjectId) await loadTasks(selectedProjectId).catch(() => undefined);
       if (selectedTaskId === task.id) await loadDetails(task.id).catch(() => undefined);
       setError(reason instanceof ApiError && reason.status === 409
-        ? "Cette tâche a été modifiée ailleurs. Sa dernière version a été rechargée."
+        ? t("This task was changed elsewhere. Its latest version has been reloaded.")
         : messageFor(reason));
     } finally {
       setPendingTaskIds((current) => {
@@ -1558,12 +1568,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       }
 
       if (failures.length === 0) {
-        notify("success", eligible.length + " tâche(s) mise(s) à jour.");
+        notify("success", t("{count} task(s) updated.", { count: eligible.length }));
         return true;
       }
       notify(
         "error",
-        updatedTasks.length + " tâche(s) mise(s) à jour, " + failures.length + " en conflit ou en erreur."
+        t("{updated} task(s) updated, {failed} in conflict or error.", { updated: updatedTasks.length, failed: failures.length })
       );
       return false;
     } finally {
@@ -1646,13 +1656,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       if (failures.length === 0) {
         notify(
           "success",
-          eligible.length + " tâche(s) " + (shouldAssign ? "ajoutée(s) au dossier/label." : "retirée(s) du dossier/label.")
+          t(shouldAssign ? "{count} task(s) added to the folder/label." : "{count} task(s) removed from the folder/label.", { count: eligible.length })
         );
         return true;
       }
       notify(
         "error",
-        successfulIds.size + " tâche(s) traitée(s), " + failures.length + " en erreur."
+        t("{processed} task(s) processed, {failed} failed.", { processed: successfulIds.size, failed: failures.length })
       );
       return false;
     } finally {
@@ -1695,7 +1705,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
       const link = `${window.location.origin}${window.location.pathname}#/invite/${invitation.token}`;
       setInvitationLink(link);
-      setCopyLabel("Copier le lien");
+      setCopyLabel("Copy link");
       form.reset();
     } catch (reason) {
       setError(messageFor(reason));
@@ -1755,7 +1765,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         const receivedBytes = upload.chunks.reduce((total, chunk) => total + chunk.sizeBytes, 0);
         notify(
           "info",
-          `Reprise de ${file.name} à ${Math.round((receivedBytes / file.size) * 100)} %.`
+          t("Resuming {name} at {percent}%.", { name: file.name, percent: Math.round((receivedBytes / file.size) * 100) })
         );
       } else {
         upload = await api.createAttachmentUpload(taskId, {
@@ -1774,12 +1784,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         && chunk.sizeBytes === Math.min(upload.chunkSizeBytes, file.size - chunkIndex * upload.chunkSizeBytes)
       );
       if (!chunksAreContiguous || sent > file.size) {
-        throw new ApiError("La session de reprise contient des blocs incohérents.", 409);
+        throw new ApiError(t("The resume session contains inconsistent chunks."), 409);
       }
 
       if (sent > 0) {
         setUploadProgress({
-          label: `Reprise à ${formatBytes(sent)} / ${formatBytes(file.size)}`,
+          label: t("Resuming at {sent} / {total}", { sent: formatBytes(sent), total: formatBytes(file.size) }),
           percent: Math.round((sent / file.size) * 100)
         });
       }
@@ -1796,9 +1806,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         });
       }
 
-      setUploadProgress({ label: "Vérification serveur…", percent: 100 });
+      setUploadProgress({ label: t("Server verification…"), percent: 100 });
       await api.completeAttachmentUpload(upload.id);
-      notify("success", `${file.name} envoyé, analyse en cours.`);
+      notify("success", t("{name} uploaded; scanning in progress.", { name: file.name }));
       detailPrefetch.current.delete(taskId);
       await loadDetails(taskId);
       form?.reset();
@@ -1919,7 +1929,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setShowTokens(false);
     setIsEditing(false);
     setDetailTab("overview");
-    setTaskLinkLabel("Copier le lien");
+    setTaskLinkLabel("Copy link");
     setError("");
     if (selectedTaskId !== taskId) setDetails(undefined);
     const taskHash = `#/tasks/${taskId}`;
@@ -1933,7 +1943,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setDetails(undefined);
     setTaskPlugins([]);
     setIsEditing(false);
-    setTaskLinkLabel("Copier le lien");
+    setTaskLinkLabel("Copy link");
     if (taskIdFromHash(window.location.hash)) {
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
@@ -1945,19 +1955,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     const url = `${window.location.origin}${window.location.pathname}${window.location.search}${taskHash}`;
     try {
       await navigator.clipboard.writeText(url);
-      setTaskLinkLabel("Lien copié");
-      notify("success", "Lien de la tâche copié.");
+      setTaskLinkLabel("Link copied");
+      notify("success", t("Task link copied."));
     } catch {
-      setTaskLinkLabel("Copie impossible");
+      setTaskLinkLabel("Copy failed");
     }
   }
 
   async function copyInvitation() {
     try {
       await navigator.clipboard.writeText(invitationLink);
-      setCopyLabel("Lien copié");
+      setCopyLabel("Link copied");
     } catch {
-      setCopyLabel("Sélectionnez le lien");
+      setCopyLabel("Select the link");
     }
   }
 
@@ -1974,34 +1984,34 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     if (selectedProjectId && canContribute) {
       actions.push({
         id: "new-task",
-        label: "Nouvelle tâche",
+        label: t("New task"),
         hint: "N",
-        keywords: "créer ajouter task",
+        keywords: "create add task créer ajouter tâche",
         run: () => setShowTaskForm(true)
       });
     }
     actions.push(
       {
         id: "toggle-view",
-        label: taskView === "list" ? "Passer en vue Kanban" : "Passer en vue Liste",
+        label: t(taskView === "list" ? "Switch to Kanban view" : "Switch to List view"),
         keywords: "kanban liste board vue",
         run: () => setTaskView((value) => value === "list" ? "board" : "list")
       },
       {
         id: "team",
-        label: "Ouvrir l’équipe",
+        label: t("Open team"),
         keywords: "membres inviter equipe",
         run: () => void openTeam()
       },
       {
         id: "activity",
-        label: "Ouvrir le journal d’activité",
+        label: t("Open activity log"),
         keywords: "historique audit",
         run: () => void openActivity()
       },
       {
         id: "tokens",
-        label: "Gérer les jetons d’API",
+        label: t("Manage API tokens"),
         keywords: "api token plugin integration",
         run: () => {
           closeTask();
@@ -2012,7 +2022,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       },
       {
         id: "sidebar",
-        label: sidebarCollapsed ? "Afficher la barre latérale" : "Masquer la barre latérale",
+        label: t(sidebarCollapsed ? "Show sidebar" : "Hide sidebar"),
         hint: "B",
         keywords: "sidebar navigation",
         run: () => setSidebarCollapsed((value) => !value)
@@ -2021,7 +2031,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     if (canAdminister) {
       actions.push({
         id: "new-project",
-        label: "Créer un projet",
+        label: t("Create project"),
         keywords: "projet nouveau",
         run: () => setShowProjectForm(true)
       });
@@ -2034,77 +2044,77 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     <div className={`workspace-shell theme-${themeMode}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-top">
-          <a className="brand compact" href="/" aria-label="CyTask, accueil">
+          <a className="brand compact" href="/" aria-label={t("CyTask home")}>
             <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
             <span>CyTask</span>
           </a>
           {canAdminister && (
-            <button className="icon-button" title="Créer un projet" onClick={() => setShowProjectForm((value) => !value)}>+</button>
+            <button className="icon-button" title={t("Create project")} onClick={() => setShowProjectForm((value) => !value)}>+</button>
           )}
         </div>
 
         {showProjectForm && (
           <form className="inline-form" onSubmit={createProject}>
-            <input name="name" placeholder="Nom du projet" maxLength={120} required autoFocus />
-            <input name="key" placeholder="Clé · CY" minLength={2} maxLength={10} required />
-            <button type="submit">Créer</button>
+            <input name="name" placeholder={t("Project name")} maxLength={120} required autoFocus />
+            <input name="key" placeholder={t("Key · CY")} minLength={2} maxLength={10} required />
+            <button type="submit">{t("Create")}</button>
           </form>
         )}
 
         <div className="sidebar-scroll">
-          <nav className="sidebar-home" aria-label="Accueil">
-            <p className="nav-label">Accueil</p>
+          <nav className="sidebar-home" aria-label={t("Home")}>
+            <p className="nav-label">{t("Home")}</p>
             <button
               className={sidebarSection === "inbox" ? "sidebar-nav-link active" : "sidebar-nav-link"}
               type="button"
-              title="Boîte de réception"
+              title={t("Inbox")}
               onClick={() => selectSidebarSection("inbox")}
             >
               <span className="sidebar-nav-icon">▣</span>
-              <span className="sidebar-nav-copy">Boîte de réception</span>
+              <span className="sidebar-nav-copy">{t("Inbox")}</span>
               <span className="nav-count">{taskCounts.todo}</span>
             </button>
             <button
               className={sidebarSection === "mine" ? "sidebar-nav-link active" : "sidebar-nav-link"}
               type="button"
-              title="Mes tâches"
+              title={t("My tasks")}
               onClick={() => selectSidebarSection("mine")}
             >
               <span className="sidebar-nav-icon">◎</span>
-              <span className="sidebar-nav-copy">Mes tâches</span>
+              <span className="sidebar-nav-copy">{t("My tasks")}</span>
             </button>
             <button
               className={sidebarSection === "today" ? "sidebar-nav-link active" : "sidebar-nav-link"}
               type="button"
-              title="Aujourd’hui"
+              title={t("Today")}
               onClick={() => selectSidebarSection("today")}
             >
               <span className="sidebar-nav-icon">◷</span>
-              <span className="sidebar-nav-copy">Aujourd’hui</span>
+              <span className="sidebar-nav-copy">{t("Today")}</span>
             </button>
             <button
               className={sidebarSection === "later" ? "sidebar-nav-link active" : "sidebar-nav-link"}
               type="button"
-              title="Plus tard"
+              title={t("Later")}
               onClick={() => selectSidebarSection("later")}
             >
               <span className="sidebar-nav-icon">↗</span>
-              <span className="sidebar-nav-copy">Plus tard</span>
+              <span className="sidebar-nav-copy">{t("Later")}</span>
             </button>
             <button
               className={sidebarSection === "completed" ? "sidebar-nav-link active" : "sidebar-nav-link"}
               type="button"
-              title="Terminées"
+              title={t("Completed")}
               onClick={() => selectSidebarSection("completed")}
             >
               <span className="sidebar-nav-icon">✓</span>
-              <span className="sidebar-nav-copy">Terminées</span>
+              <span className="sidebar-nav-copy">{t("Completed")}</span>
               <span className="nav-count">{taskCounts.done}</span>
             </button>
           </nav>
 
-          <nav className="project-list" aria-label="Espaces et dossiers">
-            <p className="nav-label">Espaces</p>
+          <nav className="project-list" aria-label={`${t("Spaces")} · ${t("Folders")}`}>
+            <p className="nav-label">{t("Spaces")}</p>
             {projects.map((project) => (
               <div className="project-tree" key={project.id}>
                 <button
@@ -2139,14 +2149,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                           closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
                           setWorkspaceArea("contents"); setSidebarSection("project");
                         }}>
-                        <span>◇</span><span>Contenus & fichiers</span>
+                        <span>◇</span><span>{t("Contents")} &amp; {t("Files").toLocaleLowerCase(locale)}</span>
                       </button>
                       <button className={workspaceArea === "chat" ? "active" : ""} type="button"
                         onClick={() => {
                           closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
                           setWorkspaceArea("chat"); setSidebarSection("project");
                         }}>
-                        <span>#</span><span>Chat d’équipe</span>
+                        <span>#</span><span>{t("Team chat")}</span>
                       </button>
                       <button className={workspaceArea === "plugins" ? "active" : ""} type="button"
                         onClick={() => {
@@ -2160,7 +2170,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 )}
               </div>
             ))}
-            {projects.length === 0 && <p className="empty-note">Créez votre premier projet.</p>}
+            {projects.length === 0 && <p className="empty-note">{t("Create your first project.")}</p>}
           </nav>
         </div>
 
@@ -2168,24 +2178,24 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           <button
             className={`team-link local-sync-link${localSync.conflictCount > 0 ? " has-conflicts" : ""}`}
             type="button"
-            title={`${localSync.message ?? "Mode local"} · ${localSync.peerDeviceCount} appareil(s) · ${localSync.snapshotCount} snapshot(s)`}
+            title={`${localSync.message ?? t("Local mode")} · ${t("{count} device(s)", { count: localSync.peerDeviceCount ?? 0 })} · ${t("{count} snapshot(s)", { count: localSync.snapshotCount ?? 0 })}`}
             disabled={localSyncFlushing}
             onClick={() => void flushLocalSync()}
           >
             <span className="project-avatar">{localSync.conflictCount > 0 ? "!" : "↻"}</span>
-            <span>{localSyncFlushing ? "Sauvegarde…" : localSync.conflictCount > 0
-              ? `${localSync.conflictCount} conflit(s) Sync` : "Local · Synchronisé"}</span>
+            <span>{localSyncFlushing ? t("Saving…") : localSync.conflictCount > 0
+              ? t("{count} Sync conflict(s)", { count: localSync.conflictCount }) : t("Local · Synced")}</span>
           </button>
         )}
-        <button className="team-link" title="Équipe" onClick={() => void openTeam()}>
+        <button className="team-link" title={t("Team")} onClick={() => void openTeam()}>
           <span className="project-avatar">EQ</span>
-          <span>Équipe</span>
+          <span>{t("Team")}</span>
         </button>
-        <button className="team-link activity-link" title="Activité" onClick={() => void openActivity()}>
+        <button className="team-link activity-link" title={t("Activity")} onClick={() => void openActivity()}>
           <span className="project-avatar">AC</span>
-          <span>Activité</span>
+          <span>{t("Activity")}</span>
         </button>
-        <button className="team-link" title="API et jetons" onClick={() => {
+        <button className="team-link" title={t("API and tokens")} onClick={() => {
           closeTask();
           setShowTeam(false);
           setShowActivity(false);
@@ -2198,12 +2208,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         <button
           className="team-link theme-link"
           type="button"
-          title={themeMode === "dark" ? "Passer au mode clair" : "Passer au mode sombre"}
+          title={t(themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode")}
           onClick={() => setThemeMode((current) => current === "dark" ? "light" : "dark")}
         >
           <span className="project-avatar">{themeMode === "dark" ? "☀" : "☾"}</span>
-          <span>{themeMode === "dark" ? "Mode clair" : "Mode sombre"}</span>
+          <span>{t(themeMode === "dark" ? "Light mode" : "Dark mode")}</span>
         </button>
+
+        <div className="sidebar-language"><LanguageSwitcher compact /></div>
 
         <div className="profile-block">
           <span className="profile-avatar">{initials(session.displayName)}</span>
@@ -2211,18 +2223,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             <strong>{session.displayName}</strong>
             <small>{session.role}</small>
           </span>
-          <button className="text-button" onClick={logout}>Quitter</button>
+          <button className="text-button" onClick={logout}>{t("Log out")}</button>
         </div>
       </aside>
 
       <main className="task-pane">
         <header className="pane-header">
           <div>
-            <p className="eyebrow">{selectedProject?.key ?? "ESPACE"}</p>
-            <h1>{workspaceAreaTitle ?? workspaceTitle ?? "Bienvenue dans CyTask"}</h1>
+            <p className="eyebrow">{selectedProject?.key ?? t("WORKSPACE")}</p>
+            <h1>{workspaceAreaTitle ?? workspaceTitle ?? t("Welcome to CyTask")}</h1>
             {selectedProject && workspaceArea === "tasks" && (
               <p className="project-summary">
-                {`${taskTotalCount} affichée${taskTotalCount === 1 ? "" : "s"} sur ${taskOptions.length} tâches · ${taskCounts.in_progress} en cours`}
+                {t("{shown} shown out of {total} tasks · {progress} in progress", { shown: taskTotalCount, total: taskOptions.length, progress: taskCounts.in_progress ?? 0 })}
               </p>
             )}
           </div>
@@ -2230,40 +2242,40 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             <button
               className="icon-button sidebar-toggle"
               type="button"
-              aria-label={sidebarCollapsed ? "Déployer la barre latérale" : "Replier la barre latérale"}
+              aria-label={t(sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")}
               aria-pressed={sidebarCollapsed}
-              title={sidebarCollapsed ? "Afficher la navigation (B)" : "Agrandir l’espace de travail (B)"}
+              title={t(sidebarCollapsed ? "Show navigation (B)" : "Expand workspace (B)")}
               onClick={() => setSidebarCollapsed((value) => !value)}
             >{sidebarCollapsed ? "›" : "‹"}</button>
             <button
               className="palette-trigger"
               type="button"
-              title="Palette de commandes (Ctrl+K)"
+              title={t("Command palette (Ctrl+K)")}
               onClick={() => setPaletteOpen(true)}
             >
-              <span aria-hidden="true">⌘</span> Commandes <kbd>Ctrl K</kbd>
+              <span aria-hidden="true">⌘</span> {t("Commands")} <kbd>Ctrl K</kbd>
             </button>
             <form className="workspace-search" role="search" onSubmit={search}>
-              <input name="query" aria-label="Rechercher" placeholder="Rechercher…" minLength={2} maxLength={100} required />
-              <button type="submit" aria-label="Lancer la recherche">⌕</button>
+              <input name="query" aria-label={t("Search")} placeholder={t("Search…")} minLength={2} maxLength={100} required />
+              <button type="submit" aria-label={t("Run search")}>⌕</button>
             </form>
             {selectedProject && canContribute && workspaceArea === "tasks" && (
               <button
                 className="primary-button small"
-                title="Nouvelle tâche (N)"
+                title={t("New task (N)")}
                 onClick={() => setShowTaskForm((value) => !value)}
-              >Nouvelle tâche <kbd>N</kbd></button>
+              >{t("New task")} <kbd>N</kbd></button>
             )}
           </div>
         </header>
 
         {showTaskForm && selectedProject && workspaceArea === "tasks" && (
           <form className="task-form" onSubmit={createTask}>
-            <input name="title" placeholder="Que faut-il accomplir ?" maxLength={240} required autoFocus />
-            <textarea name="description" placeholder="Description optionnelle" maxLength={20000} rows={3} />
+            <input name="title" placeholder={t("What needs to be done?")} maxLength={240} required autoFocus />
+            <textarea name="description" placeholder={t("Optional description")} maxLength={20000} rows={3} />
             <div className="task-planning-fields">
               <label>
-                Priorité
+                {t("Priority")}
                 <select name="priority" defaultValue="normal">
                   {priorities.map((priority) => (
                     <option value={priority} key={priority}>{priorityLabels[priority]}</option>
@@ -2271,13 +2283,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 </select>
               </label>
               <label>
-                Échéance
+                {t("Due date")}
                 <input name="dueAt" type="datetime-local" />
               </label>
               <label>
-                Assignée à
+                {t("Assignees")}
                 <select name="assigneeId" defaultValue="">
-                  <option value="">Personne</option>
+                  <option value="">{t("Nobody")}</option>
                   {members.map((member) => (
                     <option value={member.userId} key={member.userId}>{member.displayName}</option>
                   ))}
@@ -2285,8 +2297,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               </label>
             </div>
             <div>
-              <button className="primary-button small" type="submit">Créer la tâche</button>
-              <button className="text-button" type="button" onClick={() => setShowTaskForm(false)}>Annuler</button>
+              <button className="primary-button small" type="submit">{t("Create task")}</button>
+              <button className="text-button" type="button" onClick={() => setShowTaskForm(false)}>{t("Cancel")}</button>
             </div>
           </form>
         )}
@@ -2322,36 +2334,36 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             onNotice={(message) => notify("success", message)}
           />
         ) : searchHits ? (
-          <section className="search-results" aria-label="Résultats de recherche">
+          <section className="search-results" aria-label={t("Search results")}>
             <div className="search-title">
-              <h2>Résultats</h2>
-              <button className="text-button" onClick={() => setSearchHits(undefined)}>Fermer la recherche</button>
+              <h2>{t("Results")}</h2>
+              <button className="text-button" onClick={() => setSearchHits(undefined)}>{t("Close search")}</button>
             </div>
             {searchHits.map((hit) => (
               <button className="search-hit" key={`${hit.type}-${hit.id}`} onClick={() => openSearchHit(hit)}>
                 <span className="project-avatar">{hit.type === "task" ? "TA" : "PR"}</span>
                 <span className="search-hit-copy">
                   <strong>{hit.title}</strong>
-                  <small>{hit.key} · {hit.excerpt || "Sans description"}</small>
+                  <small>{hit.key} · {hit.excerpt || t("No description")}</small>
                 </span>
                 <time dateTime={hit.updatedAt}>{relativeDate(hit.updatedAt)}</time>
               </button>
             ))}
-            {searchHits.length === 0 && <p className="empty-list">Aucun résultat dans cet espace.</p>}
+            {searchHits.length === 0 && <p className="empty-list">{t("No results in this workspace.")}</p>}
           </section>
         ) : !selectedProject ? (
           <section className="empty-state">
             <span className="empty-symbol">↗</span>
-            <h2>Commencez par un projet</h2>
-            <p>Un projet rassemble ses tâches, ses médias et bientôt ses références Git.</p>
+            <h2>{t("Start with a project")}</h2>
+            <p>{t("A project brings together tasks, media and Git references.")}</p>
             {canAdminister && (
-              <button className="primary-button" onClick={() => setShowProjectForm(true)}>Créer un projet</button>
+              <button className="primary-button" onClick={() => setShowProjectForm(true)}>{t("Create project")}</button>
             )}
           </section>
         ) : (
           <>
-            <section className="task-command" aria-label="Pilotage des tâches">
-              <div className="task-metrics" aria-label="Résumé par état">
+            <section className="task-command" aria-label={t("Task controls")}>
+              <div className="task-metrics" aria-label={t("Status summary")}>
                 <button
                   className={taskStatusFilter === "all"
                     && taskPriorityFilter === "all"
@@ -2370,7 +2382,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     && !taskQuery}
                   onClick={resetTaskFilters}
                 >
-                  <strong>{tasks.length}</strong><span>Total</span>
+                  <strong>{tasks.length}</strong><span>{t("Total")}</span>
                 </button>
                 <button
                   className={taskStatusFilter === "in_progress" ? "task-metric active" : "task-metric"}
@@ -2378,7 +2390,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   aria-pressed={taskStatusFilter === "in_progress"}
                   onClick={() => setTaskStatusFilter("in_progress")}
                 >
-                  <strong>{taskCounts.in_progress}</strong><span>En cours</span>
+                  <strong>{taskCounts.in_progress}</strong><span>{t("In progress")}</span>
                 </button>
                 <button
                   className={taskStatusFilter === "blocked" ? "task-metric active warning" : "task-metric warning"}
@@ -2386,7 +2398,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   aria-pressed={taskStatusFilter === "blocked"}
                   onClick={() => setTaskStatusFilter("blocked")}
                 >
-                  <strong>{taskCounts.blocked}</strong><span>Bloquées</span>
+                  <strong>{taskCounts.blocked}</strong><span>{t("Blocked")}</span>
                 </button>
                 <button
                   className={taskStatusFilter === "done" ? "task-metric active success" : "task-metric success"}
@@ -2394,7 +2406,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   aria-pressed={taskStatusFilter === "done"}
                   onClick={() => setTaskStatusFilter("done")}
                 >
-                  <strong>{taskCounts.done}</strong><span>Terminées</span>
+                  <strong>{taskCounts.done}</strong><span>{t("Done")}</span>
                 </button>
               </div>
               <TaskSavedViews
@@ -2412,122 +2424,122 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
               <div className="task-tools">
                 <label className="task-filter-search">
-                  <span className="sr-only">Filtrer les tâches</span>
+                  <span className="sr-only">{t("Filter tasks")}</span>
                   <input
                     ref={taskFilterInput}
                     type="search"
                     maxLength={240}
                     value={taskQuery}
                     onChange={(event) => setTaskQuery(event.currentTarget.value)}
-                    placeholder="Filtrer par titre, clé…"
+                    placeholder={t("Search by title or key…")}
                   />
                 </label>
                 <select
                   className="task-status-filter"
-                  aria-label="Filtrer par état"
+                  aria-label={t("Filter by status")}
                   value={taskStatusFilter}
                   onChange={(event) => setTaskStatusFilter(event.currentTarget.value as TaskStatusFilter)}
                 >
-                  <option value="all">Tous les états</option>
+                  <option value="all">{t("All statuses")}</option>
                   {boardStatuses.map((status) => (
                     <option value={status} key={status}>{statusLabels[status]} · {taskCounts[status]}</option>
                   ))}
                 </select>
                 <select
                   className="task-priority-filter"
-                  aria-label="Filtrer par priorité"
+                  aria-label={t("Filter by priority")}
                   value={taskPriorityFilter}
                   onChange={(event) => setTaskPriorityFilter(event.currentTarget.value as TaskPriorityFilter)}
                 >
-                  <option value="all">Toutes priorités</option>
+                  <option value="all">{t("All priorities")}</option>
                   {priorities.map((priority) => (
                     <option value={priority} key={priority}>{priorityLabels[priority]}</option>
                   ))}
                 </select>
                 <select
                   className="task-assignee-filter"
-                  aria-label="Filtrer par personne assignée"
+                  aria-label={t("Filter by assignee")}
                   value={taskAssigneeFilter}
                   onChange={(event) => setTaskAssigneeFilter(event.currentTarget.value)}
                 >
-                  <option value="all">Toutes les personnes</option>
-                  <option value="unassigned">Non assignées</option>
+                  <option value="all">{t("All people")}</option>
+                  <option value="unassigned">{t("Unassigned")}</option>
                   {members.map((member) => (
                     <option value={member.userId} key={member.userId}>{member.displayName}</option>
                   ))}
                 </select>
                 <select
                   className="task-due-filter"
-                  aria-label="Filtrer par échéance"
+                  aria-label={t("Filter by due date")}
                   value={taskDueFilter}
                   onChange={(event) => setTaskDueFilter(event.currentTarget.value as TaskDueFilter)}
                 >
-                  <option value="all">Toutes échéances</option>
-                  <option value="overdue">En retard</option>
-                  <option value="today">Pour aujourd’hui</option>
-                  <option value="week">Dans les 7 jours</option>
-                  <option value="none">Sans échéance</option>
+                  <option value="all">{t("All due dates")}</option>
+                  <option value="overdue">{t("Overdue")}</option>
+                  <option value="today">{t("Due today")}</option>
+                  <option value="week">{t("Next 7 days")}</option>
+                  <option value="none">{t("No due date")}</option>
                 </select>
                 <select
                   className="task-label-filter"
-                  aria-label="Filtrer par label"
+                  aria-label={t("Filter by label")}
                   value={taskLabelFilter}
                   onChange={(event) => setTaskLabelFilter(event.currentTarget.value)}
                 >
-                  <option value="all">Tous les labels</option>
-                  <option value="none">Sans label</option>
+                  <option value="all">{t("All labels")}</option>
+                  <option value="none">{t("No label")}</option>
                   {projectLabels.labels.map((label) => (
                     <option value={label.id} key={label.id}>{label.name}</option>
                   ))}
                 </select>
                 <select
                   className="task-sort"
-                  aria-label="Trier les tâches"
+                  aria-label={t("Sort tasks")}
                   value={taskSort}
                   onChange={(event) => setTaskSort(event.currentTarget.value as TaskSort)}
                 >
-                  <option value="updated">Dernière activité</option>
-                  <option value="created">Création récente</option>
-                  <option value="due">Échéance proche</option>
-                  <option value="key">Clé de tâche</option>
-                  <option value="title">Titre A–Z</option>
+                  <option value="updated">{t("Last activity")}</option>
+                  <option value="created">{t("Recently created")}</option>
+                  <option value="due">{t("Upcoming due date")}</option>
+                  <option value="key">{t("Task key")}</option>
+                  <option value="title">{t("Title A–Z")}</option>
                 </select>
-                <div className="view-switch" role="group" aria-label="Présentation des tâches">
+                <div className="view-switch" role="group" aria-label={t("Task presentation")}>
                   <button
                     className={taskView === "list" ? "active" : ""}
                     type="button"
                     aria-pressed={taskView === "list"}
                     onClick={() => setTaskView("list")}
-                  >Liste</button>
+                  >{t("List")}</button>
                   <button
                     className={taskView === "compact" ? "active" : ""}
                     type="button"
                     aria-pressed={taskView === "compact"}
                     onClick={() => setTaskView("compact")}
-                  >Compact</button>
+                  >{t("Compact")}</button>
                   <button
                     className={taskView === "board" ? "active" : ""}
                     type="button"
                     aria-pressed={taskView === "board"}
                     onClick={() => setTaskView("board")}
-                  >Kanban</button>
+                  >{t("Kanban")}</button>
                   <button
                     className={taskView === "canvas" ? "active" : ""}
                     type="button"
                     aria-pressed={taskView === "canvas"}
                     onClick={() => setTaskView("canvas")}
-                  >Canvas</button>
+                  >{t("Canvas")}</button>
                   <button
                     className={taskView === "graph" ? "active" : ""}
                     type="button"
                     aria-pressed={taskView === "graph"}
                     onClick={() => setTaskView("graph")}
-                  >Graphe</button>
+                  >{t("Graph")}</button>
                 </div>
               </div>
             </section>
 
-            {tasksLoading && <p className="task-loading" role="status">Actualisation des tâches…</p>}
+            {tasksLoading && <p className="task-loading" role="status">{t("Refreshing tasks…")}</p>}
 
             {tasksLoading && tasks.length === 0 ? (
               <div className="task-skeleton" aria-hidden="true">
@@ -2538,9 +2550,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             ) : !tasksLoading && tasks.length === 0 && taskOptions.length > 0 ? (
               <section className="filter-empty" aria-live="polite">
                 <span aria-hidden="true">⌕</span>
-                <h2>Aucune tâche trouvée</h2>
-                <p>Modifiez la recherche ou réinitialisez les filtres de ce projet.</p>
-                <button className="text-button" type="button" onClick={resetTaskFilters}>Réinitialiser les filtres</button>
+                <h2>{t("No task found")}</h2>
+                <p>{t("Change the search or reset this project’s filters.")}</p>
+                <button className="text-button" type="button" onClick={resetTaskFilters}>{t("Reset filters")}</button>
               </section>
             ) : taskView === "compact" ? (
               <CompactTaskTable
@@ -2556,8 +2568,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 selectedTaskId={selectedTaskId}
                 onOpenTask={openTask}
                 onChangeStatus={(task, status) => void changeTaskStatus(task, status)}
-                onChangePriority={(task, priority) => void changeTaskInline(task, { priority }, "Priorité modifiée.")}
-                onChangeDueAt={(task, dueAt) => void changeTaskInline(task, { dueAt }, "Échéance modifiée.")}
+                onChangePriority={(task, priority) => void changeTaskInline(task, { priority }, t("Priority updated."))}
+                onChangeDueAt={(task, dueAt) => void changeTaskInline(task, { dueAt }, t("Due date updated."))}
                 onChangeAssignees={(task, assigneeIds) => void changeTaskAssignees(task, assigneeIds)}
                 onBulkChange={changeTasksBulk}
                 onBulkLabelChange={changeTaskLabelsBulk}
@@ -2580,19 +2592,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 onOpenTask={openTask}
               />
             ) : taskView === "list" ? (
-              <section className="task-list" aria-label="Tâches en liste">
+              <section className="task-list" aria-label={t("Tasks in list view")}>
                 {canContribute && (
                   <form className="quick-add" onSubmit={quickAddTask}>
                     <input
                       name="title"
-                      placeholder="Ajout rapide : titre puis Entrée"
-                      aria-label="Ajouter rapidement une tâche"
+                      placeholder={t("Quick add: title then Enter")}
+                      aria-label={t("Quickly add a task")}
                       maxLength={240}
                       autoComplete="off"
                     />
                   </form>
                 )}
-                <div className="list-header"><span>Tâche</span><span>État</span><span>Mise à jour</span></div>
+                <div className="list-header"><span>{t("Task")}</span><span>{t("Status")}</span><span>{t("Updated")}</span></div>
                 {filteredTasks.map((task) => (
                   <button
                     className={task.id === selectedTaskId ? "task-row active" : "task-row"}
@@ -2609,7 +2621,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         childCount={hierarchyIndex.childrenByParent.get(task.id)?.length ?? 0}
                       />
                       <small>
-                        {task.key} · {task.assigneeName ?? "Non assignée"} · {task.dueAt ? `Échéance ${shortDate(task.dueAt)}` : "Sans échéance"}
+                        {task.key} · {task.assigneeName ?? t("Unassigned")} · {task.dueAt ? t("Due {date}", { date: shortDate(task.dueAt) }) : t("No due date")}
                         {task.description ? ` · ${task.description}` : ""}
                       </small>
                     </span>
@@ -2625,12 +2637,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 ))}
                 {!tasksLoading && filteredTasks.length === 0 && (
                   <p className="empty-list">{taskOptions.length === 0
-                    ? "Aucune tâche dans ce projet pour le moment."
-                    : "Aucune tâche ne correspond à ces filtres."}</p>
+                    ? t("No tasks in this project yet.")
+                    : t("No tasks match these filters.")}</p>
                 )}
               </section>
             ) : (
-              <section className="task-board" aria-label="Tâches en tableau Kanban">
+              <section className="task-board" aria-label={t("Tasks in Kanban board")}>
                 {boardStatuses
                   .filter((status) => taskStatusFilter === "all" || taskStatusFilter === status)
                   .map((status) => {
@@ -2670,7 +2682,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                               <input
                                 name="title"
                                 placeholder="Ajout rapide…"
-                                aria-label="Ajouter rapidement une tâche à faire"
+                                aria-label={t("Quickly add a to-do task")}
                                 maxLength={240}
                                 autoComplete="off"
                               />
@@ -2711,7 +2723,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                               <footer className="board-card-footer">
                                 <span className="board-card-dates">
                                   {task.assigneeName && (
-                                    <span className="assignee-chip" title={`Assignée à ${task.assigneeName}`}>
+                                    <span className="assignee-chip" title={t("Assigned to {name}", { name: task.assigneeName })}>
                                       <span aria-hidden="true">{initials(task.assigneeName)}</span>
                                       {task.assigneeName}
                                     </span>
@@ -2727,7 +2739,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                                 </span>
                                 {canContribute && (
                                   <select
-                                    aria-label={`Déplacer ${task.key}`}
+                                    aria-label={t("Move {key}", { key: task.key })}
                                     value={task.status}
                                     disabled={pendingTaskIds.has(task.id)}
                                     onChange={(event) => void changeTaskStatus(
@@ -2743,7 +2755,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                               </footer>
                             </article>
                           ))}
-                          {!tasksLoading && columnTasks.length === 0 && <p className="board-empty">Aucune tâche</p>}
+                          {!tasksLoading && columnTasks.length === 0 && <p className="board-empty">{t("No task")}</p>}
                         </div>
                       </section>
                     );
@@ -2757,8 +2769,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   type="button"
                   disabled={tasksLoadingMore}
                   onClick={() => void loadMoreTasks().catch(() =>
-                    setError("Impossible de charger la page suivante."))}
-                >{tasksLoadingMore ? "Chargement…" : `Afficher plus (${tasks.length}/${taskTotalCount})`}</button>
+                    setError(t("Unable to load the next page.")))}
+                >{tasksLoadingMore ? t("Loading…") : t("Show more ({current}/{total})", { current: tasks.length, total: taskTotalCount })}</button>
               </div>
             )}
           </>
@@ -2768,13 +2780,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       {showActivity && (
         <aside className="detail-pane activity-pane">
           <header className="detail-header">
-            <span className="task-key">ACTIVITÉ</span>
-            <button className="icon-button quiet" aria-label="Fermer" onClick={() => setShowActivity(false)}>×</button>
+            <span className="task-key">{t("ACTIVITY")}</span>
+            <button className="icon-button quiet" aria-label={t("Close")} onClick={() => setShowActivity(false)}>×</button>
           </header>
           <div className="detail-content">
-            <h2>Journal récent</h2>
-            <p className="description muted">Les mutations importantes sont consignées durablement.</p>
-            <section className="activity-list" aria-label="Journal d’activité">
+            <h2>{t("Recent activity")}</h2>
+            <p className="description muted">{t("Important changes are recorded durably.")}</p>
+            <section className="activity-list" aria-label={t("Activity log")}>
               {activity.map((entry) => (
                 <article className="activity-row" key={entry.id}>
                   <span className="activity-dot" aria-hidden="true" />
@@ -2784,7 +2796,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   </div>
                 </article>
               ))}
-              {activity.length === 0 && <p className="empty-list">Aucune activité pour le moment.</p>}
+              {activity.length === 0 && <p className="empty-list">{t("No activity yet.")}</p>}
             </section>
           </div>
         </aside>
@@ -2793,14 +2805,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       {showTeam && !showActivity && !showTokens && (
         <aside className="detail-pane team-pane">
           <header className="detail-header">
-            <span className="task-key">ÉQUIPE</span>
-            <button className="icon-button quiet" aria-label="Fermer" onClick={() => setShowTeam(false)}>×</button>
+            <span className="task-key">{t("TEAM")}</span>
+            <button className="icon-button quiet" aria-label={t("Close")} onClick={() => setShowTeam(false)}>×</button>
           </header>
           <div className="detail-content">
-            <h2>Membres de l’espace</h2>
-            <p className="description muted">Les permissions sont vérifiées par le serveur pour chaque action.</p>
+            <h2>{t("Workspace members")}</h2>
+            <p className="description muted">{t("Permissions are checked by the server for every action.")}</p>
 
-            <section className="member-list" aria-label="Membres">
+            <section className="member-list" aria-label={t("Members")}>
               {members.map((member) => (
                 <article className="member-row" key={member.userId}>
                   <span className="profile-avatar">{initials(member.displayName)}</span>
@@ -2808,7 +2820,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     <strong>{member.displayName}</strong>
                     <small>{member.email}</small>
                   </span>
-                  <span className="role-badge">{roleLabel(member.role)}</span>
+                  <span className="role-badge">{t(roleLabel(member.role))}</span>
                 </article>
               ))}
             </section>
@@ -2816,26 +2828,26 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             {canAdminister && (
               <section className="invite-section">
                 <a className="export-link" href="/api/v1/export" download>
-                  <span>Exporter l’espace</span>
-                  <small>JSON versionné · données et membres</small>
+                  <span>{t("Export workspace")}</span>
+                  <small>{t("Versioned JSON · data and members")}</small>
                 </a>
-                <h3>Inviter une personne</h3>
+                <h3>{t("Invite someone")}</h3>
                 <form className="invite-form" onSubmit={createInvitation}>
                   <input name="email" type="email" placeholder="personne@studio.fr" maxLength={254} required />
                   <select name="role" defaultValue="member">
-                    <option value="member">Membre</option>
-                    <option value="viewer">Lecteur</option>
-                    {session.role === "owner" && <option value="admin">Administrateur</option>}
+                    <option value="member">{t("Member")}</option>
+                    <option value="viewer">{t("Viewer")}</option>
+                    {session.role === "owner" && <option value="admin">{t("Administrator")}</option>}
                   </select>
-                  <button className="primary-button small" type="submit">Créer l’invitation</button>
+                  <button className="primary-button small" type="submit">{t("Create invitation")}</button>
                 </form>
                 {invitationLink && (
                   <div className="invite-result" role="status">
                     <label>
-                      Lien à transmettre — visible une seule fois
+                      {t("Link to share — shown only once")}
                       <input value={invitationLink} readOnly onFocus={(event) => event.currentTarget.select()} />
                     </label>
-                    <button className="text-button" type="button" onClick={() => void copyInvitation()}>{copyLabel}</button>
+                    <button className="text-button" type="button" onClick={() => void copyInvitation()}>{t(copyLabel)}</button>
                   </div>
                 )}
               </section>
@@ -2875,50 +2887,50 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         >
           {attachmentDragActive && (
             <div className="task-file-drop-overlay" aria-hidden="true">
-              <strong>Déposer dans la tâche</strong>
-              <span>Images, vidéos et autres fichiers seront envoyés de façon sécurisée.</span>
+              <strong>{t("Drop into task")}</strong>
+              <span>{t("Images, videos and other files will be uploaded securely.")}</span>
             </div>
           )}
           <header className="detail-header">
             <span className="task-key">{details.task.key}</span>
             <div className="detail-actions">
               <button className="text-button" type="button" onClick={() => void copyTaskLink()}>
-                {taskLinkLabel}
+                {t(taskLinkLabel)}
               </button>
               {canContribute && (
                 <button className="text-button" onClick={() => {
                   setDetailTab("overview");
                   setIsEditing((value) => detailTab === "overview" ? !value : true);
                 }}>
-                  {isEditing ? "Annuler" : "Modifier"}
+                  {t(isEditing ? "Cancel" : "Edit")}
                 </button>
               )}
-              <button className="icon-button quiet" aria-label="Fermer" onClick={closeTask}>×</button>
+              <button className="icon-button quiet" aria-label={t("Close")} onClick={closeTask}>×</button>
             </div>
           </header>
           <div className="detail-content">
-            <nav className="detail-tabs" role="tablist" aria-label="Sections de la tâche">
+            <nav className="detail-tabs" role="tablist" aria-label={t("Task sections")}>
               <button
                 className={detailTab === "overview" ? "active" : ""}
                 type="button"
                 role="tab"
                 aria-selected={detailTab === "overview"}
                 onClick={() => { setDetailTab("overview"); setIsEditing(false); }}
-              >Détails</button>
+              >{t("Details")}</button>
               <button
                 className={detailTab === "dependencies" ? "active" : ""}
                 type="button"
                 role="tab"
                 aria-selected={detailTab === "dependencies"}
                 onClick={() => { setDetailTab("dependencies"); setIsEditing(false); }}
-              >Relations <span>{dependencies.dependsOn.length + dependencies.blocking.length}</span></button>
+              >{t("Relations")} <span>{dependencies.dependsOn.length + dependencies.blocking.length}</span></button>
               <button
                 className={detailTab === "files" ? "active" : ""}
                 type="button"
                 role="tab"
                 aria-selected={detailTab === "files"}
                 onClick={() => { setDetailTab("files"); setIsEditing(false); }}
-              >Fichiers <span>{attachments.length}</span></button>
+              >{t("Files")} <span>{attachments.length}</span></button>
               {taskPlugins.some((plugin) => plugin.manifest.id === gitPluginId) && (
                 <button
                   className={detailTab === "git" ? "active plugin-tab" : "plugin-tab"}
@@ -2934,7 +2946,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 role="tab"
                 aria-selected={detailTab === "activity"}
                 onClick={() => { setDetailTab("activity"); setIsEditing(false); }}
-              >Activité <span>{details.comments.length}</span></button>
+              >{t("Activity")} <span>{details.comments.length}</span></button>
               {taskPlugins.filter((plugin) => plugin.manifest.id !== gitPluginId).flatMap((plugin) => plugin.manifest.contributes.taskTabs.map((tab) => {
                 const tabKey: DetailTab = `plugin:${plugin.manifest.id}:${tab.id}`;
                 return (
@@ -2950,28 +2962,28 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               }))}
             </nav>
 
-            {detailsLoading && <p className="detail-loading" role="status">Synchronisation…</p>}
+            {detailsLoading && <p className="detail-loading" role="status">{t("Syncing…")}</p>}
 
             {detailTab === "overview" && (isEditing ? (
               <form className="edit-task-form" key={`${details.task.id}-${details.task.revision}`} onSubmit={updateTask}>
                 <label className="edit-field-title">
-                  Titre
+                  {t("Title")}
                   <input name="title" defaultValue={details.task.title} maxLength={240} required autoFocus />
                 </label>
                 <label>
-                  État
+                  {t("Status")}
                   <select name="status" defaultValue={details.task.status}>
                     {projectStatuses.map((projectStatus) => (
                       <option
                         value={projectStatus.key}
                         key={projectStatus.key}
                         style={{ color: projectStatus.color }}
-                      >● {projectStatus.name}</option>
+                      >● {statusLabels[projectStatus.key] ?? projectStatus.name}</option>
                     ))}
                   </select>
                 </label>
                 <label>
-                  Priorité
+                  {t("Priority")}
                   <select name="priority" defaultValue={details.task.priority}>
                     {priorities.map((priority) => (
                       <option value={priority} key={priority}>{priorityLabels[priority]}</option>
@@ -2979,7 +2991,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   </select>
                 </label>
                 <label>
-                  Échéance
+                  {t("Due date")}
                   <input
                     name="dueAt"
                     type="datetime-local"
@@ -2987,7 +2999,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   />
                 </label>
                 <label className="edit-field-assignees">
-                  Responsables
+                  {t("Assignees")}
                   <TaskAssigneePicker
                     key={`${details.task.id}-${details.task.revision}-edit-assignees`}
                     members={members}
@@ -2996,10 +3008,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   />
                 </label>
                 <label className="edit-field-description">
-                  Description
+                  {t("Description")}
                   <textarea name="description" defaultValue={details.task.description} maxLength={20000} rows={6} />
                 </label>
-                <button className="primary-button small" type="submit">Enregistrer</button>
+                <button className="primary-button small" type="submit">{t("Save")}</button>
               </form>
             ) : (
               <>
@@ -3008,7 +3020,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     <button
                       className="editable-task-title"
                       type="button"
-                      title="Cliquer pour modifier le titre"
+                      title={t("Click to edit title")}
                       onClick={() => setIsEditing(true)}
                     >{details.task.title}</button>
                   ) : details.task.title}
@@ -3024,7 +3036,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   {canContribute && (
                     <div className="quick-status-controls">
                       <label>
-                        <span>Changer l’état</span>
+                        <span>{t("Change status")}</span>
                         <select
                           value={details.task.status}
                           disabled={pendingTaskIds.has(details.task.id)}
@@ -3039,7 +3051,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                               value={projectStatus.key}
                               key={projectStatus.key}
                               style={{ color: projectStatus.color }}
-                            >● {projectStatus.name}</option>
+                            >● {statusLabels[projectStatus.key] ?? projectStatus.name}</option>
                           ))}
                         </select>
                       </label>
@@ -3048,15 +3060,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                           className="text-button status-settings-trigger"
                           type="button"
                           onClick={() => setShowStatusEditor((value) => !value)}
-                        >{showStatusEditor ? "Fermer" : "Configurer les états"}</button>
+                        >{t(showStatusEditor ? "Close" : "Configure statuses")}</button>
                       )}
                     </div>
                   )}
                 </div>
                 {showStatusEditor && canAdminister && (
-                  <section className="project-status-editor" aria-label="Configuration des états">
+                  <section className="project-status-editor" aria-label={t("Status configuration")}>
                     <header>
-                      <div><h3>États du projet</h3><small>Nom et couleur visibles dans les tâches et les tableaux.</small></div>
+                      <div><h3>{t("Project statuses")}</h3><small>{t("Name and color shown in tasks and boards.")}</small></div>
                     </header>
                     <div className="project-status-list">
                       {projectStatuses.map((projectStatus) => (
@@ -3069,7 +3081,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                             type="color"
                             name="color"
                             defaultValue={projectStatus.color}
-                            aria-label={`Couleur de ${projectStatus.name}`}
+                            aria-label={t("Color of {name}", { name: projectStatus.name })}
                           />
                           <input name="name" defaultValue={projectStatus.name} maxLength={60} required />
                           <code>{projectStatus.key}</code>
@@ -3077,14 +3089,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                             className="secondary-button small"
                             type="submit"
                             disabled={pendingStatusKeys.has(projectStatus.key)}
-                          >Enregistrer</button>
+                          >{t("Save")}</button>
                         </form>
                       ))}
                     </div>
                     <form className="project-status-create" onSubmit={createProjectStatus}>
-                      <input type="color" name="color" defaultValue="#8B5CF6" aria-label="Couleur du nouvel état" />
-                      <input name="name" placeholder="Nouvel état, ex. En validation" maxLength={60} required />
-                      <button className="primary-button small" type="submit">Ajouter</button>
+                      <input type="color" name="color" defaultValue="#8B5CF6" aria-label={t("New status color")} />
+                      <input name="name" placeholder={t("New status, e.g. In review")} maxLength={60} required />
+                      <button className="primary-button small" type="submit">{t("Add")}</button>
                     </form>
                   </section>
                 )}
@@ -3102,23 +3114,23 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <button
                     className={details.task.description ? "description editable-description" : "description editable-description muted"}
                     type="button"
-                    title="Cliquer pour modifier la description"
+                    title={t("Click to edit description")}
                     onClick={() => setIsEditing(true)}
-                  >{details.task.description || "Ajouter une description…"}</button>
+                  >{details.task.description || t("Add a description…")}</button>
                 ) : (
                   <p className={details.task.description ? "description" : "description muted"}>
-                    {details.task.description || "Aucune description."}
+                    {details.task.description || t("No description.")}
                   </p>
                 )}
                 {attachments.length > 0 && (
-                  <section className="task-overview-media" aria-label="Médias et fichiers récents">
+                  <section className="task-overview-media" aria-label={t("Recent media and files")}>
                     <header>
                       <div>
-                        <h3>Médias et fichiers</h3>
-                        <small>{attachments.length} fichier{attachments.length > 1 ? "s" : ""} lié{attachments.length > 1 ? "s" : ""}</small>
+                        <h3>{t("Media and files")}</h3>
+                        <small>{t(attachments.length === 1 ? "{count} linked file" : "{count} linked files", { count: attachments.length })}</small>
                       </div>
                       <button type="button" className="text-button" onClick={() => setDetailTab("files")}>
-                        Tout afficher
+                        {t("Show all")}
                       </button>
                     </header>
                     <div className="task-overview-media-grid">
@@ -3142,9 +3154,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         }
                         return (
                           <article className="task-overview-file" key={attachment.id}>
-                            <span>{served.startsWith("video/") ? "VIDÉO" : "FICHIER"}</span>
+                            <span>{served.startsWith("video/") ? t("VIDEO") : t("FILE")}</span>
                             <strong>{attachment.fileName}</strong>
-                            <small>{attachmentStatusLabel(attachment.status)}</small>
+                            <small>{t(attachmentStatusLabel(attachment.status))}</small>
                           </article>
                         );
                       })}
@@ -3153,16 +3165,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 )}
 
                 <dl className="task-facts">
-                  <div><dt>Créée</dt><dd title={fullDate(details.task.createdAt)}>{relativeDate(details.task.createdAt)}</dd></div>
-                  <div><dt>Mise à jour</dt><dd title={fullDate(details.task.updatedAt)}>{relativeDate(details.task.updatedAt)}</dd></div>
+                  <div><dt>{t("Created")}</dt><dd title={fullDate(details.task.createdAt)}>{relativeDate(details.task.createdAt)}</dd></div>
+                  <div><dt>{t("Updated")}</dt><dd title={fullDate(details.task.updatedAt)}>{relativeDate(details.task.updatedAt)}</dd></div>
                   <div>
-                    <dt>Échéance</dt>
+                    <dt>{t("Due date")}</dt>
                     <dd className={isTaskOverdue(details.task) ? "overdue" : ""} title={details.task.dueAt ? fullDate(details.task.dueAt) : undefined}>
-                      {details.task.dueAt ? shortDate(details.task.dueAt) : "Non définie"}
+                      {details.task.dueAt ? shortDate(details.task.dueAt) : t("Not set")}
                     </dd>
                   </div>
                   <div className="task-assignee-fact">
-                    <dt>Responsables</dt>
+                    <dt>{t("Assignees")}</dt>
                     <dd>
                       <TaskAssigneePicker
                         key={`${details.task.id}-${details.task.revision}-quick-assignees`}
@@ -3174,7 +3186,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       />
                     </dd>
                   </div>
-                  <div><dt>Révision</dt><dd>#{details.task.revision}</dd></div>
+                  <div><dt>{t("Revision")}</dt><dd>#{details.task.revision}</dd></div>
                 </dl>
 
                 <TaskHierarchySection
@@ -3194,7 +3206,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <div className="checklist-heading">
                     <div>
                       <h3 id="task-checklist-title">Checklist</h3>
-                      <p>{completedChecklistItems} sur {details.checklist.length} terminés</p>
+                      <p>{t("{completed} of {total} completed", { completed: completedChecklistItems, total: details.checklist.length })}</p>
                     </div>
                     <strong>{checklistProgress}%</strong>
                   </div>
@@ -3202,7 +3214,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     className="checklist-progress"
                     value={completedChecklistItems}
                     max={Math.max(details.checklist.length, 1)}
-                    aria-label={`Progression de la checklist : ${checklistProgress}%`}
+                    aria-label={t("Checklist progress: {progress}%", { progress: checklistProgress })}
                   />
                   <div className="checklist-items">
                     {details.checklist.map((item) => {
@@ -3227,7 +3239,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                               className="icon-button quiet checklist-remove"
                               type="button"
                               disabled={pending}
-                              aria-label={`Supprimer « ${item.title} » de la checklist`}
+                              aria-label={t("Remove “{title}” from checklist", { title: item.title })}
                               onClick={() => void deleteChecklistItem(item)}
                             >×</button>
                           )}
@@ -3235,7 +3247,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       );
                     })}
                     {details.checklist.length === 0 && (
-                      <p className="empty-note">Ajoutez les étapes nécessaires pour terminer cette tâche.</p>
+                      <p className="empty-note">{t("Add the steps needed to complete this task.")}</p>
                     )}
                   </div>
                   {canContribute && (
@@ -3243,8 +3255,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       <input
                         name="title"
                         maxLength={500}
-                        placeholder="Ajouter une étape…"
-                        aria-label="Nouvel élément de checklist"
+                        placeholder={t("Add a step…")}
+                        aria-label={t("New checklist item")}
                         disabled={checklistCreating || details.checklist.length >= 200}
                         required
                       />
@@ -3252,7 +3264,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         className="primary-button small"
                         type="submit"
                         disabled={checklistCreating || details.checklist.length >= 200}
-                      >{checklistCreating ? "Ajout…" : "Ajouter"}</button>
+                      >{t(checklistCreating ? "Adding…" : "Add")}</button>
                     </form>
                   )}
                 </section>
@@ -3281,8 +3293,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             {detailTab === "dependencies" && (
               <section className="task-dependencies detail-section">
                 <div className="dependency-heading">
-                  <h3>Dépend de <span>{dependencies.dependsOn.length}</span></h3>
-                  <p>Ces tâches doivent avancer avant celle-ci.</p>
+                  <h3>{t("Depends on")} <span>{dependencies.dependsOn.length}</span></h3>
+                  <p>{t("These tasks must progress before this one.")}</p>
                 </div>
                 <div className="dependency-list">
                   {dependencies.dependsOn.map((dependency) => (
@@ -3291,7 +3303,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         <span className="relation-mark relation-in" aria-hidden="true">←</span>
                         <span>
                           <strong>{dependency.key} · {dependency.title}</strong>
-                          <small>Liée {relativeDate(dependency.linkedAt)}</small>
+                          <small>{t("Linked")} {relativeDate(dependency.linkedAt)}</small>
                         </span>
                         <span
                           className={`status status-${dependency.status}`}
@@ -3302,21 +3314,21 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         <button
                           className="icon-button quiet dependency-remove"
                           type="button"
-                          aria-label={`Retirer la dépendance vers ${dependency.key}`}
+                          aria-label={t("Remove dependency on {key}", { key: dependency.key })}
                           onClick={() => void removeDependency(details.task.id, dependency.id)}
                         >×</button>
                       )}
                     </article>
                   ))}
                   {dependencies.dependsOn.length === 0 && (
-                    <p className="empty-note">Cette tâche ne dépend d’aucune autre.</p>
+                    <p className="empty-note">{t("This task has no dependencies.")}</p>
                   )}
                 </div>
 
                 {canContribute && (
                   <form className="dependency-form" onSubmit={createDependency}>
                     <select name="dependsOnTaskId" defaultValue="" required>
-                      <option value="" disabled>Choisir une tâche de ce projet…</option>
+                      <option value="" disabled>{t("Choose a task from this project…")}</option>
                       {dependencyCandidates.map((candidate) => (
                         <option value={candidate.id} key={candidate.id}>
                           {candidate.key} · {candidate.title}
@@ -3324,14 +3336,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       ))}
                     </select>
                     <button className="primary-button small" type="submit" disabled={dependencyCandidates.length === 0}>
-                      Ajouter
+                      {t("Add")}
                     </button>
                   </form>
                 )}
 
                 <div className="dependency-heading blocking-heading">
-                  <h3>Bloque <span>{dependencies.blocking.length}</span></h3>
-                  <p>Ces tâches attendent celle-ci.</p>
+                  <h3>{t("Blocks")} <span>{dependencies.blocking.length}</span></h3>
+                  <p>{t("These tasks are waiting for this one.")}</p>
                 </div>
                 <div className="dependency-list">
                   {dependencies.blocking.map((relation) => (
@@ -3340,7 +3352,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         <span className="relation-mark relation-out" aria-hidden="true">→</span>
                         <span>
                           <strong>{relation.key} · {relation.title}</strong>
-                          <small>Liée {relativeDate(relation.linkedAt)}</small>
+                          <small>{t("Linked")} {relativeDate(relation.linkedAt)}</small>
                         </span>
                         <span
                           className={`status status-${relation.status}`}
@@ -3351,14 +3363,14 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         <button
                           className="icon-button quiet dependency-remove"
                           type="button"
-                          aria-label={`Ne plus bloquer ${relation.key}`}
+                          aria-label={t("Stop blocking {key}", { key: relation.key })}
                           onClick={() => void removeDependency(relation.id, details.task.id)}
                         >×</button>
                       )}
                     </article>
                   ))}
                   {dependencies.blocking.length === 0 && (
-                    <p className="empty-note">Aucune tâche n’attend celle-ci.</p>
+                    <p className="empty-note">{t("No task is waiting for this one.")}</p>
                   )}
                 </div>
               </section>
@@ -3379,7 +3391,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       current.map((item) => item.manifest.id === updated.manifest.id ? updated : item))}
                   />
                   <section className="external-references detail-section">
-                    <h3>Références Git <span>{externalReferences.length}</span></h3>
+                    <h3>{t("Git references")} <span>{externalReferences.length}</span></h3>
               {externalReferences.map((reference) => (
                 <article className="reference-row" key={reference.id}>
                   <span className="reference-provider">{reference.provider.slice(0, 2).toUpperCase()}</span>
@@ -3393,10 +3405,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   </span>
                 </article>
               ))}
-              {externalReferences.length === 0 && <p className="empty-note">Aucun commit ou branche lié.</p>}
+              {externalReferences.length === 0 && <p className="empty-note">{t("No commit or branch linked.")}</p>}
               {canContribute && (
                 <details className="reference-form-shell">
-                  <summary>Ajouter une référence Git</summary>
+                  <summary>{t("Add a Git reference")}</summary>
                   <form className="reference-form" onSubmit={createExternalReference}>
                     <div className="reference-grid">
                       <select name="provider" defaultValue="git">
@@ -3407,16 +3419,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       </select>
                       <select name="referenceType" defaultValue="commit">
                         <option value="commit">Commit</option>
-                        <option value="branch">Branche</option>
+                        <option value="branch">{t("Branch")}</option>
                         <option value="tag">Tag</option>
                         <option value="merge_request">Merge request</option>
                       </select>
                     </div>
-                    <input name="repository" placeholder="organisation/dépôt" maxLength={240} required />
-                    <input name="referenceValue" placeholder="SHA, branche ou numéro" maxLength={240} required />
-                    <input name="label" placeholder="Libellé visible" maxLength={240} required />
+                    <input name="repository" placeholder={t("organization/repository")} maxLength={240} required />
+                    <input name="referenceValue" placeholder={t("SHA, branch or number")} maxLength={240} required />
+                    <input name="label" placeholder={t("Visible label")} maxLength={240} required />
                     <input name="webUrl" type="url" placeholder="https://… (optionnel)" maxLength={2048} />
-                    <button className="primary-button small" type="submit">Lier à la tâche</button>
+                    <button className="primary-button small" type="submit">{t("Link to task")}</button>
                   </form>
                 </details>
               )}
@@ -3426,7 +3438,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
             {detailTab === "files" && (
             <section className="attachments detail-section">
-              <h3>Fichiers <span>{attachments.length}</span></h3>
+              <h3>{t("Files")} <span>{attachments.length}</span></h3>
               {attachments.map((attachment) => {
                 const served = attachment.detectedContentType ?? attachment.declaredContentType;
                 const isAvailable = attachment.status === "available";
@@ -3443,7 +3455,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       <span className="attachment-copy">
                         <strong>{attachment.fileName}</strong>
                         <small>
-                          {formatBytes(attachment.sizeBytes)} · {attachmentStatusLabel(attachment.status)}
+                          {formatBytes(attachment.sizeBytes)} · {t(attachmentStatusLabel(attachment.status))}
                           {attachment.width && attachment.height ? ` · ${attachment.width}×${attachment.height}` : ""}
                           {attachment.durationSeconds ? ` · ${formatDuration(attachment.durationSeconds)}` : ""}
                         </small>
@@ -3453,11 +3465,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       </span>
                       {isAvailable ? (
                         <a className="attachment-download" href={contentUrl} download={attachment.fileName}>
-                          Télécharger
+                          {t("Download")}
                         </a>
                       ) : (
                         <span className={`attachment-state attachment-${attachment.status}`}>
-                          {attachmentBadgeLabel(attachment.status)}
+                          {t(attachmentBadgeLabel(attachment.status))}
                         </span>
                       )}
                     </span>
@@ -3473,12 +3485,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   </article>
                 );
               })}
-              {attachments.length === 0 && <p className="empty-note">Aucun fichier lié à cette tâche.</p>}
+              {attachments.length === 0 && <p className="empty-note">{t("No file linked to this task.")}</p>}
               {canContribute && (
                 <form className="attachment-form" onSubmit={uploadAttachment}>
                   {activeUploads.length > 0 && (
                     <div className="upload-resume-list" role="status">
-                      <strong>Envois en cours ou à reprendre</strong>
+                      <strong>{t("Uploads in progress or ready to resume")}</strong>
                       {activeUploads.map((upload) => {
                         const received = upload.chunks.reduce(
                           (total, chunk) => total + chunk.sizeBytes,
@@ -3490,7 +3502,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                               <b>{upload.attachment.fileName}</b>
                               <small>
                                 {formatBytes(received)} / {formatBytes(upload.attachment.sizeBytes)}
-                                {" · "}expire le {new Date(upload.expiresAt).toLocaleString("fr-FR")}
+                                {" · "}expire le {new Date(upload.expiresAt).toLocaleString(locale === "fr" ? "fr-FR" : "en-US")}
                               </small>
                             </span>
                             <progress
@@ -3502,12 +3514,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         );
                       })}
                       <small>
-                        Resélectionnez le même fichier : son empreinte sera vérifiée avant la reprise.
+                        {t("Select the same file again: its fingerprint will be verified before resuming.")}
                       </small>
                     </div>
                   )}
                   <label className="file-picker">
-                    Ajouter une image, une vidéo ou un fichier
+                    {t("Add an image, video or file")}
                     <input
                       name="file"
                       type="file"
@@ -3519,7 +3531,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   </label>
                   <label className="checkbox-line">
                     <input name="optimizedLocally" type="checkbox" />
-                    Variante déjà optimisée localement
+                    {t("Already optimized locally")}
                   </label>
                   {uploadProgress && (
                     <div className="upload-progress" role="status">
@@ -3528,9 +3540,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     </div>
                   )}
                   <button className="primary-button small" type="submit" disabled={Boolean(uploadProgress)}>
-                    {uploadProgress ? "Envoi en cours…" : "Envoyer en quarantaine"}
+                    {t(uploadProgress ? "Uploading…" : "Upload to quarantine")}
                   </button>
-                  <small className="security-note">L’original reste en quarantaine jusqu’à la validation de son format par le serveur.</small>
+                  <small className="security-note">{t("The original remains quarantined until the server validates its format.")}</small>
                 </form>
               )}
             </section>
@@ -3538,24 +3550,24 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
             {detailTab === "activity" && (
             <section className="comments detail-section">
-              <h3>Activité <span>{details.comments.length}</span></h3>
+              <h3>{t("Activity")} <span>{details.comments.length}</span></h3>
               {canContribute ? (
                 <form className="comment-form comment-form-top" onSubmit={createComment}>
                   <textarea
                     name="body"
-                    placeholder="Ajouter un commentaire…"
+                    placeholder={t("Add a comment…")}
                     maxLength={10000}
                     rows={3}
                     required
                     onKeyDown={submitOnModEnter}
                   />
                   <div className="comment-form-actions">
-                    <small className="comment-shortcut">Ctrl/⌘ + Entrée pour envoyer</small>
-                    <button className="primary-button small" type="submit">Commenter</button>
+                    <small className="comment-shortcut">{t("Ctrl/⌘ + Enter to send")}</small>
+                    <button className="primary-button small" type="submit">{t("Post comment")}</button>
                   </div>
                 </form>
               ) : (
-                <p className="empty-note">Votre rôle permet la consultation uniquement.</p>
+                <p className="empty-note">{t("Your role is read-only.")}</p>
               )}
               {details.comments.map((comment) => (
                 <article className="comment" key={comment.id}>
@@ -3623,8 +3635,8 @@ function submitOnModEnter(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
   event.currentTarget.form?.requestSubmit();
 }
 
-function relativeDate(value: string): string {
-  const formatter = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
+function formatRelativeDate(value: string, locale: "en" | "fr"): string {
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   const difference = new Date(value).getTime() - Date.now();
   const minutes = Math.round(difference / 60_000);
   if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
@@ -3633,8 +3645,8 @@ function relativeDate(value: string): string {
   return formatter.format(Math.round(hours / 24), "day");
 }
 
-function fullDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
+function formatFullDate(value: string, locale: "en" | "fr"): string {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-US", {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
@@ -3664,8 +3676,8 @@ function TaskMediaStrip({ media }: { media: Attachment[] }) {
   );
 }
 
-function shortDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" }).format(new Date(value));
+function formatShortDate(value: string, locale: "en" | "fr"): string {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-US", { day: "numeric", month: "short" }).format(new Date(value));
 }
 
 function isTaskOverdue(task: WorkItem): boolean {
@@ -3720,7 +3732,7 @@ function messageFor(reason: unknown): string {
 }
 
 function roleLabel(role: OrganizationMember["role"]): string {
-  return { owner: "Propriétaire", admin: "Admin", member: "Membre", viewer: "Lecteur" }[role];
+  return { owner: "Owner", admin: "Admin", member: "Member", viewer: "Viewer" }[role];
 }
 
 function formatDuration(seconds: number): string {
@@ -3741,18 +3753,18 @@ function formatBytes(bytes: number): string {
 
 function attachmentBadgeLabel(status: Attachment["status"]): string {
   return {
-    uploading: "Incomplet",
-    quarantined: "Analyse",
-    available: "Validé",
-    rejected: "Refusé"
+    uploading: "Incomplete",
+    quarantined: "Scanning",
+    available: "Validated",
+    rejected: "Rejected"
   }[status];
 }
 
 function attachmentStatusLabel(status: Attachment["status"]): string {
   return {
-    uploading: "Envoi incomplet",
-    quarantined: "En quarantaine, analyse en cours",
-    available: "Validé",
-    rejected: "Refusé à l’analyse"
+    uploading: "Incomplete upload",
+    quarantined: "Quarantined, scanning",
+    available: "Validated",
+    rejected: "Rejected during scanning"
   }[status];
 }

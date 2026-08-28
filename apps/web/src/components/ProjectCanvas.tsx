@@ -9,6 +9,7 @@ import {
   type WheelEvent as ReactWheelEvent
 } from "react";
 import type { TaskOption } from "../api";
+import { useI18n } from "../i18n";
 
 type CanvasTool = "select" | "draw";
 type CanvasObjectKind = "text" | "rectangle" | "ellipse" | "task" | "image" | "video";
@@ -72,6 +73,7 @@ export function ProjectCanvas({
   initialState,
   onBoardChange
 }: ProjectCanvasProps) {
+  const { t } = useI18n();
   const storageKey = `cytask.canvas.v1.${storageId ?? projectId}`;
   const [board, setBoard] = useState<CanvasBoardState>(() => readBoard(storageKey, initialState));
   const [viewport, setViewport] = useState({ x: 34, y: 34, scale: 0.9 });
@@ -218,7 +220,7 @@ export function ProjectCanvas({
   }
 
   function editText(object: CanvasObject) {
-    const value = window.prompt("Texte du Canvas", object.text ?? "");
+    const value = window.prompt(t("Canvas text"), object.text ?? "");
     if (value === null) return;
     setBoard((current) => ({
       ...current,
@@ -335,15 +337,15 @@ export function ProjectCanvas({
   }
 
   return (
-    <section className="project-canvas" aria-label="Canvas libre du projet">
+    <section className="project-canvas" aria-label={t("Free project canvas")}>
       <header className="project-canvas-toolbar">
-        <div className="canvas-tool-group" role="group" aria-label="Outils Canvas">
-          <button className={tool === "select" ? "active" : ""} type="button" onClick={() => setTool("select")}>Déplacer</button>
-          <button className={tool === "draw" ? "active" : ""} type="button" onClick={() => setTool("draw")}>Dessiner</button>
-          <button type="button" onClick={addText}>Texte</button>
-          <button type="button" onClick={() => addObject("rectangle")}>Rectangle</button>
-          <button type="button" onClick={() => addObject("ellipse")}>Ellipse</button>
-          <button type="button" onClick={() => fileInput.current?.click()}>Image / vidéo</button>
+        <div className="canvas-tool-group" role="group" aria-label={t("Canvas tools")}>
+          <button className={tool === "select" ? "active" : ""} type="button" onClick={() => setTool("select")}>{t("Move")}</button>
+          <button className={tool === "draw" ? "active" : ""} type="button" onClick={() => setTool("draw")}>{t("Draw")}</button>
+          <button type="button" onClick={addText}>{t("Text")}</button>
+          <button type="button" onClick={() => addObject("rectangle")}>{t("Rectangle")}</button>
+          <button type="button" onClick={() => addObject("ellipse")}>{t("Ellipse")}</button>
+          <button type="button" onClick={() => fileInput.current?.click()}>{t("Image / video")}</button>
           <input
             ref={fileInput}
             className="sr-only"
@@ -355,19 +357,19 @@ export function ProjectCanvas({
         </div>
         <div className="canvas-task-adder">
           <select value={selectedTaskId} onChange={(event) => setSelectedTaskId(event.currentTarget.value)}>
-            <option value="">Ajouter une tâche…</option>
+            <option value="">{t("Add a task…")}</option>
             {tasks.map((task) => <option value={task.id} key={task.id}>{task.key} · {task.title}</option>)}
           </select>
-          <button type="button" disabled={!selectedTaskId} onClick={addTask}>Ajouter</button>
+          <button type="button" disabled={!selectedTaskId} onClick={addTask}>{t("Add")}</button>
         </div>
         <div className="canvas-zoom-actions">
           {board.strokes.length > 0 && (
-            <button type="button" onClick={() => setBoard((current) => ({ ...current, strokes: [] }))}>Effacer les dessins</button>
+            <button type="button" onClick={() => setBoard((current) => ({ ...current, strokes: [] }))}>{t("Clear drawings")}</button>
           )}
-          <button type="button" onClick={() => zoom(-0.12)} aria-label="Dézoomer">−</button>
+          <button type="button" onClick={() => zoom(-0.12)} aria-label={t("Zoom out")}>−</button>
           <span>{Math.round(viewport.scale * 100)}%</span>
-          <button type="button" onClick={() => zoom(0.12)} aria-label="Zoomer">+</button>
-          <button type="button" onClick={() => setViewport({ x: 34, y: 34, scale: 0.9 })}>Recentrer</button>
+          <button type="button" onClick={() => zoom(0.12)} aria-label={t("Zoom in")}>+</button>
+          <button type="button" onClick={() => setViewport({ x: 34, y: 34, scale: 0.9 })}>{t("Recenter")}</button>
         </div>
       </header>
 
@@ -422,12 +424,12 @@ export function ProjectCanvas({
               return (
                 <article className="project-canvas-object canvas-media-object" key={object.id} style={style}>
                   <header onPointerDown={(event) => objectPointerDown(event, object)}>
-                    <span>{object.fileName ?? "Média"}</span>
-                    <button type="button" aria-label="Retirer du Canvas" onClick={() => removeObject(object)}>×</button>
+                    <span>{object.fileName ?? t("Media")}</span>
+                    <button type="button" aria-label={t("Remove from Canvas")} onClick={() => removeObject(object)}>×</button>
                   </header>
                   {url && object.kind === "image" && <img src={url} alt={object.fileName ?? ""} draggable={false} />}
                   {url && object.kind === "video" && <video src={url} controls preload="metadata" playsInline />}
-                  {!url && <span className="canvas-media-loading">Chargement…</span>}
+                  {!url && <span className="canvas-media-loading">{t("Loading…")}</span>}
                 </article>
               );
             }
@@ -441,10 +443,10 @@ export function ProjectCanvas({
                 >
                   <header>
                     <span>{object.taskKey}</span>
-                    <button type="button" aria-label="Retirer du Canvas" onClick={() => removeObject(object)}>×</button>
+                    <button type="button" aria-label={t("Remove from Canvas")} onClick={() => removeObject(object)}>×</button>
                   </header>
                   <strong>{object.text}</strong>
-                  <button type="button" onClick={() => object.taskId && onOpenTask(object.taskId)}>Ouvrir la tâche</button>
+                  <button type="button" onClick={() => object.taskId && onOpenTask(object.taskId)}>{t("Open task")}</button>
                 </article>
               );
             }
@@ -457,9 +459,9 @@ export function ProjectCanvas({
                   onPointerDown={(event) => objectPointerDown(event, object)}
                   onDoubleClick={() => editText(object)}
                 >
-                  <button type="button" aria-label="Retirer du Canvas" onClick={() => removeObject(object)}>×</button>
+                  <button type="button" aria-label={t("Remove from Canvas")} onClick={() => removeObject(object)}>×</button>
                   <p>{object.text}</p>
-                  <small>Double-cliquer pour modifier</small>
+                  <small>{t("Double-click to edit")}</small>
                 </article>
               );
             }
@@ -470,16 +472,16 @@ export function ProjectCanvas({
                 style={style}
                 onPointerDown={(event) => objectPointerDown(event, object)}
               >
-                <button type="button" aria-label="Retirer du Canvas" onClick={() => removeObject(object)}>×</button>
+                <button type="button" aria-label={t("Remove from Canvas")} onClick={() => removeObject(object)}>×</button>
               </article>
             );
           })}
         </div>
       </div>
       <footer className="project-canvas-status">
-        <span>{board.objects.length} objets · {board.strokes.length} dessins</span>
-        <span>Déposez directement des images ou vidéos dans l’espace.</span>
-        <span>{onBoardChange ? "Enregistrez pour partager le canvas à l’équipe." : "Le contenu est conservé localement sur cet appareil."}</span>
+        <span>{t("{objects} objects · {drawings} drawings", { objects: board.objects.length, drawings: board.strokes.length })}</span>
+        <span>{t("Drop images or videos directly into the workspace.")}</span>
+        <span>{t(onBoardChange ? "Save to share the canvas with the team." : "Content is stored locally on this device.")}</span>
       </footer>
     </section>
   );

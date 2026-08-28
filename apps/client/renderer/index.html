@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
-    <title>CyTask — Choisir un espace</title>
+    <title>CyTask — Choose a workspace</title>
     <link rel="stylesheet" href="selector.css" />
   </head>
   <body>
@@ -12,53 +12,59 @@
       <section class="intro" aria-labelledby="app-title">
         <div class="brand"><img src="cytask-logo.png" alt="" /><span>CyTask</span></div>
         <div class="intro-copy">
-          <p class="eyebrow">CLIENT DESKTOP</p>
-          <h1 id="app-title">Tes projets, en équipe ou entièrement en local.</h1>
-          <p>Ouvre un serveur CyTask ou travaille dans un simple dossier. Ce dossier peut ensuite être partagé par Syncthing ou par le moteur Sync de CyRevision.</p>
+          <p class="eyebrow" data-i18n="desktopClient">DESKTOP CLIENT</p>
+          <h1 id="app-title" data-i18n="heroTitle">Your projects, with a team or entirely local.</h1>
+          <p data-i18n="heroCopy">Open a CyTask server or work from a simple folder. That folder can then be shared through Syncthing or the CyRevision Sync engine.</p>
         </div>
-        <ul class="features" aria-label="Fonctions disponibles">
-          <li><span>01</span> Dossier local, sans serveur à administrer</li>
-          <li><span>02</span> Snapshots immuables compatibles Syncthing</li>
-          <li><span>03</span> Serveur d’équipe Windows, Linux et macOS</li>
+        <ul class="features" data-i18n-aria="availableFeatures" aria-label="Available features">
+          <li><span>01</span><b data-i18n="featureLocal">Local folder, with no server to administer</b></li>
+          <li><span>02</span><b data-i18n="featureSnapshots">Immutable snapshots compatible with Syncthing</b></li>
+          <li><span>03</span><b data-i18n="featureServer">Team server for Windows, Linux and macOS</b></li>
         </ul>
         <footer>CyTask Desktop <span id="version">0.1.0</span></footer>
       </section>
 
       <section class="connection" aria-labelledby="connection-title">
-        <div class="connection-heading">
-          <p class="eyebrow">OUVERTURE</p>
-          <h2 id="connection-title">Choisir un espace</h2>
-          <p>Local pour tes projets personnels, serveur pour une équipe centralisée.</p>
+        <div class="connection-topline">
+          <div class="connection-heading">
+            <p class="eyebrow" data-i18n="opening">OPEN</p>
+            <h2 id="connection-title" data-i18n="chooseWorkspace">Choose a workspace</h2>
+            <p data-i18n="chooseCopy">Use local mode for personal projects, or a server for a centralized team.</p>
+          </div>
+          <div id="language-switcher" class="language-switcher" role="group" data-i18n-aria="language" aria-label="Language">
+            <button type="button" data-locale="en" aria-pressed="true">EN</button>
+            <button type="button" data-locale="fr" aria-pressed="false">FR</button>
+          </div>
         </div>
 
         <div id="saved-section" class="saved-section" hidden>
-          <div class="section-label"><span>Espaces récents</span><span id="server-count"></span></div>
+          <div class="section-label"><span data-i18n="recentWorkspaces">Recent workspaces</span><span id="server-count"></span></div>
           <div id="server-list" class="server-list"></div>
         </div>
 
-        <div class="mode-tabs" role="tablist" aria-label="Type de connexion">
-          <button id="local-tab" class="mode-tab active" type="button" role="tab" aria-selected="true">Dossier local</button>
-          <button id="server-tab" class="mode-tab" type="button" role="tab" aria-selected="false">Serveur équipe</button>
+        <div class="mode-tabs" role="tablist" data-i18n-aria="connectionType" aria-label="Connection type">
+          <button id="local-tab" class="mode-tab active" type="button" role="tab" aria-selected="true" data-i18n="localFolder">Local folder</button>
+          <button id="server-tab" class="mode-tab" type="button" role="tab" aria-selected="false" data-i18n="teamServer">Team server</button>
         </div>
 
         <form id="local-form" class="mode-panel" novalidate>
           <input id="local-id" type="hidden" />
-          <label><span>Nom du projet</span><input id="local-name" maxlength="80" placeholder="Mon projet" /></label>
-          <label><span>Dossier de données</span><div class="folder-field"><input id="local-path" readonly required placeholder="Choisir un dossier…" /><button id="choose-folder" type="button">Parcourir</button></div></label>
-          <div class="sync-note"><strong>Prêt pour la synchronisation</strong><span>CyTask crée des snapshots vérifiés dans <code>.cytask</code>. Ajoute simplement ce dossier à Syncthing ; la base active et les sessions ne sont jamais synchronisées.</span></div>
-          <button id="open-local-button" class="connect-button" type="submit"><span>Ouvrir en local</span><span aria-hidden="true">→</span></button>
+          <label><span data-i18n="projectName">Project name</span><input id="local-name" maxlength="80" data-i18n-placeholder="projectPlaceholder" placeholder="My project" /></label>
+          <label><span data-i18n="dataFolder">Data folder</span><div class="folder-field"><input id="local-path" readonly required data-i18n-placeholder="chooseFolderPlaceholder" placeholder="Choose a folder…" /><button id="choose-folder" type="button" data-i18n="browse">Browse</button></div></label>
+          <div class="sync-note"><strong data-i18n="readyToSync">Ready to sync</strong><span data-i18n="syncNote">CyTask creates verified snapshots in .cytask. Simply add this folder to Syncthing; the active database and sessions are never synchronized.</span></div>
+          <button id="open-local-button" class="connect-button" type="submit"><span data-i18n="openLocally">Open locally</span><span aria-hidden="true">→</span></button>
         </form>
 
         <form id="server-form" class="mode-panel" hidden novalidate>
           <input id="server-id" type="hidden" />
-          <label><span>Nom du serveur</span><input id="server-name" name="name" maxlength="80" autocomplete="organization" placeholder="Studio principal" /></label>
-          <label><span>Adresse IP ou domaine</span><input id="server-url" name="url" required maxlength="2048" inputmode="url" autocomplete="url" spellcheck="false" value="http://127.0.0.1:5173" placeholder="https://cytask.monstudio.fr" /></label>
-          <label id="http-warning" class="http-warning"><input id="allow-http" type="checkbox" /><span><strong>Connexion HTTP non chiffrée</strong> — uniquement sur une machine ou un réseau local de confiance.</span></label>
-          <button id="connect-button" class="connect-button" type="submit"><span>Se connecter</span><span aria-hidden="true">→</span></button>
+          <label><span data-i18n="serverName">Server name</span><input id="server-name" name="name" maxlength="80" autocomplete="organization" data-i18n-placeholder="serverPlaceholder" placeholder="Main studio" /></label>
+          <label><span data-i18n="serverAddress">IP address or domain</span><input id="server-url" name="url" required maxlength="2048" inputmode="url" autocomplete="url" spellcheck="false" value="http://127.0.0.1:5173" placeholder="https://cytask.mystudio.com" /></label>
+          <label id="http-warning" class="http-warning"><input id="allow-http" type="checkbox" /><span><strong data-i18n="unencryptedHttp">Unencrypted HTTP connection</strong> — <span data-i18n="trustedNetworkOnly">only on a trusted machine or local network.</span></span></label>
+          <button id="connect-button" class="connect-button" type="submit"><span data-i18n="signIn">Sign in</span><span aria-hidden="true">→</span></button>
         </form>
 
         <div id="form-error" class="form-error" role="alert" hidden></div>
-        <p class="security-note"><span aria-hidden="true">◆</span> Les sessions, jetons et secrets restent propres à cet ordinateur.</p>
+        <p class="security-note"><span aria-hidden="true">◆</span><b data-i18n="securityNote">Sessions, tokens and secrets remain on this computer.</b></p>
       </section>
     </main>
     <script src="selector.js"></script>

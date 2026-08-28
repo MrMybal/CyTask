@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ProjectLabel, ProjectResource } from "../api";
+import { useI18n } from "../i18n";
 
 type SortKey = "name" | "type" | "folder" | "author" | "updated" | "size";
 type GroupKey = "folder" | "type" | "none";
@@ -12,6 +13,8 @@ interface Props {
 }
 
 export function ResourceLibraryTable({ resources, labels, selectedResourceId, onOpen }: Props) {
+  const { locale, t } = useI18n();
+  const typeLabel = (type: ProjectResource["resourceType"]) => t({ document: "Document", canvas: "Canvas", file: "File" }[type]);
   const [sortKey, setSortKey] = useState<SortKey>("updated");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [groupKey, setGroupKey] = useState<GroupKey>("folder");
@@ -31,8 +34,8 @@ export function ResourceLibraryTable({ resources, labels, selectedResourceId, on
     };
     const [a, b] = values[sortKey];
     return (typeof a === "number" && typeof b === "number"
-      ? a - b : String(a).localeCompare(String(b), "fr")) * direction;
-  }), [labelsById, resources, sortDirection, sortKey]);
+      ? a - b : String(a).localeCompare(String(b), locale)) * direction;
+  }), [labelsById, locale, resources, sortDirection, sortKey]);
 
   const groups = useMemo(() => {
     const grouped = new Map<string, { title: string; color: string; items: ProjectResource[] }>();
@@ -40,14 +43,14 @@ export function ResourceLibraryTable({ resources, labels, selectedResourceId, on
       const label = labelsById.get(resource.folderLabelId ?? "");
       const key = groupKey === "folder" ? resource.folderLabelId ?? "root"
         : groupKey === "type" ? resource.resourceType : "all";
-      const title = groupKey === "folder" ? label?.name ?? "Racine de l’espace"
-        : groupKey === "type" ? typeLabel(resource.resourceType) : "Tous les contenus";
+      const title = groupKey === "folder" ? label?.name ?? t("Workspace root")
+        : groupKey === "type" ? typeLabel(resource.resourceType) : t("All contents");
       const group = grouped.get(key) ?? { title, color: label?.color ?? "#7CF2C4", items: [] };
       group.items.push(resource);
       grouped.set(key, group);
     }
     return [...grouped.values()];
-  }, [groupKey, labelsById, sorted]);
+  }, [groupKey, labelsById, sorted, t]);
 
   function sort(next: SortKey) {
     if (sortKey === next) setSortDirection((current) => current === "asc" ? "desc" : "asc");
@@ -60,13 +63,13 @@ export function ResourceLibraryTable({ resources, labels, selectedResourceId, on
   return (
     <section className="resource-library">
       <header className="resource-library-toolbar">
-        <strong>{resources.length} contenu{resources.length > 1 ? "s" : ""}</strong>
+        <strong>{t(resources.length === 1 ? "{count} item" : "{count} items", { count: resources.length })}</strong>
         <label>
-          Regrouper
+          {t("Group")}
           <select value={groupKey} onChange={(event) => setGroupKey(event.currentTarget.value as GroupKey)}>
-            <option value="folder">Par dossier</option>
-            <option value="type">Par type</option>
-            <option value="none">Sans groupe</option>
+            <option value="folder">{t("By folder")}</option>
+            <option value="type">{t("By type")}</option>
+            <option value="none">{t("No grouping")}</option>
           </select>
         </label>
       </header>
@@ -78,12 +81,12 @@ export function ResourceLibraryTable({ resources, labels, selectedResourceId, on
             <span>{group.items.length}</span>
           </header>
           <div className="resource-table-columns">
-            <SortButton label="Nom" value="name" current={sortKey} direction={sortDirection} onSort={sort} />
-            <SortButton label="Type" value="type" current={sortKey} direction={sortDirection} onSort={sort} />
-            <SortButton label="Dossier" value="folder" current={sortKey} direction={sortDirection} onSort={sort} />
-            <SortButton label="Créé par" value="author" current={sortKey} direction={sortDirection} onSort={sort} />
-            <SortButton label="Modifié" value="updated" current={sortKey} direction={sortDirection} onSort={sort} />
-            <SortButton label="Taille" value="size" current={sortKey} direction={sortDirection} onSort={sort} />
+            <SortButton label={t("Name")} value="name" current={sortKey} direction={sortDirection} onSort={sort} />
+            <SortButton label={t("Type")} value="type" current={sortKey} direction={sortDirection} onSort={sort} />
+            <SortButton label={t("Folder")} value="folder" current={sortKey} direction={sortDirection} onSort={sort} />
+            <SortButton label={t("Created by")} value="author" current={sortKey} direction={sortDirection} onSort={sort} />
+            <SortButton label={t("Updated")} value="updated" current={sortKey} direction={sortDirection} onSort={sort} />
+            <SortButton label={t("Size")} value="size" current={sortKey} direction={sortDirection} onSort={sort} />
           </div>
           {group.items.map((resource) => (
             <button
@@ -97,13 +100,13 @@ export function ResourceLibraryTable({ resources, labels, selectedResourceId, on
                   {resource.resourceType === "document" ? "D" : resource.resourceType === "canvas" ? "C" : "F"}
                 </i>
                 <strong>{resource.name}</strong>
-                {resource.status === "rejected" && <em>Refusé</em>}
-                {resource.status === "uploading" && <em>Envoi…</em>}
+                {resource.status === "rejected" && <em>{t("Rejected")}</em>}
+                {resource.status === "uploading" && <em>{t("Uploading…")}</em>}
               </span>
               <span>{typeLabel(resource.resourceType)}</span>
-              <span>{labelsById.get(resource.folderLabelId ?? "")?.name ?? "Racine"}</span>
+              <span>{labelsById.get(resource.folderLabelId ?? "")?.name ?? t("Root")}</span>
               <span>{resource.createdByName}</span>
-              <time dateTime={resource.updatedAt}>{compactDate(resource.updatedAt)}</time>
+              <time dateTime={resource.updatedAt}>{compactDate(resource.updatedAt, locale)}</time>
               <span>{resource.resourceType === "file" ? formatBytes(resource.sizeBytes) : "—"}</span>
             </button>
           ))}
@@ -112,8 +115,8 @@ export function ResourceLibraryTable({ resources, labels, selectedResourceId, on
       {resources.length === 0 && (
         <div className="resource-empty">
           <span>◇</span>
-          <strong>Aucun contenu ici</strong>
-          <p>Créez un document, un canvas ou importez un fichier.</p>
+          <strong>{t("No content here")}</strong>
+          <p>{t("Create a document or canvas, or import a file.")}</p>
         </div>
       )}
     </section>
@@ -134,12 +137,8 @@ function SortButton({ label, value, current, direction, onSort }: {
   );
 }
 
-function typeLabel(type: ProjectResource["resourceType"]) {
-  return { document: "Document", canvas: "Canvas", file: "Fichier" }[type];
-}
-
-function compactDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
+function compactDate(value: string, locale: "en" | "fr") {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-US", {
     day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
   }).format(new Date(value));
 }

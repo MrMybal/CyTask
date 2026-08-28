@@ -54,6 +54,11 @@ let localServerStopping = false;
 let localServerError = "";
 let localServerStopPromise = null;
 let quittingAfterLocalStop = false;
+let interfaceLocale = "en";
+
+function nativeText(english, french) {
+  return interfaceLocale === "fr" ? french : english;
+}
 
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
@@ -81,22 +86,22 @@ function profilesPath() {
 }
 
 function normalizeServerUrl(value) {
-  if (typeof value !== "string") throw new Error("L’adresse du serveur est obligatoire.");
+  if (typeof value !== "string") throw new Error(nativeText("The server address is required.", "L’adresse du serveur est obligatoire."));
   let candidate = value.trim();
-  if (!candidate || candidate.length > 2048) throw new Error("L’adresse du serveur est invalide.");
+  if (!candidate || candidate.length > 2048) throw new Error(nativeText("The server address is invalid.", "L’adresse du serveur est invalide."));
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)) candidate = `http://${candidate}`;
 
   let parsed;
   try {
     parsed = new URL(candidate);
   } catch {
-    throw new Error("Utilisez une adresse comme https://cytask.exemple.fr ou 192.168.1.20:8080.");
+    throw new Error(nativeText("Use an address such as https://cytask.example.com or 192.168.1.20:8080.", "Utilisez une adresse comme https://cytask.exemple.fr ou 192.168.1.20:8080."));
   }
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
-    throw new Error("Seules les adresses HTTP(S) sans identifiants sont acceptées.");
+    throw new Error(nativeText("Only HTTP(S) addresses without embedded credentials are accepted.", "Seules les adresses HTTP(S) sans identifiants sont acceptées."));
   }
   if (!parsed.hostname || parsed.search || parsed.hash) {
-    throw new Error("L’adresse ne doit pas contenir de paramètres ni de fragment.");
+    throw new Error(nativeText("The address must not contain query parameters or a fragment.", "L’adresse ne doit pas contenir de paramètres ni de fragment."));
   }
   return {
     url: parsed.origin,
@@ -111,10 +116,10 @@ function safeName(value, fallback) {
 }
 
 function normalizeLocalPath(value) {
-  if (typeof value !== "string" || value.includes("\0")) throw new Error("Le dossier local est invalide.");
+  if (typeof value !== "string" || value.includes("\0")) throw new Error(nativeText("The local folder is invalid.", "Le dossier local est invalide."));
   const fullPath = path.resolve(value.trim());
   if (!path.isAbsolute(fullPath) || fullPath === path.parse(fullPath).root) {
-    throw new Error("Choisissez un dossier de projet, pas la racine d’un disque.");
+    throw new Error(nativeText("Choose a project folder, not the root of a drive.", "Choisissez un dossier de projet, pas la racine d’un disque."));
   }
   return fullPath;
 }
@@ -174,7 +179,7 @@ async function getOrCreateDeviceId() {
     const value = JSON.parse(await fs.readFile(deviceIdentityPath(), "utf8"));
     if (SERVER_ID.test(String(value.deviceId ?? ""))) return String(value.deviceId);
   } catch (error) {
-    if (error?.code !== "ENOENT") throw new Error("L’identité locale CyTask est illisible.");
+    if (error?.code !== "ENOENT") throw new Error(nativeText("The local CyTask identity cannot be read.", "L’identité locale CyTask est illisible."));
   }
   const deviceId = randomUUID();
   await fs.mkdir(path.dirname(deviceIdentityPath()), { recursive: true });
@@ -237,7 +242,7 @@ async function startLocalServer(profile) {
   await stopLocalServer();
   const executable = localServerExecutable();
   if (!fsSync.existsSync(executable)) {
-    throw new Error(`Le moteur local CyTask n’est pas installé (${runtimeIdentifier()}). Relancez le packaging du client.`);
+    throw new Error(nativeText(`The CyTask local engine is not installed (${runtimeIdentifier()}). Package the client again.`, `Le moteur local CyTask n’est pas installé (${runtimeIdentifier()}). Relancez le packaging du client.`));
   }
   const folderPath = normalizeLocalPath(profile.folderPath);
   await fs.mkdir(folderPath, { recursive: true });
@@ -269,7 +274,7 @@ async function startLocalServer(profile) {
   child.once("exit", (code) => {
     if (localServerProcess === child) localServerProcess = null;
     if (!localServerStopping && currentProfile?.id === profile.id) {
-      setImmediate(() => showSelector(`Le moteur local CyTask s’est arrêté (${code ?? "inconnu"}).`));
+      setImmediate(() => showSelector(interfaceLocale === "fr" ? `Le moteur local CyTask s’est arrêté (${code ?? "inconnu"}).` : `The CyTask local engine stopped (${code ?? "unknown"}).`));
     }
   });
 
@@ -280,11 +285,11 @@ async function startLocalServer(profile) {
   }
   await stopLocalServer();
   const detail = localServerError.split(/\r?\n/).filter(Boolean).at(-1);
-  throw new Error(detail ? `Le moteur local n’a pas démarré : ${detail}` : "Le moteur local CyTask n’a pas démarré.");
+  throw new Error(detail ? nativeText(`The local engine did not start: ${detail}`, `Le moteur local n’a pas démarré : ${detail}`) : nativeText("The CyTask local engine did not start.", "Le moteur local CyTask n’a pas démarré."));
 }
 function assertSelectorSender(event) {
   if (!selectorWindow || event.sender.id !== selectorWindow.webContents.id) {
-    throw new Error("Requête desktop refusée.");
+    throw new Error(nativeText("Desktop request denied.", "Requête desktop refusée."));
   }
 }
 
@@ -299,10 +304,10 @@ async function checkServer(url) {
       redirect: "error",
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`Le serveur a répondu ${response.status}.`);
+    if (!response.ok) throw new Error(nativeText(`The server responded with status ${response.status}.`, `Le serveur a répondu ${response.status}.`));
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error("Le serveur ne répond pas dans le délai prévu.");
-    throw new Error(error instanceof Error ? error.message : "Le serveur est inaccessible.");
+    if (error?.name === "AbortError") throw new Error(nativeText("The server did not respond within the expected time.", "Le serveur ne répond pas dans le délai prévu."));
+    throw new Error(error instanceof Error ? error.message : nativeText("The server is unreachable.", "Le serveur est inaccessible."));
   } finally {
     clearTimeout(timeout);
   }
@@ -396,37 +401,37 @@ function buildMenu() {
   if (process.platform === "darwin") template.push({ role: "appMenu" });
   template.push(
     {
-      label: "Espace",
+      label: nativeText("Workspace", "Espace"),
       submenu: [
         {
-          label: currentProfile ? `Ouvert : ${currentProfile.name}` : "Aucun espace ouvert",
+          label: currentProfile ? nativeText(`Open: ${currentProfile.name}`, `Ouvert : ${currentProfile.name}`) : nativeText("No workspace open", "Aucun espace ouvert"),
           enabled: false
         },
         {
-          label: "Changer de projet…",
+          label: nativeText("Switch workspace…", "Changer de projet…"),
           accelerator: "CmdOrCtrl+Shift+S",
           enabled: isWorkspace,
           click: () => showSelector()
         },
         { type: "separator" },
-        { role: "quit", label: "Quitter CyTask" }
+        { role: "quit", label: nativeText("Quit CyTask", "Quitter CyTask") }
       ]
     },
     {
-      label: "Affichage",
+      label: nativeText("View", "Affichage"),
       submenu: [
-        { role: "reload", label: "Actualiser" },
-        { role: "forceReload", label: "Actualiser complètement" },
+        { role: "reload", label: nativeText("Reload", "Actualiser") },
+        { role: "forceReload", label: nativeText("Force reload", "Actualiser complètement") },
         { type: "separator" },
-        { role: "resetZoom", label: "Taille réelle" },
-        { role: "zoomIn", label: "Agrandir" },
-        { role: "zoomOut", label: "Réduire" },
+        { role: "resetZoom", label: nativeText("Actual size", "Taille réelle") },
+        { role: "zoomIn", label: nativeText("Zoom in", "Agrandir") },
+        { role: "zoomOut", label: nativeText("Zoom out", "Réduire") },
         { type: "separator" },
-        { role: "togglefullscreen", label: "Plein écran" },
-        ...(!app.isPackaged ? [{ role: "toggleDevTools", label: "Outils de développement" }] : [])
+        { role: "togglefullscreen", label: nativeText("Full screen", "Plein écran") },
+        ...(!app.isPackaged ? [{ role: "toggleDevTools", label: nativeText("Developer tools", "Outils de développement") }] : [])
       ]
     },
-    { role: "windowMenu", label: "Fenêtre" }
+    { role: "windowMenu", label: nativeText("Window", "Fenêtre") }
   );
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -444,7 +449,7 @@ function createSelectorWindow() {
     minWidth: 780,
     minHeight: 560,
     show: false,
-    title: "CyTask — Choisir un espace",
+    title: nativeText("CyTask — Choose a workspace", "CyTask — Choisir un espace"),
     backgroundColor: "#0d1219",
     icon: iconPath(),
     webPreferences: {
@@ -518,10 +523,10 @@ function openWorkspace(profile, runtimeUrl = profile.url) {
   });
   workspaceWindow.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
     if (!isMainFrame || code === -3) return;
-    showSelector(`Connexion impossible : ${description} (${code}).`);
+    showSelector(nativeText(`Connection failed: ${description} (${code}).`, `Connexion impossible : ${description} (${code}).`));
   });
   workspaceWindow.webContents.on("render-process-gone", (_event, details) => {
-    showSelector(`Le client CyTask s’est interrompu (${details.reason}).`);
+    showSelector(nativeText(`The CyTask client stopped (${details.reason}).`, `Le client CyTask s’est interrompu (${details.reason}).`));
   });
   workspaceWindow.on("closed", () => {
     if (currentProfile?.type === "local") void stopLocalServer();
@@ -533,13 +538,20 @@ function openWorkspace(profile, runtimeUrl = profile.url) {
 }
 
 function registerIpc() {
+  ipcMain.handle("cytask:set-locale", async (event, locale) => {
+    assertSelectorSender(event);
+    interfaceLocale = locale === "fr" ? "fr" : "en";
+    selectorWindow?.setTitle(nativeText("CyTask — Choose a workspace", "CyTask — Choisir un espace"));
+    buildMenu();
+    return { locale: interfaceLocale };
+  });
   ipcMain.handle("cytask:list-servers", async (event) => {
     assertSelectorSender(event);
     return { servers: await readProfiles(), version: app.getVersion() };
   });
   ipcMain.handle("cytask:remove-server", async (event, id) => {
     assertSelectorSender(event);
-    if (typeof id !== "string" || !SERVER_ID.test(id)) throw new Error("Serveur invalide.");
+    if (typeof id !== "string" || !SERVER_ID.test(id)) throw new Error(nativeText("Invalid server profile.", "Serveur invalide."));
     const profiles = (await readProfiles()).filter((profile) => profile.id !== id);
     await writeProfiles(profiles);
     return profiles;
@@ -547,8 +559,8 @@ function registerIpc() {
   ipcMain.handle("cytask:choose-local-folder", async (event) => {
     assertSelectorSender(event);
     const result = await dialog.showOpenDialog(selectorWindow, {
-      title: "Choisir ou créer un dossier CyTask",
-      buttonLabel: "Utiliser ce dossier",
+      title: nativeText("Choose or create a CyTask folder", "Choisir ou créer un dossier CyTask"),
+      buttonLabel: nativeText("Use this folder", "Utiliser ce dossier"),
       properties: ["openDirectory", "createDirectory"]
     });
     if (result.canceled || result.filePaths.length !== 1) return { canceled: true };
@@ -557,7 +569,7 @@ function registerIpc() {
   });
   ipcMain.handle("cytask:open-local", async (event, payload) => {
     assertSelectorSender(event);
-    if (!payload || typeof payload !== "object") throw new Error("Configuration locale invalide.");
+    if (!payload || typeof payload !== "object") throw new Error(nativeText("Invalid local configuration.", "Configuration locale invalide."));
     const folderPath = normalizeLocalPath(payload.folderPath);
     const profiles = await readProfiles();
     const existingId = typeof payload.id === "string" && SERVER_ID.test(payload.id) ? payload.id : null;
@@ -578,10 +590,10 @@ function registerIpc() {
   });
   ipcMain.handle("cytask:connect-server", async (event, payload) => {
     assertSelectorSender(event);
-    if (!payload || typeof payload !== "object") throw new Error("Configuration invalide.");
+    if (!payload || typeof payload !== "object") throw new Error(nativeText("Invalid configuration.", "Configuration invalide."));
     const normalized = normalizeServerUrl(payload.url);
     if (normalized.insecure && payload.allowInsecure !== true) {
-      throw new Error("Confirmez l’utilisation de HTTP non chiffré pour ce serveur local.");
+      throw new Error(nativeText("Confirm the use of unencrypted HTTP for this local server.", "Confirmez l’utilisation de HTTP non chiffré pour ce serveur local."));
     }
     await stopLocalServer();
     await checkServer(normalized.url);

@@ -6,6 +6,7 @@ import {
   type TaskOption
 } from "../api";
 import { uploadProjectFile } from "../resourceUpload";
+import { useI18n } from "../i18n";
 import { ResourceEditor } from "./ResourceEditor";
 import { ResourceLibraryTable } from "./ResourceLibraryTable";
 
@@ -30,6 +31,7 @@ export function ProjectContentPane({
   onError,
   onNotice
 }: Props) {
+  const { locale, t } = useI18n();
   const [resources, setResources] = useState<ProjectResource[]>([]);
   const [selected, setSelected] = useState<ProjectResource>();
   const [filter, setFilter] = useState<"all" | ProjectResource["resourceType"]>("all");
@@ -45,11 +47,11 @@ export function ProjectContentPane({
     try {
       setResources(await api.projectResources(projectId));
     } catch {
-      onError("Impossible de charger les contenus de l’espace.");
+      onError(t("Unable to load workspace contents."));
     } finally {
       setLoading(false);
     }
-  }, [onError, projectId]);
+  }, [onError, projectId, t]);
 
   useEffect(() => {
     setSelected(undefined);
@@ -86,9 +88,9 @@ export function ProjectContentPane({
       setResources((current) => [resource, ...current]);
       setSelected(resource);
       setCreating(undefined);
-      onNotice(creating === "canvas" ? "Canvas partagé créé." : "Document partagé créé.");
+      onNotice(t(creating === "canvas" ? "Shared canvas created." : "Shared document created."));
     } catch {
-      onError("Impossible de créer ce contenu.");
+      onError(t("Unable to create this content."));
     }
   }
 
@@ -105,9 +107,9 @@ export function ProjectContentPane({
         );
         setResources((current) => [resource, ...current.filter((item) => item.id !== resource.id)]);
       }
-      onNotice(files.length > 1 ? "Fichiers ajoutés à l’espace." : "Fichier ajouté à l’espace.");
+      onNotice(t(files.length > 1 ? "Files added to the workspace." : "File added to the workspace."));
     } catch {
-      onError("Impossible d’envoyer ce fichier.");
+      onError(t("Unable to upload this file."));
     } finally {
       setProgress(undefined);
       if (fileInput.current) fileInput.current.value = "";
@@ -135,19 +137,19 @@ export function ProjectContentPane({
         void uploadFiles(Array.from(event.dataTransfer.files));
       }}
     >
-      {dropActive && <div className="space-file-drop"><strong>Déposer dans l’espace</strong><span>Images, vidéos et fichiers</span></div>}
+      {dropActive && <div className="space-file-drop"><strong>{t("Drop into workspace")}</strong><span>{t("Images, videos and files")}</span></div>}
       <header className="content-pane-header">
         <div>
-          <p className="eyebrow">CONTENUS DE L’ESPACE</p>
-          <h2>Documents, canvas et fichiers</h2>
-          <p>Les pièces jointes du chat peuvent utiliser cette même bibliothèque.</p>
+          <p className="eyebrow">{t("WORKSPACE CONTENTS")}</p>
+          <h2>{t("Documents, canvases and files")}</h2>
+          <p>{t("Chat attachments can use this same library.")}</p>
         </div>
         {canContribute && (
           <div className="content-pane-actions">
             <button type="button" onClick={() => setCreating("document")}>+ Document</button>
             <button type="button" onClick={() => setCreating("canvas")}>+ Canvas</button>
             <button className="primary-button small" type="button" onClick={() => fileInput.current?.click()}>
-              Importer
+              {t("Import")}
             </button>
             <input
               ref={fileInput}
@@ -162,30 +164,30 @@ export function ProjectContentPane({
 
       {creating && (
         <form className="resource-create-form" onSubmit={create}>
-          <strong>Nouveau {creating === "canvas" ? "canvas" : "document"}</strong>
-          <input name="name" placeholder="Nom du contenu" maxLength={240} required autoFocus />
+          <strong>{t("New {type}", { type: t(creating === "canvas" ? "canvas" : "document") })}</strong>
+          <input name="name" placeholder={t("Content name")} maxLength={240} required autoFocus />
           <select name="folderLabelId" defaultValue={selectedFolderId ?? ""}>
-            <option value="">Racine de l’espace</option>
+            <option value="">{t("Workspace root")}</option>
             {labels.map((label) => <option value={label.id} key={label.id}>{label.name}</option>)}
           </select>
-          <button className="primary-button small" type="submit">Créer</button>
-          <button className="text-button" type="button" onClick={() => setCreating(undefined)}>Annuler</button>
+          <button className="primary-button small" type="submit">{t("Create")}</button>
+          <button className="text-button" type="button" onClick={() => setCreating(undefined)}>{t("Cancel")}</button>
         </form>
       )}
 
       <div className="content-filter-bar">
-        <div className="content-type-tabs" role="group" aria-label="Filtrer les contenus">
+        <div className="content-type-tabs" role="group" aria-label={t("Filter contents")}>
           {(["all", "document", "canvas", "file"] as const).map((type) => (
             <button
               className={filter === type ? "active" : ""}
               type="button"
               key={type}
               onClick={() => setFilter(type)}
-            >{{ all: "Tout", document: "Documents", canvas: "Canvas", file: "Fichiers" }[type]}</button>
+            >{t({ all: "All", document: "Documents", canvas: "Canvas", file: "Files" }[type])}</button>
           ))}
         </div>
         {selectedFolderId && (
-          <label><input type="checkbox" checked={showAllFolders} onChange={(event) => setShowAllFolders(event.currentTarget.checked)} /> Tous les dossiers</label>
+          <label><input type="checkbox" checked={showAllFolders} onChange={(event) => setShowAllFolders(event.currentTarget.checked)} /> {t("All folders")}</label>
         )}
       </div>
 
@@ -194,7 +196,7 @@ export function ProjectContentPane({
           <span>{progress.label}</span><progress value={progress.percent} max={100} />
         </div>
       )}
-      {loading ? <div className="content-loading">Chargement des contenus…</div> : (
+      {loading ? <div className="content-loading">{t("Loading contents…")}</div> : (
         <ResourceLibraryTable
           resources={visible}
           labels={labels}

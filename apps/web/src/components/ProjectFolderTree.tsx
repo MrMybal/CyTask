@@ -1,5 +1,6 @@
 import type { FormEvent } from "react";
 import type { ProjectLabel } from "../api";
+import { useI18n } from "../i18n";
 
 export interface ProjectFolderTreeProps {
   labels: ProjectLabel[];
@@ -28,17 +29,18 @@ export function ProjectFolderTree({
   onCancelCreate,
   onCreate
 }: ProjectFolderTreeProps) {
-  const roots = buildTree(labels);
+  const { locale, t } = useI18n();
+  const roots = buildTree(labels, locale);
   return (
-    <div className="space-tree" aria-label="Dossiers du projet">
+    <div className="space-tree" aria-label={t("Project folders")}>
       <div className="space-tree-heading">
-        <span className="space-tree-label">Dossiers</span>
+        <span className="space-tree-label">{t("Folders")}</span>
         {canCreate && (
           <button
             className="folder-create-trigger"
             type="button"
-            title="Créer un dossier"
-            aria-label="Créer un dossier"
+            title={t("Create a folder")}
+            aria-label={t("Create a folder")}
             onClick={() => onStartCreate(null)}
           >+</button>
         )}
@@ -66,7 +68,7 @@ export function ProjectFolderTree({
         />
       ))}
       {labels.length === 0 && editorParentId === undefined && (
-        <p className="folder-empty">Aucun dossier. Utilisez + pour commencer.</p>
+        <p className="folder-empty">{t("No folders. Use + to get started.")}</p>
       )}
     </div>
   );
@@ -87,13 +89,14 @@ function FolderBranch({
   onCancelCreate,
   onCreate
 }: FolderBranchProps) {
+  const { t } = useI18n();
   return (
     <div className="folder-branch">
       <div className="folder-row">
         <button
           className={selectedLabelId === folder.id ? "folder-link active" : "folder-link"}
           type="button"
-          title={folder.name + " · " + (counts.get(folder.id) ?? 0) + " tâches"}
+          title={folder.name + " · " + (counts.get(folder.id) ?? 0) + " " + t("tasks")}
           onClick={() => onSelect(folder.id)}
         >
           <span className="folder-expander" aria-hidden="true">
@@ -107,8 +110,8 @@ function FolderBranch({
           <button
             className="folder-child-trigger"
             type="button"
-            title={"Créer un sous-dossier dans " + folder.name}
-            aria-label={"Créer un sous-dossier dans " + folder.name}
+            title={t("Create a subfolder in {name}", { name: folder.name })}
+            aria-label={t("Create a subfolder in {name}", { name: folder.name })}
             onClick={() => onStartCreate(folder.id)}
           >+</button>
         )}
@@ -156,6 +159,7 @@ function FolderCreateForm({
   onSubmit,
   onCancel
 }: FolderCreateFormProps) {
+  const { t } = useI18n();
   return (
     <form className="folder-create-form" onSubmit={onSubmit}>
       <input name="parentLabelId" type="hidden" value={parentLabelId ?? ""} />
@@ -163,26 +167,26 @@ function FolderCreateForm({
         name="color"
         type="color"
         defaultValue={defaultColor}
-        title="Couleur du dossier"
-        aria-label="Couleur du dossier"
+        title={t("Folder color")}
+        aria-label={t("Folder color")}
       />
       <input
         name="name"
         type="text"
         minLength={1}
         maxLength={80}
-        placeholder={parentLabelId ? "Nom du sous-dossier" : "Nom du dossier"}
-        aria-label={parentLabelId ? "Nom du sous-dossier" : "Nom du dossier"}
+        placeholder={t(parentLabelId ? "Subfolder name" : "Folder name")}
+        aria-label={t(parentLabelId ? "Subfolder name" : "Folder name")}
         autoFocus
         required
       />
-      <button type="submit" title="Créer">✓</button>
-      <button type="button" title="Annuler" onClick={onCancel}>×</button>
+      <button type="submit" title={t("Create")}>✓</button>
+      <button type="button" title={t("Cancel")} onClick={onCancel}>×</button>
     </form>
   );
 }
 
-function buildTree(labels: ProjectLabel[]): FolderNode[] {
+function buildTree(labels: ProjectLabel[], locale: "en" | "fr"): FolderNode[] {
   const nodes = new Map<string, FolderNode>(
     labels.map((label) => [label.id, { ...label, children: [] }])
   );
@@ -193,7 +197,7 @@ function buildTree(labels: ProjectLabel[]): FolderNode[] {
     else roots.push(node);
   }
   const sortNodes = (items: FolderNode[]) => {
-    items.sort((left, right) => left.name.localeCompare(right.name, "fr"));
+    items.sort((left, right) => left.name.localeCompare(right.name, locale));
     items.forEach((item) => sortNodes(item.children));
   };
   sortNodes(roots);

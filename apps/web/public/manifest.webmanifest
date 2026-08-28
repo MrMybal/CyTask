@@ -1,8 +1,8 @@
 {
   "name": "CyTask",
   "short_name": "CyTask",
-  "description": "Gestion de projets et de tâches pour les équipes de production.",
-  "lang": "fr",
+  "description": "Project and task management for production teams.",
+  "lang": "en",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
