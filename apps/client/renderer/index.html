@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>CyTask — Connexion au serveur</title>
+    <link rel="stylesheet" href="selector.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="intro" aria-labelledby="app-title">
+        <div class="brand">
+          <img src="cytask-logo.png" alt="" />
+          <span>CyTask</span>
+        </div>
+        <div class="intro-copy">
+          <p class="eyebrow">CLIENT DESKTOP</p>
+          <h1 id="app-title">Ton espace de production, sur ton serveur.</h1>
+          <p>Connecte l’application à une adresse CyTask auto-hébergée. Chaque serveur conserve sa propre session isolée sur cet ordinateur.</p>
+        </div>
+        <ul class="features" aria-label="Fonctions disponibles">
+          <li><span>01</span> Images, vidéos et CyAnnota intégrés</li>
+          <li><span>02</span> Chat, vocal et partage de la fenêtre</li>
+          <li><span>03</span> Windows, Linux et macOS</li>
+        </ul>
+        <footer>CyTask Desktop <span id="version">0.1.0</span></footer>
+      </section>
+
+      <section class="connection" aria-labelledby="connection-title">
+        <div class="connection-heading">
+          <p class="eyebrow">CONNEXION</p>
+          <h2 id="connection-title">Choisir un serveur</h2>
+          <p>L’adresse doit pointer vers la page CyTask servie avec son API.</p>
+        </div>
+
+        <div id="saved-section" class="saved-section" hidden>
+          <div class="section-label"><span>Serveurs récents</span><span id="server-count"></span></div>
+          <div id="server-list" class="server-list"></div>
+        </div>
+
+        <form id="server-form" novalidate>
+          <input id="server-id" type="hidden" />
+          <label>
+            <span>Nom du serveur</span>
+            <input id="server-name" name="name" maxlength="80" autocomplete="organization" placeholder="Studio principal" />
+          </label>
+          <label>
+            <span>Adresse IP ou domaine</span>
+            <input id="server-url" name="url" required maxlength="2048" inputmode="url" autocomplete="url" spellcheck="false" value="http://127.0.0.1:5173" placeholder="https://cytask.monstudio.fr" />
+          </label>
+
+          <label id="http-warning" class="http-warning">
+            <input id="allow-http" type="checkbox" />
+            <span><strong>Connexion HTTP non chiffrée</strong> — à utiliser uniquement sur une machine ou un réseau local de confiance.</span>
+          </label>
+
+          <div id="form-error" class="form-error" role="alert" hidden></div>
+          <button id="connect-button" class="connect-button" type="submit">
+            <span>Se connecter</span><span aria-hidden="true">→</span>
+          </button>
+        </form>
+        <p class="security-note"><span aria-hidden="true">◆</span> Les mots de passe restent dans la session sécurisée du serveur. Le client desktop ne les enregistre pas.</p>
+      </section>
+    </main>
+    <script src="selector.js"></script>
+  </body>
+</html>

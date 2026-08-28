@@ -8,7 +8,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": "http://127.0.0.1:5080",
-      "/health": "http://127.0.0.1:5080"
+      "/health": "http://127.0.0.1:5080",
+      "/plugins/cyannota": {
+        target: "http://127.0.0.1:5174",
+        changeOrigin: false
+      }
     }
   },
   build: {

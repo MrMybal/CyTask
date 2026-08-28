@@ -140,11 +140,14 @@ thread et consignées. Le contrat initial est dans
 
 ## Clients
 
-Le premier client est une application Web responsive et installable. Le même
-domaine UI pourra être enveloppé dans un shell natif pour fournir stockage sécurisé,
-notifications, conversion média locale et intégration système. Android arrive
-après stabilisation de l'API et des usages mobiles ; iOS n'est pas une exigence
-initiale mais ne doit pas être rendu impossible.
+Le client Web responsive et installable est partagé avec CyTask Desktop. Le shell
+Electron propose un sélecteur d’adresse serveur, une partition de session par origine
+et une fenêtre distante sandboxée sans Node ni preload. Il fournit les permissions
+natives nécessaires au vocal, aux notifications, au plein écran et au partage de la
+fenêtre CyTask. CyAnnota reste un plugin Web intégré à la tâche et fonctionne donc
+identiquement dans le navigateur et dans Electron. Android arrive après stabilisation
+de l'API et des usages mobiles ; iOS n'est pas une exigence initiale mais ne doit pas
+être rendu impossible.
 
 ## Préparation de CyRevision
 

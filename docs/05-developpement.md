@@ -14,7 +14,7 @@ Le SDK .NET peut rester local dans `.tools/dotnet` et n'est jamais versionné.
 ./scripts/dev.ps1
 ```
 
-Le script démarre l'API en arrière-plan sur le port 5080 et Vite sur le port 5173.
+Le script démarre l'API en arrière-plan sur le port 5080, CyAnnota sur le port 5174 et le client Web Vite sur le port 5173.
 Le serveur est en environnement Development et utilise le stockage mémoire ; toute
 donnée disparaît avec le processus.
 
@@ -26,6 +26,16 @@ donnée disparaît avec le processus.
 Push-Location apps/web
 npm ci
 npm run build
+Pop-Location
+
+Push-Location plugins/cyannota/web
+npm ci
+npm run build
+Pop-Location
+
+Push-Location apps/client
+npm ci
+npm run check
 Pop-Location
 ```
 
@@ -76,7 +86,7 @@ Clés de la section `CyTask` :
 | `EventReplayBatchSize` | `256` | événements rejoués par lecture SSE |
 | `SseHeartbeatSeconds` | `15` | intervalle des commentaires keep-alive |
 | `PluginSecretKey` | vide | clé AES-256 en base64, obligatoire avec PostgreSQL pour les jetons de plugins |
-| `CyAnnotaUrl` | `http://localhost:3000` | URL HTTP(S) exacte de l’application CyAnnota ouverte par le plugin |
+| `CyAnnotaUrl` | `/plugins/cyannota/` | route relative intégrée sur la même origine CyTask |
 | `AiLocalAgentsEnabled` | `false` | autorise explicitement Codex, Claude Code et OpenCode sur la machine serveur |
 | `AiLocalWorkspacePath` | vide | dossier de travail imposé aux agents locaux |
 | `CodexExecutable` | `codex` | chemin ou nom de l’exécutable Codex CLI |

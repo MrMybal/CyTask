@@ -10,7 +10,7 @@
 - React, TypeScript et Vite pour le client Web ;
 - Server-Sent Events pour les notifications serveur vers client de la première tranche ;
 - C++ natif pour le futur plugin Unreal ;
-- shell installé à décider séparément après mesure de Tauri et des besoins médias.
+- client installé décidé séparément dans ADR-0004 après validation des besoins médias.
 
 ## Raisons
 

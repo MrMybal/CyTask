@@ -92,11 +92,13 @@ builder.Services.AddOptions<CyTaskOptions>()
         "AiRequestTimeoutSeconds must be between 10 and 600.")
     .Validate(options => options.AiMaxOutputCharacters is >= 1_000 and <= 200_000,
         "AiMaxOutputCharacters must be between 1000 and 200000.")
-    .Validate(options => Uri.TryCreate(options.CyAnnotaUrl, UriKind.Absolute, out var cyAnnotaUri)
-        && cyAnnotaUri.Scheme is "http" or "https"
-        && string.IsNullOrEmpty(cyAnnotaUri.UserInfo)
-        && string.IsNullOrEmpty(cyAnnotaUri.Fragment),
-        "CyAnnotaUrl must be an absolute HTTP(S) URL without credentials or fragment.")
+    .Validate(options =>
+    {
+        var value = options.CyAnnotaUrl.Trim();
+        return value.Length > 1 && value[0] == '/'
+            && !value.StartsWith("//", StringComparison.Ordinal)
+            && !value.Contains((char)92) && !value.Contains('?') && !value.Contains('#');
+    }, "CyAnnotaUrl must be a safe root-relative path served by the CyTask origin.")
     .Validate(options => !options.AiLocalAgentsEnabled
         || !string.IsNullOrWhiteSpace(options.AiLocalWorkspacePath),
         "AiLocalWorkspacePath is required when local agents are enabled.")
@@ -235,12 +237,22 @@ app.Use((context, next) =>
     {
         context.Response.Headers.XContentTypeOptions = "nosniff";
         context.Response.Headers.Append("Referrer-Policy", "no-referrer");
-        context.Response.Headers.Append("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
-        var policy = context.Request.Path.StartsWithSegments("/api") ||
-                     context.Request.Path.StartsWithSegments("/health")
+        context.Response.Headers.Append(
+            "Permissions-Policy",
+            "camera=(self), microphone=(self), display-capture=(self), geolocation=()");
+        var isApi = context.Request.Path.StartsWithSegments("/api") ||
+                    context.Request.Path.StartsWithSegments("/health");
+        var isCyAnnota = context.Request.Path.StartsWithSegments("/plugins/cyannota");
+        var policy = isApi
             ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
-            : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
-              "connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+            : isCyAnnota
+                ? "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; " +
+                  "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; " +
+                  "connect-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:; " +
+                  "object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'"
+                : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+                  "connect-src 'self'; frame-src 'self'; object-src 'none'; frame-ancestors 'none'; " +
+                  "base-uri 'self'; form-action 'self'";
         context.Response.Headers.Append("Content-Security-Policy", policy);
         return Task.CompletedTask;
     });
@@ -253,6 +265,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapCyTaskApi();
 app.Map("/api/{**path}", () => Results.NotFound());
+app.MapFallbackToFile("/plugins/cyannota/{*path:nonfile}", "plugins/cyannota/index.html");
 app.MapFallbackToFile("index.html");
 
 app.Run();

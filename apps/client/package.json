@@ -1,0 +1,25 @@
+{
+  "name": "@cytask/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Client desktop sécurisé pour les serveurs CyTask auto-hébergés",
+  "main": "main.cjs",
+  "author": "CyberAlien",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "electron .",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check renderer/selector.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win portable nsis",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:mac": "electron-builder --mac dmg zip"
+  },
+  "devDependencies": {
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3"
+  }
+}

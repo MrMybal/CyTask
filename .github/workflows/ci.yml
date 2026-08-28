@@ -37,7 +37,10 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            plugins/cyannota/web/package-lock.json
+            apps/client/package-lock.json
 
       - name: Install Web dependencies
         working-directory: apps/web
@@ -50,6 +53,30 @@ jobs:
       - name: Audit production Web dependencies
         working-directory: apps/web
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Install CyAnnota plugin dependencies
+        working-directory: plugins/cyannota/web
+        run: npm ci --no-fund --no-audit
+
+      - name: Build CyAnnota plugin
+        working-directory: plugins/cyannota/web
+        run: npm run build
+
+      - name: Audit CyAnnota dependencies
+        working-directory: plugins/cyannota/web
+        run: npm audit --audit-level=high
+
+      - name: Install desktop dependencies
+        working-directory: apps/client
+        run: npm ci --no-fund --no-audit
+
+      - name: Check desktop client
+        working-directory: apps/client
+        run: npm run check
+
+      - name: Audit desktop dependencies
+        working-directory: apps/client
+        run: npm audit --audit-level=high
 
       - name: Build production image
         run: docker build --file infra/docker/Dockerfile .
