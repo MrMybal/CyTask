@@ -5,6 +5,7 @@ using CyTask.Api.Collaboration;
 using CyTask.Api.Configuration;
 using CyTask.Api.Domain;
 using CyTask.Api.Infrastructure;
+using CyTask.Api.LocalSync;
 using CyTask.Api.Plugins;
 using CyTask.Api.Realtime;
 using Microsoft.Net.Http.Headers;
@@ -34,6 +35,12 @@ public static class ApiEndpoints
             .AddEndpointFilter<RequireSessionFilter>()
             .AddEndpointFilter<ApiScopeFilter>();
         authenticated.MapGet("/me", GetMe);
+        authenticated.MapGet("/local-sync/status", static (ILocalSyncService localSync) =>
+            Results.Ok(localSync.Status));
+        authenticated.MapPost("/local-sync/flush", static async (
+                ILocalSyncService localSync, CancellationToken cancellationToken) =>
+                Results.Ok(await localSync.FlushAsync(cancellationToken)))
+            .AddEndpointFilter<CsrfFilter>();
         authenticated.MapDelete("/session", LogoutAsync).AddEndpointFilter<CsrfFilter>();
         authenticated.MapPost("/oauth/native/authorizations", CreateNativeAuthorizationAsync)
             .AddEndpointFilter<RequireCookieSessionFilter>()

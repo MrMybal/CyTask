@@ -6,6 +6,10 @@ public sealed class CyTaskOptions
     public string? DatabaseConnection { get; init; }
     public bool ApplyMigrations { get; init; }
     public bool UseInMemoryStore { get; init; }
+    public bool LocalMode { get; init; }
+    public string? LocalWorkspacePath { get; init; }
+    public string? LocalDeviceId { get; init; }
+    public int LocalSyncSeconds { get; init; } = 2;
     public int SessionHours { get; init; } = 12;
     public int NativeAuthorizationCodeMinutes { get; init; } = 5;
     public int NativeAccessTokenMinutes { get; init; } = 60;

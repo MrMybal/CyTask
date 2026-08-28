@@ -1,4 +1,5 @@
 using CyTask.Api.Domain;
+using CyTask.Api.LocalSync;
 
 namespace CyTask.Api.Infrastructure;
 
@@ -2131,6 +2132,89 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         };
     }
 
+    internal WorkspaceLocalState CaptureLocalState()
+    {
+        lock (_gate)
+        {
+            return new WorkspaceLocalState(
+                _users.Values.OrderBy(item => item.Id).ToArray(),
+                _organizations.Values.OrderBy(item => item.Id).ToArray(),
+                _memberships.Values
+                    .OrderBy(item => item.OrganizationId).ThenBy(item => item.UserId)
+                    .Select(item => new LocalMembership(item.UserId, item.OrganizationId, item.Role))
+                    .ToArray(),
+                _projects.Values.OrderBy(item => item.Id).ToArray(),
+                _projectStatuses.Values
+                    .OrderBy(item => item.ProjectId).ThenBy(item => item.Position).ThenBy(item => item.Key)
+                    .ToArray(),
+                _projectLabels.Values.OrderBy(item => item.Id).ToArray(),
+                _taskLabelAssignments.Values
+                    .OrderBy(item => item.TaskId).ThenBy(item => item.LabelId).ToArray(),
+                _tasks.Values.OrderBy(item => item.Id).ToArray(),
+                _taskParents.Values.OrderBy(item => item.TaskId).ToArray(),
+                _comments.Values.OrderBy(item => item.Id).ToArray(),
+                _activities.OrderBy(item => item.Id).ToArray(),
+                _attachments.Values
+                    .Where(item => item.Status != "uploading")
+                    .OrderBy(item => item.Id).ToArray(),
+                _externalReferences.Values.OrderBy(item => item.Id).ToArray(),
+                _taskDependencies.Values
+                    .OrderBy(item => item.TaskId).ThenBy(item => item.DependsOnTaskId)
+                    .Select(item => new LocalTaskDependency(
+                        item.OrganizationId, item.TaskId, item.DependsOnTaskId,
+                        item.CreatedBy, item.CreatedAt))
+                    .ToArray(),
+                _checklistItems.Values.OrderBy(item => item.Id).ToArray());
+        }
+    }
+
+    internal void RestoreLocalState(WorkspaceLocalState state)
+    {
+        lock (_gate)
+        {
+            var activeAttachments = _attachments.Values
+                .Where(item => item.Status == "uploading").ToArray();
+
+            _users.Clear();
+            foreach (var item in state.Users) _users[item.Id] = item;
+            _organizations.Clear();
+            foreach (var item in state.Organizations) _organizations[item.Id] = item;
+            _memberships.Clear();
+            foreach (var item in state.Memberships)
+                _memberships[item.UserId] = (item.UserId, item.OrganizationId, item.Role);
+            _projects.Clear();
+            foreach (var item in state.Projects) _projects[item.Id] = item;
+            _projectStatuses.Clear();
+            foreach (var item in state.ProjectStatuses)
+                _projectStatuses[(item.ProjectId, item.Key)] = item;
+            _projectLabels.Clear();
+            foreach (var item in state.ProjectLabels) _projectLabels[item.Id] = item;
+            _taskLabelAssignments.Clear();
+            foreach (var item in state.TaskLabels)
+                _taskLabelAssignments[(item.TaskId, item.LabelId)] = item;
+            _tasks.Clear();
+            foreach (var item in state.Tasks) _tasks[item.Id] = item;
+            _taskParents.Clear();
+            foreach (var item in state.TaskParents) _taskParents[item.TaskId] = item;
+            _comments.Clear();
+            foreach (var item in state.Comments) _comments[item.Id] = item;
+            _activities.Clear();
+            _activities.AddRange(state.Activity);
+            _attachments.Clear();
+            foreach (var item in state.Attachments) _attachments[item.Id] = item;
+            foreach (var item in activeAttachments) _attachments.TryAdd(item.Id, item);
+            _externalReferences.Clear();
+            foreach (var item in state.ExternalReferences) _externalReferences[item.Id] = item;
+            _taskDependencies.Clear();
+            foreach (var item in state.TaskDependencies)
+                _taskDependencies[(item.TaskId, item.DependsOnTaskId)] = new TaskDependencyEntry(
+                    item.OrganizationId, item.TaskId, item.DependsOnTaskId,
+                    item.CreatedBy, item.CreatedAt);
+            _checklistItems.Clear();
+            foreach (var item in state.Checklist) _checklistItems[item.Id] = item;
+            _attachmentReviewLeases.Clear();
+        }
+    }
     private void AddActivity(
         Guid organizationId,
         string eventType,

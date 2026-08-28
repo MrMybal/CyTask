@@ -16,6 +16,7 @@ import {
   type Attachment,
   type AttachmentUpload,
   type ExternalReference,
+  type LocalSyncStatus,
   type OrganizationMember,
   type Project,
   type ProjectStatus,
@@ -106,6 +107,8 @@ type DetailBundle = [
 ];
 
 export function Workspace({ session, onLogout }: WorkspaceProps) {
+  const [localSync, setLocalSync] = useState<LocalSyncStatus>();
+  const [localSyncFlushing, setLocalSyncFlushing] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [tasks, setTasks] = useState<WorkItem[]>([]);
@@ -193,6 +196,22 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const taskFilterInput = useRef<HTMLInputElement>(null);
   const detailPrefetch = useRef(new Map<string, { at: number; load: Promise<DetailBundle> }>());
 
+  useEffect(() => {
+    let active = true;
+    const refresh = () => api.localSyncStatus()
+      .then((status) => { if (active) setLocalSync(status); })
+      .catch(() => undefined);
+    void refresh();
+    const timer = window.setInterval(refresh, 10_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  async function flushLocalSync() {
+    setLocalSyncFlushing(true);
+    try { setLocalSync(await api.flushLocalSync()); }
+    catch { setError("Impossible de sauvegarder le dossier local."); }
+    finally { setLocalSyncFlushing(false); }
+  }
   const canAdminister = session.role === "owner" || session.role === "admin";
   const canContribute = session.role !== "viewer";
 
@@ -2145,6 +2164,19 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </nav>
         </div>
 
+        {localSync?.enabled && (
+          <button
+            className={`team-link local-sync-link${localSync.conflictCount > 0 ? " has-conflicts" : ""}`}
+            type="button"
+            title={`${localSync.message ?? "Mode local"} · ${localSync.peerDeviceCount} appareil(s) · ${localSync.snapshotCount} snapshot(s)`}
+            disabled={localSyncFlushing}
+            onClick={() => void flushLocalSync()}
+          >
+            <span className="project-avatar">{localSync.conflictCount > 0 ? "!" : "↻"}</span>
+            <span>{localSyncFlushing ? "Sauvegarde…" : localSync.conflictCount > 0
+              ? `${localSync.conflictCount} conflit(s) Sync` : "Local · Synchronisé"}</span>
+          </button>
+        )}
         <button className="team-link" title="Équipe" onClick={() => void openTeam()}>
           <span className="project-avatar">EQ</span>
           <span>Équipe</span>

@@ -12,11 +12,15 @@
   "scripts": {
     "dev": "electron .",
     "check": "node --check main.cjs && node --check preload.cjs && node --check renderer/selector.js",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win portable nsis",
-    "dist:linux": "electron-builder --linux AppImage deb",
-    "dist:mac": "electron-builder --mac dmg zip"
+    "server": "node scripts/build-server.cjs",
+    "server:win": "node scripts/build-server.cjs win-x64",
+    "server:linux": "node scripts/build-server.cjs linux-x64",
+    "server:mac": "node scripts/build-server.cjs osx-x64",
+    "pack": "npm run server && electron-builder --dir",
+    "dist": "npm run server && electron-builder",
+    "dist:win": "npm run server:win && electron-builder --win portable nsis",
+    "dist:linux": "npm run server:linux && electron-builder --linux AppImage deb",
+    "dist:mac": "npm run server:mac && electron-builder --mac dmg zip"
   },
   "devDependencies": {
     "electron": "44.0.0",

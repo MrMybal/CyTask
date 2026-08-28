@@ -1371,3 +1371,10 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
   .project-status-row { grid-template-columns: 38px minmax(0, 1fr) auto; }
   .project-status-row code { display: none; }
 }
+
+.local-sync-link { color: #8de8cb; background: #142a27; border-color: #285046; }
+.local-sync-link:hover { color: #b8f5e2; background: #19342f; }
+.local-sync-link.has-conflicts { color: #ffc77a; background: #322718; border-color: #664b24; }
+.local-sync-link:disabled { cursor: wait; opacity: .68; }
+.theme-light .local-sync-link { color: #17634e; background: #cfe8df; border-color: #9fcdbd; }
+.sidebar-collapsed .local-sync-link > span:last-child { display: none; }

@@ -3,6 +3,8 @@
 const {
   app,
   BrowserWindow,
+  desktopCapturer,
+  dialog,
   Menu,
   ipcMain,
   net,
@@ -10,8 +12,11 @@ const {
   session,
   shell
 } = require("electron");
+const { spawn } = require("node:child_process");
 const { createHash, randomUUID } = require("node:crypto");
-const { promises: fs } = require("node:fs");
+const fsSync = require("node:fs");
+const { promises: fs } = fsSync;
+const nodeNet = require("node:net");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -44,6 +49,11 @@ let selectorWindow = null;
 let workspaceWindow = null;
 let currentProfile = null;
 let pendingSelectorError = "";
+let localServerProcess = null;
+let localServerStopping = false;
+let localServerError = "";
+let localServerStopPromise = null;
+let quittingAfterLocalStop = false;
 
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
@@ -100,21 +110,38 @@ function safeName(value, fallback) {
   return (text || fallback).slice(0, 80);
 }
 
+function normalizeLocalPath(value) {
+  if (typeof value !== "string" || value.includes("\0")) throw new Error("Le dossier local est invalide.");
+  const fullPath = path.resolve(value.trim());
+  if (!path.isAbsolute(fullPath) || fullPath === path.parse(fullPath).root) {
+    throw new Error("Choisissez un dossier de projet, pas la racine d’un disque.");
+  }
+  return fullPath;
+}
+
 function normalizeStoredProfile(value) {
   if (!value || typeof value !== "object" || !SERVER_ID.test(String(value.id ?? ""))) return null;
+  if (value.type === "local") {
+    try {
+      const folderPath = normalizeLocalPath(value.folderPath);
+      return {
+        id: String(value.id), type: "local",
+        name: safeName(value.name, path.basename(folderPath)), folderPath, syncMode: "folder",
+        createdAt: typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
+        lastUsedAt: typeof value.lastUsedAt === "string" ? value.lastUsedAt : null
+      };
+    } catch { return null; }
+  }
   try {
     const normalized = normalizeServerUrl(value.url);
     return {
-      id: String(value.id),
+      id: String(value.id), type: "remote",
       name: safeName(value.name, normalized.suggestedName),
-      url: normalized.url,
-      insecure: normalized.insecure,
+      url: normalized.url, insecure: normalized.insecure,
       createdAt: typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
       lastUsedAt: typeof value.lastUsedAt === "string" ? value.lastUsedAt : null
     };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function readProfiles() {
@@ -138,6 +165,123 @@ async function writeProfiles(profiles) {
   });
 }
 
+function deviceIdentityPath() {
+  return path.join(app.getPath("userData"), "device.json");
+}
+
+async function getOrCreateDeviceId() {
+  try {
+    const value = JSON.parse(await fs.readFile(deviceIdentityPath(), "utf8"));
+    if (SERVER_ID.test(String(value.deviceId ?? ""))) return String(value.deviceId);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw new Error("L’identité locale CyTask est illisible.");
+  }
+  const deviceId = randomUUID();
+  await fs.mkdir(path.dirname(deviceIdentityPath()), { recursive: true });
+  await fs.writeFile(deviceIdentityPath(), `${JSON.stringify({ deviceId }, null, 2)}\n`, {
+    encoding: "utf8", mode: 0o600
+  });
+  return deviceId;
+}
+
+function runtimeIdentifier() {
+  const architecture = process.arch === "arm64" ? "arm64" : "x64";
+  if (process.platform === "win32") return `win-${architecture}`;
+  if (process.platform === "darwin") return `osx-${architecture}`;
+  return `linux-${architecture}`;
+}
+
+function localServerExecutable() {
+  const name = process.platform === "win32" ? "CyTask.Api.exe" : "CyTask.Api";
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "server", name)
+    : path.join(__dirname, "server", "current", name);
+}
+
+function findAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const server = nodeNet.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen({ host: "127.0.0.1", port: 0, exclusive: true }, () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close((error) => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
+async function stopLocalServer() {
+  if (localServerStopPromise) return localServerStopPromise;
+  const child = localServerProcess;
+  if (!child) return;
+  localServerStopping = true;
+  localServerStopPromise = (async () => {
+    // Laisse au cycle de snapshot (1 s) le temps de rendre la dernière mutation durable.
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    if (child.exitCode === null && !child.killed) child.kill();
+    if (child.exitCode === null) {
+      await Promise.race([
+        new Promise((resolve) => child.once("exit", resolve)),
+        new Promise((resolve) => setTimeout(resolve, 2_000))
+      ]);
+    }
+    if (localServerProcess === child) localServerProcess = null;
+    localServerStopping = false;
+    localServerStopPromise = null;
+  })();
+  return localServerStopPromise;
+}
+
+async function startLocalServer(profile) {
+  await stopLocalServer();
+  const executable = localServerExecutable();
+  if (!fsSync.existsSync(executable)) {
+    throw new Error(`Le moteur local CyTask n’est pas installé (${runtimeIdentifier()}). Relancez le packaging du client.`);
+  }
+  const folderPath = normalizeLocalPath(profile.folderPath);
+  await fs.mkdir(folderPath, { recursive: true });
+  const port = await findAvailablePort();
+  const url = `http://127.0.0.1:${port}`;
+  const deviceId = await getOrCreateDeviceId();
+  localServerError = "";
+  localServerStopping = false;
+  const child = spawn(executable, [], {
+    cwd: path.dirname(executable), windowsHide: true,
+    env: {
+      ...process.env,
+      ASPNETCORE_ENVIRONMENT: "Production",
+      ASPNETCORE_URLS: url,
+      CyTask__UseInMemoryStore: "true",
+      CyTask__LocalMode: "true",
+      CyTask__LocalWorkspacePath: folderPath,
+      CyTask__LocalDeviceId: deviceId,
+      CyTask__LocalSyncSeconds: "1",
+      CyTask__MediaStoragePath: path.join(folderPath, ".cytask", "media")
+    },
+    stdio: ["ignore", "ignore", "pipe"]
+  });
+  localServerProcess = child;
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    localServerError = `${localServerError}${chunk}`.slice(-4000);
+  });
+  child.once("exit", (code) => {
+    if (localServerProcess === child) localServerProcess = null;
+    if (!localServerStopping && currentProfile?.id === profile.id) {
+      setImmediate(() => showSelector(`Le moteur local CyTask s’est arrêté (${code ?? "inconnu"}).`));
+    }
+  });
+
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (child.exitCode !== null) break;
+    try { await checkServer(url); return url; } catch { /* Le serveur démarre encore. */ }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  await stopLocalServer();
+  const detail = localServerError.split(/\r?\n/).filter(Boolean).at(-1);
+  throw new Error(detail ? `Le moteur local n’a pas démarré : ${detail}` : "Le moteur local CyTask n’a pas démarré.");
+}
 function assertSelectorSender(event) {
   if (!selectorWindow || event.sender.id !== selectorWindow.webContents.id) {
     throw new Error("Requête desktop refusée.");
@@ -164,8 +308,9 @@ async function checkServer(url) {
   }
 }
 
-function partitionFor(url) {
-  const digest = createHash("sha256").update(new URL(url).origin).digest("hex").slice(0, 24);
+function partitionFor(profile) {
+  const identity = profile.type === "local" ? `local:${profile.folderPath}` : new URL(profile.url).origin;
+  const digest = createHash("sha256").update(identity).digest("hex").slice(0, 24);
   return `persist:cytask-${digest}`;
 }
 
@@ -251,14 +396,14 @@ function buildMenu() {
   if (process.platform === "darwin") template.push({ role: "appMenu" });
   template.push(
     {
-      label: "Serveur",
+      label: "Espace",
       submenu: [
         {
-          label: currentProfile ? `Connecté à ${currentProfile.name}` : "Aucun serveur connecté",
+          label: currentProfile ? `Ouvert : ${currentProfile.name}` : "Aucun espace ouvert",
           enabled: false
         },
         {
-          label: "Changer de serveur…",
+          label: "Changer de projet…",
           accelerator: "CmdOrCtrl+Shift+S",
           enabled: isWorkspace,
           click: () => showSelector()
@@ -299,7 +444,7 @@ function createSelectorWindow() {
     minWidth: 780,
     minHeight: 560,
     show: false,
-    title: "CyTask — Connexion au serveur",
+    title: "CyTask — Choisir un espace",
     backgroundColor: "#0d1219",
     icon: iconPath(),
     webPreferences: {
@@ -329,6 +474,7 @@ function createSelectorWindow() {
 }
 
 function showSelector(error = "") {
+  if (currentProfile?.type === "local") void stopLocalServer();
   pendingSelectorError = error;
   if (workspaceWindow && !workspaceWindow.isDestroyed()) {
     workspaceWindow.destroy();
@@ -337,10 +483,10 @@ function showSelector(error = "") {
   createSelectorWindow();
 }
 
-function openWorkspace(profile) {
+function openWorkspace(profile, runtimeUrl = profile.url) {
   currentProfile = profile;
-  const trustedOrigin = new URL(profile.url).origin;
-  const targetSession = session.fromPartition(partitionFor(profile.url));
+  const trustedOrigin = new URL(runtimeUrl).origin;
+  const targetSession = session.fromPartition(partitionFor(profile));
   configureTrustedSession(targetSession, trustedOrigin);
 
   workspaceWindow = new BrowserWindow({
@@ -353,7 +499,7 @@ function openWorkspace(profile) {
     backgroundColor: "#0d1219",
     icon: iconPath(),
     webPreferences: {
-      partition: partitionFor(profile.url),
+      partition: partitionFor(profile),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -378,11 +524,12 @@ function openWorkspace(profile) {
     showSelector(`Le client CyTask s’est interrompu (${details.reason}).`);
   });
   workspaceWindow.on("closed", () => {
+    if (currentProfile?.type === "local") void stopLocalServer();
     workspaceWindow = null;
     currentProfile = null;
     buildMenu();
   });
-  void workspaceWindow.loadURL(profile.url);
+  void workspaceWindow.loadURL(runtimeUrl);
 }
 
 function registerIpc() {
@@ -397,6 +544,38 @@ function registerIpc() {
     await writeProfiles(profiles);
     return profiles;
   });
+  ipcMain.handle("cytask:choose-local-folder", async (event) => {
+    assertSelectorSender(event);
+    const result = await dialog.showOpenDialog(selectorWindow, {
+      title: "Choisir ou créer un dossier CyTask",
+      buttonLabel: "Utiliser ce dossier",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    if (result.canceled || result.filePaths.length !== 1) return { canceled: true };
+    const folderPath = normalizeLocalPath(result.filePaths[0]);
+    return { canceled: false, folderPath, suggestedName: path.basename(folderPath) };
+  });
+  ipcMain.handle("cytask:open-local", async (event, payload) => {
+    assertSelectorSender(event);
+    if (!payload || typeof payload !== "object") throw new Error("Configuration locale invalide.");
+    const folderPath = normalizeLocalPath(payload.folderPath);
+    const profiles = await readProfiles();
+    const existingId = typeof payload.id === "string" && SERVER_ID.test(payload.id) ? payload.id : null;
+    const existing = profiles.find((item) => item.type === "local" &&
+      (item.id === existingId || item.folderPath.toLowerCase() === folderPath.toLowerCase()));
+    const now = new Date().toISOString();
+    const profile = {
+      id: existing?.id ?? randomUUID(), type: "local",
+      name: safeName(payload.name, existing?.name ?? path.basename(folderPath)),
+      folderPath, syncMode: "folder",
+      createdAt: existing?.createdAt ?? now, lastUsedAt: now
+    };
+    const runtimeUrl = await startLocalServer(profile);
+    const updated = [profile, ...profiles.filter((item) => item.id !== profile.id)].slice(0, MAX_SERVERS);
+    await writeProfiles(updated);
+    setImmediate(() => openWorkspace(profile, runtimeUrl));
+    return { ok: true, profile };
+  });
   ipcMain.handle("cytask:connect-server", async (event, payload) => {
     assertSelectorSender(event);
     if (!payload || typeof payload !== "object") throw new Error("Configuration invalide.");
@@ -404,6 +583,7 @@ function registerIpc() {
     if (normalized.insecure && payload.allowInsecure !== true) {
       throw new Error("Confirmez l’utilisation de HTTP non chiffré pour ce serveur local.");
     }
+    await stopLocalServer();
     await checkServer(normalized.url);
 
     const profiles = await readProfiles();
@@ -414,6 +594,7 @@ function registerIpc() {
     const now = new Date().toISOString();
     const profile = {
       id: existing?.id ?? randomUUID(),
+      type: "remote",
       name: safeName(payload.name, existing?.name ?? normalized.suggestedName),
       url: normalized.url,
       insecure: normalized.insecure,
@@ -445,6 +626,12 @@ app.whenReady().then(async () => {
 
 app.on("activate", () => {
   if (!BrowserWindow.getAllWindows().length) createSelectorWindow();
+});
+app.on("before-quit", (event) => {
+  if (!localServerProcess || quittingAfterLocalStop) return;
+  event.preventDefault();
+  quittingAfterLocalStop = true;
+  void stopLocalServer().finally(() => app.quit());
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

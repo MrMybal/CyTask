@@ -3,6 +3,7 @@ using CyTask.Api.Collaboration;
 using CyTask.Api.Configuration;
 using CyTask.Api.Endpoints;
 using CyTask.Api.Infrastructure;
+using CyTask.Api.LocalSync;
 using CyTask.Api.Media;
 using CyTask.Api.Plugins;
 using CyTask.Api.Realtime;
@@ -43,6 +44,14 @@ builder.Logging.AddSimpleConsole(options =>
 
 builder.Services.AddOptions<CyTaskOptions>()
     .Bind(builder.Configuration.GetSection(CyTaskOptions.SectionName))
+    .Validate(options => !options.LocalMode || options.UseInMemoryStore,
+        "LocalMode requires UseInMemoryStore.")
+    .Validate(options => !options.LocalMode || !string.IsNullOrWhiteSpace(options.LocalWorkspacePath),
+        "LocalWorkspacePath is required in local mode.")
+    .Validate(options => !options.LocalMode || Guid.TryParse(options.LocalDeviceId, out var deviceId) && deviceId != Guid.Empty,
+        "LocalDeviceId must be a non-empty GUID in local mode.")
+    .Validate(options => options.LocalSyncSeconds is >= 1 and <= 60,
+        "LocalSyncSeconds must be between 1 and 60.")
     .Validate(options => options.SessionHours is >= 1 and <= 168, "SessionHours must be between 1 and 168.")
     .Validate(options => options.NativeAuthorizationCodeMinutes is >= 1 and <= 10,
         "NativeAuthorizationCodeMinutes must be between 1 and 10.")
@@ -181,9 +190,15 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Attach
 
 if (cyTaskOptions.UseInMemoryStore)
 {
-    builder.Services.AddSingleton<IWorkspaceStore, InMemoryWorkspaceStore>();
-    builder.Services.AddSingleton<ICollaborationStore, InMemoryCollaborationStore>();
-    builder.Services.AddSingleton<IPluginStore, InMemoryPluginStore>();
+    builder.Services.AddSingleton<InMemoryWorkspaceStore>();
+    builder.Services.AddSingleton<IWorkspaceStore>(provider => provider.GetRequiredService<InMemoryWorkspaceStore>());
+    builder.Services.AddSingleton<InMemoryCollaborationStore>();
+    builder.Services.AddSingleton<ICollaborationStore>(provider => provider.GetRequiredService<InMemoryCollaborationStore>());
+    builder.Services.AddSingleton<InMemoryPluginStore>();
+    builder.Services.AddSingleton<IPluginStore>(provider => provider.GetRequiredService<InMemoryPluginStore>());
+    builder.Services.AddSingleton<LocalSyncCoordinator>();
+    builder.Services.AddSingleton<ILocalSyncService>(provider => provider.GetRequiredService<LocalSyncCoordinator>());
+    builder.Services.AddHostedService(provider => provider.GetRequiredService<LocalSyncCoordinator>());
     builder.Services.AddSingleton<ICyAnnotaStore, InMemoryCyAnnotaStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<WorkspaceEventHub>());
@@ -216,9 +231,13 @@ else
     builder.Services.AddSingleton<OutboxDispatcher>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<OutboxDispatcher>());
     builder.Services.AddSingleton<DatabaseMigrator>();
+    builder.Services.AddSingleton<ILocalSyncService, DisabledLocalSyncService>();
 }
 
 var app = builder.Build();
+
+await app.Services.GetRequiredService<ILocalSyncService>()
+    .InitializeAsync(app.Lifetime.ApplicationStopping);
 
 if (!cyTaskOptions.UseInMemoryStore && cyTaskOptions.ApplyMigrations)
 {
