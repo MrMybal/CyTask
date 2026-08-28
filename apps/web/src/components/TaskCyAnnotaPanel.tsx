@@ -6,6 +6,7 @@ import {
   type CyAnnotaDocumentSummary,
   type CyAnnotaWorkspace
 } from "../api";
+import { useI18n } from "../i18n";
 
 interface TaskCyAnnotaPanelProps {
   taskId: string;
@@ -36,6 +37,7 @@ export function TaskCyAnnotaPanel({
   onError,
   onNotice
 }: TaskCyAnnotaPanelProps) {
+  const { locale, t } = useI18n();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [workspace, setWorkspace] = useState<CyAnnotaWorkspace>();
   const [loading, setLoading] = useState(true);
@@ -51,7 +53,7 @@ export function TaskCyAnnotaPanel({
       setAttachments(files.filter(isAnnotatable));
       setWorkspace(integration);
     } catch (reason) {
-      onError(messageFor(reason));
+      onError(messageFor(reason, t("CyAnnota integration failed.")));
     } finally {
       setLoading(false);
     }
@@ -108,15 +110,15 @@ export function TaskCyAnnotaPanel({
       <header className="task-plugin-heading">
         <span className="task-plugin-icon cyannota-icon" aria-hidden="true">CA</span>
         <div>
-          <h3>Annotations CyAnnota</h3>
-          <p>Cadrez, dessinez et commentez les images ou vidéos liées à cette tâche.</p>
+          <h3>{t("CyAnnota annotations")}</h3>
+          <p>{t("Frame, draw and comment on images or videos linked to this task.")}</p>
         </div>
-        <span className="plugin-security-badge">Plugin intégré</span>
+        <span className="plugin-security-badge">{t("Integrated plugin")}</span>
       </header>
 
       <div className="cyannota-security-note">
-        <strong>CyAnnota s’ouvre directement dans la tâche.</strong>
-        <span>Le média est transféré en mémoire avec contrôle de l’origine et de la session.</span>
+        <strong>{t("CyAnnota opens directly inside the task.")}</strong>
+        <span>{t("Media is transferred in memory with origin and session checks.")}</span>
       </div>
 
       <div className="cyannota-media-grid">
@@ -132,14 +134,14 @@ export function TaskCyAnnotaPanel({
                 ) : (
                   <video src={contentUrl} muted playsInline preload="metadata" />
                 )}
-                <span>{contentType.startsWith("video/") ? "VIDÉO" : "IMAGE"}</span>
+                <span>{t(contentType.startsWith("video/") ? "VIDEO" : "IMAGE")}</span>
               </div>
               <div className="cyannota-media-copy">
                 <strong title={attachment.fileName}>{attachment.fileName}</strong>
                 <small>
                   {document
-                    ? `${document.annotationCount} annotation${document.annotationCount > 1 ? "s" : ""} · rév. ${document.revision}`
-                    : "Pas encore annoté"}
+                    ? `${t(document.annotationCount === 1 ? "{count} annotation" : "{count} annotations", { count: document.annotationCount })} · ${t("rev.")} ${document.revision}`
+                    : t("Not annotated yet")}
                 </small>
               </div>
               <button
@@ -148,7 +150,7 @@ export function TaskCyAnnotaPanel({
                 disabled={!workspace}
                 onClick={() => setActiveAttachment(attachment)}
               >
-                {document ? (canEdit ? "Continuer" : "Consulter") : (canEdit ? "Annoter" : "Consulter")}
+                {t(document ? (canEdit ? "Continue" : "View annotations") : (canEdit ? "Annotate" : "View annotations"))}
               </button>
             </article>
           );
@@ -157,13 +159,13 @@ export function TaskCyAnnotaPanel({
 
       {!loading && attachments.length === 0 && (
         <p className="empty-note">
-          Ajoutez une image ou une vidéo validée dans l’onglet Fichiers pour commencer.
+          {t("Add a validated image or video in the Files tab to get started.")}
         </p>
       )}
       {workspace && (
         <footer className="cyannota-footer">
-          <span>Module : {workspace.applicationUrl}</span>
-          <span>Document maximal : {formatBytes(workspace.maximumDocumentBytes)}</span>
+          <span>{t("Module")}: {workspace.applicationUrl}</span>
+          <span>{t("Maximum document")}: {formatBytes(workspace.maximumDocumentBytes, locale)}</span>
         </footer>
       )}
     </section>
@@ -181,11 +183,12 @@ function EmbeddedCyAnnotaEditor({
   onError,
   onNotice
 }: EmbeddedEditorProps) {
+  const { t } = useI18n();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const shellRef = useRef<HTMLElement>(null);
   const revisionRef = useRef(initialRevision);
   const session = useMemo(() => crypto.randomUUID(), [attachment.id]);
-  const [status, setStatus] = useState("Chargement du plugin…");
+  const [status, setStatus] = useState(t("Loading plugin…"));
 
   const launch = useMemo(() => {
     try {
@@ -205,8 +208,8 @@ function EmbeddedCyAnnotaEditor({
 
   useEffect(() => {
     if (!launch) {
-      setStatus("Configuration CyAnnota invalide");
-      onError("L’URL CyAnnota configurée par le serveur est invalide.");
+      setStatus(t("Invalid CyAnnota configuration"));
+      onError(t("The CyAnnota URL configured by the server is invalid."));
       return;
     }
 
@@ -222,7 +225,7 @@ function EmbeddedCyAnnotaEditor({
       if (!ready || !initialPayload || stopped) return;
       post(initialPayload);
       initialPayload = undefined;
-      setStatus(canEdit ? "Prêt à annoter" : "Consultation seule");
+      setStatus(t(canEdit ? "Ready to annotate" : "Read only"));
     };
 
     const receive = (event: MessageEvent<unknown>) => {
@@ -233,7 +236,7 @@ function EmbeddedCyAnnotaEditor({
 
       if (message.type === "ready") {
         ready = true;
-        setStatus("Ouverture du média…");
+        setStatus(t("Opening media…"));
         sendInitialPayload();
         return;
       }
@@ -247,12 +250,12 @@ function EmbeddedCyAnnotaEditor({
           type: "save-result",
           session,
           ok: false,
-          error: "Votre rôle autorise la consultation, pas la modification."
+          error: t("Your role allows viewing, but not editing.")
         });
         return;
       }
 
-      setStatus("Enregistrement…");
+      setStatus(t("Saving…"));
       void api.updateCyAnnotaDocument(taskId, attachment.id, {
         document: message.document,
         expectedRevision: revisionRef.current
@@ -267,12 +270,12 @@ function EmbeddedCyAnnotaEditor({
           revision: updated.revision,
           updatedAt: updated.updatedAt
         });
-        setStatus(`Enregistré · rév. ${updated.revision}`);
-        onNotice(`Annotations de « ${attachment.fileName} » enregistrées.`);
+        setStatus(`${t("Saved")} · ${t("rev.")} ${updated.revision}`);
+        onNotice(t("Annotations for “{name}” saved.", { name: attachment.fileName }));
       }).catch((reason) => {
-        const error = messageFor(reason);
+        const error = messageFor(reason, t("CyAnnota integration failed."));
         post({ source: "cytask", type: "save-result", session, ok: false, error });
-        setStatus("Échec de l’enregistrement");
+        setStatus(t("Save failed"));
         onError(error);
       });
     };
@@ -280,8 +283,8 @@ function EmbeddedCyAnnotaEditor({
     window.addEventListener("message", receive);
     const timeout = window.setTimeout(() => {
       if (!ready && !stopped) {
-        setStatus("Le plugin ne répond pas");
-        onError("CyAnnota ne répond pas. Vérifiez que le module intégré est disponible.");
+        setStatus(t("Plugin not responding"));
+        onError(t("CyAnnota is not responding. Check that the integrated module is available."));
       }
     }, 20_000);
 
@@ -292,7 +295,7 @@ function EmbeddedCyAnnotaEditor({
       }),
       api.cyAnnotaDocument(taskId, attachment.id)
     ]).then(async ([contentResponse, stored]) => {
-      if (!contentResponse.ok) throw new Error("Le média CyTask n’est plus disponible.");
+      if (!contentResponse.ok) throw new Error(t("The CyTask media is no longer available."));
       const contentType = attachment.detectedContentType
         ?? contentResponse.headers.get("content-type")
         ?? attachment.declaredContentType;
@@ -318,8 +321,8 @@ function EmbeddedCyAnnotaEditor({
       sendInitialPayload();
     }).catch((reason) => {
       if (stopped) return;
-      setStatus("Impossible de charger le média");
-      onError(messageFor(reason));
+      setStatus(t("Unable to load media"));
+      onError(messageFor(reason, t("CyAnnota integration failed.")));
     });
 
     return () => {
@@ -327,26 +330,26 @@ function EmbeddedCyAnnotaEditor({
       window.clearTimeout(timeout);
       window.removeEventListener("message", receive);
     };
-  }, [attachment, canEdit, launch, onError, onNotice, onSaved, session, taskId, workspace.maximumDocumentBytes]);
+  }, [attachment, canEdit, launch, onError, onNotice, onSaved, session, taskId, workspace.maximumDocumentBytes, t]);
 
   return (
     <section ref={shellRef} className="cyannota-embedded-shell detail-section">
       <header className="cyannota-embedded-toolbar">
-        <button className="text-button" type="button" onClick={onClose}>← Médias</button>
+        <button className="text-button" type="button" onClick={onClose}>← {t("Back to media")}</button>
         <div>
           <strong>{attachment.fileName}</strong>
           <small>{status}</small>
         </div>
         <div className="cyannota-embedded-actions">
-          <span className="plugin-security-badge">{canEdit ? "Édition" : "Lecture seule"}</span>
+          <span className="plugin-security-badge">{t(canEdit ? "Editing" : "Read only")}</span>
           <button
             className="secondary-button small"
             type="button"
             onClick={() => void shellRef.current?.requestFullscreen()}
           >
-            Plein écran
+            {t("Full screen")}
           </button>
-          <button className="secondary-button small" type="button" onClick={onClose}>Fermer</button>
+          <button className="secondary-button small" type="button" onClick={onClose}>{t("Close")}</button>
         </div>
       </header>
       {launch ? (
@@ -360,7 +363,7 @@ function EmbeddedCyAnnotaEditor({
           referrerPolicy="no-referrer"
         />
       ) : (
-        <div className="cyannota-embedded-error">Configuration CyAnnota invalide.</div>
+        <div className="cyannota-embedded-error">{t("Invalid CyAnnota configuration.")}</div>
       )}
     </section>
   );
@@ -376,12 +379,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function messageFor(reason: unknown) {
-  return reason instanceof Error ? reason.message : "L’intégration CyAnnota a échoué.";
+function messageFor(reason: unknown, fallback: string) {
+  return reason instanceof Error ? reason.message : fallback;
 }
 
-function formatBytes(value: number) {
+function formatBytes(value: number, locale: "en" | "fr") {
+  const numberLocale = locale === "fr" ? "fr-FR" : "en-US";
   return value >= 1_048_576
-    ? `${(value / 1_048_576).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mio`
-    : `${Math.ceil(value / 1024).toLocaleString("fr-FR")} Kio`;
+    ? `${(value / 1_048_576).toLocaleString(numberLocale, { maximumFractionDigits: 1 })} ${locale === "fr" ? "Mio" : "MiB"}`
+    : `${Math.ceil(value / 1024).toLocaleString(numberLocale)} ${locale === "fr" ? "Kio" : "KiB"}`;
 }

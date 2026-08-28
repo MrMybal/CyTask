@@ -10,6 +10,7 @@ import {
 import { uploadProjectFile } from "../resourceUpload";
 import { ChatMessageList } from "./ChatMessageList";
 import { useVoiceRoom } from "./useVoiceRoom";
+import { useI18n } from "../i18n";
 
 interface Props {
   projectId: string;
@@ -32,6 +33,7 @@ export function TeamChatPane({
   tasks,
   onOpenTask
 }: Props) {
+  const { locale, t } = useI18n();
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -52,9 +54,9 @@ export function TeamChatPane({
       setSelectedChannelId((current) =>
         current && next.some((item) => item.id === current) ? current : next[0]?.id);
     } catch {
-      onError("Impossible de charger les salons.");
+      onError(t("Unable to load channels."));
     }
-  }, [onError, projectId]);
+  }, [onError, projectId, t]);
 
   const loadMessages = useCallback(async () => {
     if (!selectedChannelId) {
@@ -64,9 +66,9 @@ export function TeamChatPane({
     try {
       setMessages(await api.chatMessages(selectedChannelId));
     } catch {
-      onError("Impossible de charger les messages.");
+      onError(t("Unable to load messages."));
     }
-  }, [onError, selectedChannelId]);
+  }, [onError, selectedChannelId, t]);
 
   useEffect(() => {
     void loadChannels();
@@ -98,9 +100,9 @@ export function TeamChatPane({
       setCreatingChannel(false);
       setNewChannelType("channel");
       form.reset();
-      onNotice(channel.channelType === "group" ? "Groupe privé créé." : "Salon créé.");
+      onNotice(t(channel.channelType === "group" ? "Private group created." : "Channel created."));
     } catch {
-      onError("Impossible de créer ce salon.");
+      onError(t("Unable to create this channel."));
     }
   }
 
@@ -109,11 +111,11 @@ export function TeamChatPane({
     if (!selectedChannelId) return;
     const form = event.currentTarget;
     const data = new FormData(form);
-    const body = String(data.get("body")).trim() || (pendingResources.length ? "Fichier partagé" : "");
+    const body = String(data.get("body")).trim() || (pendingResources.length ? t("Shared file") : "");
     if (!body) return;
-    const normalized = body.toLocaleLowerCase("fr");
+    const normalized = body.toLocaleLowerCase(locale);
     const mentionedUserIds = members
-      .filter((member) => normalized.includes("@" + member.displayName.toLocaleLowerCase("fr")))
+      .filter((member) => normalized.includes("@" + member.displayName.toLocaleLowerCase(locale)))
       .map((member) => member.userId);
     try {
       const message = await api.createChatMessage(selectedChannelId, {
@@ -126,7 +128,7 @@ export function TeamChatPane({
       form.reset();
       composer.current?.focus();
     } catch {
-      onError("Impossible d’envoyer ce message.");
+      onError(t("Unable to send this message."));
     }
   }
 
@@ -140,7 +142,7 @@ export function TeamChatPane({
         setPendingResources((current) => [...current, resource]);
       }
     } catch {
-      onError("Impossible d’ajouter ce fichier au message.");
+      onError(t("Unable to add this file to the message."));
     } finally {
       setProgress(undefined);
       if (fileInput.current) fileInput.current.value = "";
@@ -169,19 +171,19 @@ export function TeamChatPane({
     <section className="team-chat-pane">
 
       <aside className="chat-channels">
-        <header><div><small>DISCUSSIONS</small><strong>Salons d’équipe</strong></div>
+        <header><div><small>{t("DISCUSSIONS")}</small><strong>{t("Team channels")}</strong></div>
           {canContribute && <button type="button" onClick={() => setCreatingChannel(true)}>+</button>}</header>
         {creatingChannel && (
           <form onSubmit={createChannel}>
-            <input name="name" placeholder="Nom du salon" maxLength={80} required autoFocus />
+            <input name="name" placeholder={t("Channel name")} maxLength={80} required autoFocus />
             <select name="channelType" value={newChannelType}
               onChange={(event) => setNewChannelType(event.currentTarget.value as "channel" | "group")}>
-              <option value="channel">Salon public</option>
-              <option value="group">Groupe privé</option>
+              <option value="channel">{t("Public channel")}</option>
+              <option value="group">{t("Private group")}</option>
             </select>
             {newChannelType === "group" && (
               <fieldset className="chat-group-members">
-                <legend>Membres du groupe</legend>
+                <legend>{t("Group members")}</legend>
                 {members.filter((member) => member.userId !== currentUserId).map((member) => (
                   <label key={member.userId}>
                     <input type="checkbox" name="memberIds" value={member.userId} />
@@ -190,9 +192,9 @@ export function TeamChatPane({
                 ))}
               </fieldset>
             )}
-            <input name="topic" placeholder="Sujet (optionnel)" maxLength={500} />
-            <button type="submit">Créer</button>
-            <button type="button" onClick={() => setCreatingChannel(false)}>Annuler</button>
+            <input name="topic" placeholder={t("Topic (optional)")} maxLength={500} />
+            <button type="submit">{t("Create")}</button>
+            <button type="button" onClick={() => setCreatingChannel(false)}>{t("Cancel")}</button>
           </form>
         )}
         <nav>
@@ -202,14 +204,14 @@ export function TeamChatPane({
               <span>{channel.channelType === "group" ? "◉" : "#"}</span>
               <span><strong>{channel.name}</strong><small>
                 {channel.topic || (channel.channelType === "group"
-                  ? "Groupe privé" : "Salon texte et vocal")}
+                  ? t("Private group") : t("Text and voice channel"))}
               </small></span>
             </button>
           ))}
         </nav>
         {channels.length === 0 && (
-          <div className="channel-empty"><span>#</span><p>Créez le premier salon de ce projet.</p>
-            {canContribute && <button type="button" onClick={() => setCreatingChannel(true)}>Créer # général</button>}</div>
+          <div className="channel-empty"><span>#</span><p>{t("Create the first channel for this project.")}</p>
+            {canContribute && <button type="button" onClick={() => setCreatingChannel(true)}>{t("Create # general")}</button>}</div>
         )}
       </aside>
 
@@ -220,19 +222,19 @@ export function TeamChatPane({
               <div>
                 <h2>{selectedChannel.channelType === "group" ? "◉" : "#"} {selectedChannel.name}</h2>
                 <p>{selectedChannel.topic || (selectedChannel.channelType === "group"
-                  ? "Groupe privé · membres invités uniquement"
-                  : "Discussion du projet")}</p>
+                  ? t("Private group · invited members only")
+                  : t("Project discussion"))}</p>
               </div>
               <div className="voice-actions">
                 {!voice.active ? (
-                  <button type="button" onClick={() => void voice.join()}>◉ Rejoindre le vocal</button>
+                  <button type="button" onClick={() => void voice.join()}>◉ {t("Join voice")}</button>
                 ) : (
                   <>
-                    <span className="voice-live">● Vocal · {voice.remoteStreams.length + 1}</span>
+                    <span className="voice-live">● {t("Voice")} · {voice.remoteStreams.length + 1}</span>
                     <button type="button" onClick={() => void voice.toggleScreen()}>
-                      {voice.screenStream ? "Arrêter le partage" : "Partager l’écran"}
+                      {t(voice.screenStream ? "Stop sharing" : "Share screen")}
                     </button>
-                    <button type="button" onClick={voice.leave}>Quitter</button>
+                    <button type="button" onClick={voice.leave}>{t("Leave")}</button>
                   </>
                 )}
               </div>
@@ -255,25 +257,25 @@ export function TeamChatPane({
                   </div>
                 )}
                 {progress && <div className="chat-upload-progress"><span>{progress.label}</span><progress value={progress.percent} max={100} /></div>}
-                <textarea ref={composer} name="body" placeholder={"Écrire dans #" + selectedChannel.name + " · utilisez @Nom pour ping"} maxLength={10000} rows={2} />
+                <textarea ref={composer} name="body" placeholder={t("Write in #{name} · use @Name to ping", { name: selectedChannel.name })} maxLength={10000} rows={2} />
                 <footer>
                   <div>
-                    <button type="button" onClick={() => fileInput.current?.click()}>＋ Fichier</button>
-                    <select aria-label="Joindre un fichier existant" defaultValue=""
+                    <button type="button" onClick={() => fileInput.current?.click()}>＋ {t("File")}</button>
+                    <select aria-label={t("Attach an existing file")} defaultValue=""
                       onChange={(event) => {
                         const resource = library.find((item) => item.id === event.currentTarget.value);
                         if (resource) setPendingResources((current) => current.some((item) => item.id === resource.id) ? current : [...current, resource]);
                         event.currentTarget.value = "";
                       }}>
-                      <option value="">Joindre depuis l’espace…</option>
+                      <option value="">{t("Attach from workspace…")}</option>
                       {library.filter((item) => item.status === "available").map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
                     </select>
-                    <select aria-label="Lier une tâche" defaultValue=""
+                    <select aria-label={t("Link a task")} defaultValue=""
                       onChange={(event) => {
                         linkTask(event.currentTarget.value);
                         event.currentTarget.value = "";
                       }}>
-                      <option value="">Lier une tâche…</option>
+                      <option value="">{t("Link a task…")}</option>
                       {tasks.map((task) => (
                         <option value={task.id} key={task.id}>{task.key} · {task.title}</option>
                       ))}
@@ -281,17 +283,17 @@ export function TeamChatPane({
                     <input ref={fileInput} hidden multiple type="file"
                       onChange={(event) => void upload(Array.from(event.currentTarget.files ?? []))} />
                   </div>
-                  <button className="primary-button small" type="submit">Envoyer</button>
+                  <button className="primary-button small" type="submit">{t("Send")}</button>
                 </footer>
                 <div className="mention-shortcuts">
-                  <span>Ping :</span>{members.slice(0, 8).map((member) => (
+                  <span>{t("Ping:")}</span>{members.slice(0, 8).map((member) => (
                     <button type="button" key={member.userId} onClick={() => mention(member)}>@{member.displayName}</button>
                   ))}
                 </div>
               </form>
             )}
           </>
-        ) : <div className="chat-no-channel"><span>✦</span><h2>Choisissez ou créez un salon</h2><p>Texte, médias, vocal et partage d’écran sont réunis ici.</p></div>}
+        ) : <div className="chat-no-channel"><span>✦</span><h2>{t("Choose or create a channel")}</h2><p>{t("Text, media, voice and screen sharing are all here.")}</p></div>}
       </section>
     </section>
   );
@@ -304,7 +306,8 @@ function RemoteMedia({ stream }: { stream: MediaStream }) {
 }
 
 function ScreenPreview({ stream }: { stream: MediaStream }) {
+  const { t } = useI18n();
   const element = useRef<HTMLVideoElement>(null);
   useEffect(() => { if (element.current) element.current.srcObject = stream; }, [stream]);
-  return <div className="screen-preview"><video ref={element} autoPlay muted playsInline /><span>Votre écran est partagé</span></div>;
+  return <div className="screen-preview"><video ref={element} autoPlay muted playsInline /><span>{t("Your screen is being shared")}</span></div>;
 }

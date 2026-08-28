@@ -4,6 +4,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { InvitationScreen } from "./components/InvitationScreen";
 import { NativeAuthorizationScreen } from "./components/NativeAuthorizationScreen";
 import { Workspace } from "./components/Workspace";
+import { LanguageSwitcher, useI18n } from "./i18n";
 
 type AppState =
   | { mode: "loading" }
@@ -52,6 +53,7 @@ function nativeAuthorizationRequest(): NativeAuthorizationRequest | "invalid" | 
 }
 
 export default function App() {
+  const { t } = useI18n();
   const [state, setState] = useState<AppState>({ mode: "loading" });
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export default function App() {
 
       const authorization = nativeAuthorizationRequest();
       if (authorization === "invalid") {
-        setState({ mode: "error", message: "La demande de connexion Unreal est invalide." });
+        setState({ mode: "error", message: "The Unreal sign-in request is invalid." });
         return;
       }
 
@@ -92,7 +94,7 @@ export default function App() {
           }
         }
       } catch {
-        if (active) setState({ mode: "error", message: "Le serveur CyTask est inaccessible." });
+        if (active) setState({ mode: "error", message: "The CyTask server cannot be reached." });
       }
     }
     void initialize();
@@ -107,9 +109,10 @@ export default function App() {
     return (
       <main className="fatal-screen">
         <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
-        <h1>Connexion interrompue</h1>
-        <p>{state.message}</p>
-        <button className="primary-button" onClick={() => window.location.reload()}>Réessayer</button>
+        <LanguageSwitcher />
+        <h1>{t("Connection interrupted")}</h1>
+        <p>{t(state.message)}</p>
+        <button className="primary-button" onClick={() => window.location.reload()}>{t("Try again")}</button>
       </main>
     );
   }

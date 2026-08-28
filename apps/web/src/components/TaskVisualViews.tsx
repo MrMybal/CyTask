@@ -15,12 +15,13 @@ import type {
   WorkItem
 } from "../api";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
+import { useI18n } from "../i18n";
 
 const priorityLabels: Record<WorkItem["priority"], string> = {
-  low: "Basse",
-  normal: "Normale",
-  high: "Haute",
-  urgent: "Urgente"
+  low: "Low",
+  normal: "Normal",
+  high: "High",
+  urgent: "Urgent"
 };
 
 type CompactSort = "name" | "assignee" | "due" | "priority" | "status" | "folder";
@@ -33,12 +34,12 @@ interface CompactColumnDefinition {
 }
 
 const compactColumnDefinitions: readonly CompactColumnDefinition[] = [
-  { key: "name", label: "Nom", template: "minmax(280px, 1.8fr)", minimumWidth: 280 },
-  { key: "assignee", label: "Responsables", template: "160px", minimumWidth: 160 },
-  { key: "due", label: "Échéance", template: "130px", minimumWidth: 130 },
-  { key: "priority", label: "Priorité", template: "110px", minimumWidth: 110 },
-  { key: "status", label: "Statut", template: "120px", minimumWidth: 120 },
-  { key: "folder", label: "Dossier", template: "150px", minimumWidth: 150 }
+  { key: "name", label: "Name", template: "minmax(280px, 1.8fr)", minimumWidth: 280 },
+  { key: "assignee", label: "Assignees", template: "160px", minimumWidth: 160 },
+  { key: "due", label: "Due date", template: "130px", minimumWidth: 130 },
+  { key: "priority", label: "Priority", template: "110px", minimumWidth: 110 },
+  { key: "status", label: "Status", template: "120px", minimumWidth: 120 },
+  { key: "folder", label: "Folder", template: "150px", minimumWidth: 150 }
 ];
 
 const compactColumnByKey = new Map<CompactSort, CompactColumnDefinition>(
@@ -95,6 +96,7 @@ export function CompactTaskTable({
   onBulkChange,
   onBulkLabelChange
 }: CompactTaskTableProps) {
+  const { t } = useI18n();
   const [sortColumn, setSortColumn] = useState<CompactSort>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set());
@@ -280,12 +282,12 @@ export function CompactTaskTable({
   return (
     <section
       className="compact-table"
-      aria-label="Tâches en tableau compact"
+      aria-label={t("Tasks in compact table")}
       style={compactTableStyle}
     >
       <header className="compact-view-toolbar">
         <details className="compact-column-picker">
-          <summary>Colonnes · {displayedColumns.length}/{compactColumnDefinitions.length}</summary>
+          <summary>{t("Columns")} · {displayedColumns.length}/{compactColumnDefinitions.length}</summary>
           <div className="compact-column-picker-menu">
             {orderedColumns.map((column, index) => (
               <div className="compact-column-option" key={column.key}>
@@ -296,36 +298,36 @@ export function CompactTaskTable({
                     disabled={column.key === "name"}
                     onChange={(event) => toggleColumn(column.key, event.currentTarget.checked)}
                   />
-                  <span>{column.label}</span>
-                  {column.key === "name" && <small>Obligatoire</small>}
+                  <span>{t(column.label)}</span>
+                  {column.key === "name" && <small>{t("Required")}</small>}
                 </label>
                 <span className="compact-column-move">
                   <button
                     type="button"
                     disabled={index === 0}
-                    aria-label={"Déplacer " + column.label + " vers la gauche"}
-                    title="Déplacer vers la gauche"
+                    aria-label={t("Move {name} left", { name: t(column.label) })}
+                    title={t("Move left")}
                     onClick={() => moveColumn(column.key, -1)}
                   >←</button>
                   <button
                     type="button"
                     disabled={index === orderedColumns.length - 1}
-                    aria-label={"Déplacer " + column.label + " vers la droite"}
-                    title="Déplacer vers la droite"
+                    aria-label={t("Move {name} right", { name: t(column.label) })}
+                    title={t("Move right")}
                     onClick={() => moveColumn(column.key, 1)}
                   >→</button>
                 </span>
               </div>
             ))}
             <button type="button" className="compact-column-reset" onClick={resetColumns}>
-              Réinitialiser les colonnes
+              {t("Reset columns")}
             </button>
           </div>
         </details>
-        <small>Affichage mémorisé sur cet appareil</small>
+        <small>{t("Layout saved on this device")}</small>
       </header>
       {canEdit && (
-        <header className="compact-bulk-toolbar" aria-label="Actions groupées" aria-busy={bulkPending}>
+        <header className="compact-bulk-toolbar" aria-label={t("Bulk actions")} aria-busy={bulkPending}>
           <label>
             <input
               type="checkbox"
@@ -334,18 +336,18 @@ export function CompactTaskTable({
               onChange={(event) => toggleRows(tasks.map((task) => task.id), event.currentTarget.checked)}
             />
             <span>{selectedRowIds.size === 0
-              ? "Tout sélectionner"
+              ? t("Select all")
               : selectedRowIds.size === 1
-                ? "1 tâche sélectionnée"
-                : selectedRowIds.size + " tâches sélectionnées"}</span>
+                ? t("1 task selected")
+                : t("{count} tasks selected", { count: selectedRowIds.size })}</span>
           </label>
           <select
             value=""
             disabled={selectedRowIds.size === 0 || bulkPending}
-            aria-label="Changer le statut des tâches sélectionnées"
+            aria-label={t("Change status of selected tasks")}
             onChange={(event) => void applyBulk({ status: event.currentTarget.value })}
           >
-            <option value="">Changer le statut…</option>
+            <option value="">{t("Change status…")}</option>
             {statusOrder.map((status) => (
               <option value={status} key={status}>{statusLabels[status] ?? status}</option>
             ))}
@@ -353,14 +355,14 @@ export function CompactTaskTable({
           <select
             value=""
             disabled={selectedRowIds.size === 0 || bulkPending}
-            aria-label="Changer la priorité des tâches sélectionnées"
+            aria-label={t("Change priority of selected tasks")}
             onChange={(event) => void applyBulk({
               priority: event.currentTarget.value as WorkItem["priority"]
             })}
           >
-            <option value="">Changer la priorité…</option>
+            <option value="">{t("Change priority…")}</option>
             {(["low", "normal", "high", "urgent"] as const).map((priority) => (
-              <option value={priority} key={priority}>{priorityLabels[priority]}</option>
+              <option value={priority} key={priority}>{t(priorityLabels[priority])}</option>
             ))}
           </select>
           <span className="compact-bulk-due">
@@ -368,19 +370,19 @@ export function CompactTaskTable({
               type="date"
               value={bulkDueDate}
               disabled={selectedRowIds.size === 0 || bulkPending}
-              aria-label="Nouvelle échéance groupée"
+              aria-label={t("New bulk due date")}
               onChange={(event) => setBulkDueDate(event.currentTarget.value)}
             />
             <button
               type="button"
               disabled={!bulkDueDate || selectedRowIds.size === 0 || bulkPending}
               onClick={() => void applyBulk({ dueAt: dateInputToIso(bulkDueDate, null) })}
-            >Appliquer</button>
+            >{t("Apply")}</button>
             <button
               type="button"
               disabled={selectedRowIds.size === 0 || bulkPending}
               onClick={() => void applyBulk({ dueAt: null })}
-            >Sans échéance</button>
+            >{t("No due date")}</button>
           </span>
           <details className="compact-bulk-assignees" ref={bulkAssigneeDetails}>
             <summary
@@ -390,15 +392,15 @@ export function CompactTaskTable({
               }}
             >
               {bulkAssigneeIds.size === 0
-                ? "Responsables…"
+                ? t("Assignees…")
                 : bulkAssigneeIds.size === 1
-                  ? "1 responsable"
-                  : bulkAssigneeIds.size + " responsables"}
+                  ? t("1 assignee")
+                  : t("{count} assignees", { count: bulkAssigneeIds.size })}
             </summary>
             <div className="compact-bulk-assignee-menu">
               <header>
-                <strong>Remplacer les responsables</strong>
-                <small>La sélection vide retire toutes les assignations.</small>
+                <strong>{t("Replace assignees")}</strong>
+                <small>{t("An empty selection removes all assignments.")}</small>
               </header>
               {members.map((member) => (
                 <label key={member.userId}>
@@ -412,7 +414,7 @@ export function CompactTaskTable({
                   <span>{member.displayName}<small>{member.email}</small></span>
                 </label>
               ))}
-              {members.length === 0 && <p>Aucun membre disponible.</p>}
+              {members.length === 0 && <p>{t("No members available.")}</p>}
               <footer>
                 <button
                   type="button"
@@ -423,7 +425,7 @@ export function CompactTaskTable({
                       .map((member) => member.userId)
                   })}
                 >
-                  {bulkAssigneeIds.size === 0 ? "Retirer les responsables" : "Appliquer"}
+                  {t(bulkAssigneeIds.size === 0 ? "Remove assignees" : "Apply")}
                 </button>
               </footer>
             </div>
@@ -432,10 +434,10 @@ export function CompactTaskTable({
             className="compact-bulk-label-select"
             value={bulkLabelId}
             disabled={selectedRowIds.size === 0 || bulkPending}
-            aria-label="Choisir un dossier ou label"
+            aria-label={t("Choose a folder or label")}
             onChange={(event) => setBulkLabelId(event.currentTarget.value)}
           >
-            <option value="">Dossier ou label…</option>
+            <option value="">{t("Folder or label…")}</option>
             {labels.map((label) => (
               <option value={label.id} key={label.id}>{labelPath(label, labels)}</option>
             ))}
@@ -444,18 +446,18 @@ export function CompactTaskTable({
             type="button"
             disabled={!bulkLabelId || selectedRowIds.size === 0 || bulkPending}
             onClick={() => void applyBulkLabel(true)}
-          >Ajouter</button>
+          >{t("Add")}</button>
           <button
             type="button"
             disabled={!bulkLabelId || selectedRowIds.size === 0 || bulkPending}
             onClick={() => void applyBulkLabel(false)}
-          >Retirer</button>
+          >{t("Remove")}</button>
           {selectedRowIds.size > 0 && (
             <button type="button" disabled={bulkPending} onClick={() => setSelectedRowIds(new Set())}>
               Effacer
             </button>
           )}
-          {bulkPending && <small role="status">Mise à jour en cours…</small>}
+          {bulkPending && <small role="status">{t("Updating…")}</small>}
         </header>
       )}
       {groups.map((group) => {
@@ -479,7 +481,7 @@ export function CompactTaskTable({
                 style={{ backgroundColor: group.label?.color ?? "#94A3B8" }}
                 aria-hidden="true"
               />
-              <strong>{group.label?.name ?? "Sans dossier"}</strong>
+              <strong>{group.label?.name ?? t("No folder")}</strong>
               <span>{group.tasks.length}</span>
             </button>
             {canEdit && (
@@ -490,16 +492,16 @@ export function CompactTaskTable({
                   disabled={bulkPending}
                   onChange={(event) => toggleRows(groupTaskIds, event.currentTarget.checked)}
                 />
-                <span>Sélectionner le dossier</span>
+                <span>{t("Select folder")}</span>
               </label>
             )}
           </header>
           {!collapsed && (
           <>
-          <div className="compact-columns" aria-label="Trier les tâches par colonne">
+          <div className="compact-columns" aria-label={t("Sort tasks by column")}>
             {displayedColumns.map((column) => (
               <button type="button" key={column.key} onClick={() => sort(column.key)}>
-                {column.label}{sortColumn === column.key ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
+                {t(column.label)}{sortColumn === column.key ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
               </button>
             ))}
           </div>
@@ -518,7 +520,7 @@ export function CompactTaskTable({
                       type="checkbox"
                       checked={selectedRowIds.has(task.id)}
                       disabled={bulkPending}
-                      aria-label={"Sélectionner " + task.key}
+                      aria-label={t("Select {key}", { key: task.key })}
                       onChange={(event) => toggleRows([task.id], event.currentTarget.checked)}
                     />
                   )}
@@ -551,7 +553,7 @@ export function CompactTaskTable({
                     type="date"
                     value={dateInputValue(task.dueAt)}
                     disabled={pending}
-                    aria-label={"Modifier l’échéance de " + task.key}
+                    aria-label={t("Edit due date for {key}", { key: task.key })}
                     onChange={(event) => onChangeDueAt(task, dateInputToIso(event.currentTarget.value, task.dueAt))}
                   />
                 ) : (
@@ -562,16 +564,16 @@ export function CompactTaskTable({
                     className={"compact-priority-select priority-" + task.priority}
                     value={task.priority}
                     disabled={pending}
-                    aria-label={"Modifier la priorité de " + task.key}
+                    aria-label={t("Edit priority for {key}", { key: task.key })}
                     onChange={(event) => onChangePriority(task, event.currentTarget.value as WorkItem["priority"])}
                   >
                     {(["low", "normal", "high", "urgent"] as const).map((priority) => (
-                      <option value={priority} key={priority}>{priorityLabels[priority]}</option>
+                      <option value={priority} key={priority}>{t(priorityLabels[priority])}</option>
                     ))}
                   </select>
                 ) : (
                   <span className={"compact-priority priority-" + task.priority}>
-                    {priorityLabels[task.priority]}
+                    {t(priorityLabels[task.priority])}
                   </span>
                 ))}
                 {visibleColumns.has("status") && (
@@ -579,7 +581,7 @@ export function CompactTaskTable({
                     className={"compact-status-select status-" + task.status}
                     value={task.status}
                     disabled={!canEdit || pending}
-                    aria-label={"Modifier le statut de " + task.key}
+                    aria-label={t("Edit status for {key}", { key: task.key })}
                     style={{
                       color: statusColors[task.status] ?? "#94A3B8",
                       borderColor: statusColors[task.status] ?? "#94A3B8"
@@ -594,7 +596,7 @@ export function CompactTaskTable({
                 {visibleColumns.has("folder") && (
                   <span className="compact-folder-value">
                     <i style={{ backgroundColor: group.label?.color ?? "#94A3B8" }} />
-                    {group.label?.name ?? "Sans dossier"}
+                    {group.label?.name ?? t("No folder")}
                   </span>
                 )}
               </div>
@@ -741,11 +743,12 @@ export function TaskCanvas({
   hierarchy,
   onOpenTask
 }: TaskCanvasProps) {
+  const { t } = useI18n();
   const layout = useMemo(
     () => mode === "canvas"
-      ? buildGroupedCanvasLayout(tasks, labels, assignments)
-      : buildGraphLayout(tasks, labels, assignments, hierarchy),
-    [assignments, hierarchy, labels, mode, tasks]
+      ? buildGroupedCanvasLayout(tasks, labels, assignments, t)
+      : buildGraphLayout(tasks, labels, assignments, hierarchy, t),
+    [assignments, hierarchy, labels, mode, t, tasks]
   );
   const [viewport, setViewport] = useState({ x: 28, y: 28, scale: mode === "graph" ? 0.72 : 0.9 });
   const [nodeOffsets, setNodeOffsets] = useState<Record<string, { x: number; y: number }>>({});
@@ -841,17 +844,17 @@ export function TaskCanvas({
   };
 
   return (
-    <section className={`relation-canvas relation-canvas-${mode}`} aria-label={mode === "canvas" ? "Canvas groupé du projet" : "Graphe du projet"}>
+    <section className={`relation-canvas relation-canvas-${mode}`} aria-label={t(mode === "canvas" ? "Grouped project canvas" : "Project graph")}>
       <header className="canvas-toolbar">
         <div>
-          <strong>{mode === "canvas" ? "Canvas groupé" : "Graphe relationnel"}</strong>
-          <small>{layout.nodes.length} éléments · molette pour zoomer · glisser le fond pour naviguer</small>
+          <strong>{t(mode === "canvas" ? "Grouped canvas" : "Relationship graph")}</strong>
+          <small>{t("{count} items · wheel to zoom · drag the background to navigate", { count: layout.nodes.length })}</small>
         </div>
         <div className="canvas-actions">
-          <button type="button" onClick={() => zoom(-0.12)} aria-label="Dézoomer">−</button>
+          <button type="button" onClick={() => zoom(-0.12)} aria-label={t("Zoom out")}>−</button>
           <span>{Math.round(viewport.scale * 100)}%</span>
-          <button type="button" onClick={() => zoom(0.12)} aria-label="Zoomer">+</button>
-          <button type="button" onClick={resetViewport}>Recentrer</button>
+          <button type="button" onClick={() => zoom(0.12)} aria-label={t("Zoom in")}>+</button>
+          <button type="button" onClick={resetViewport}>{t("Recenter")}</button>
         </div>
       </header>
       <div
@@ -929,16 +932,16 @@ export function TaskCanvas({
                 <span className="canvas-folder-icon">▰</span>
                 <strong>{node.title}</strong>
                 <small>{node.subtitle}</small>
-                {mode === "canvas" && <em>Glisser le groupe</em>}
+                {mode === "canvas" && <em>{t("Drag group")}</em>}
               </article>
             );
           })}
         </div>
       </div>
       <footer className="canvas-legend">
-        <span><i className="legend-folder" /> Dossier</span>
-        <span><i className="legend-membership" /> Affectation</span>
-        <span><i className="legend-hierarchy" /> Sous-tâche</span>
+        <span><i className="legend-folder" /> {t("Folder")}</span>
+        <span><i className="legend-membership" /> {t("Assignment")}</span>
+        <span><i className="legend-hierarchy" /> {t("Subtask")}</span>
       </footer>
     </section>
   );
@@ -947,7 +950,8 @@ export function TaskCanvas({
 function buildGroupedCanvasLayout(
   tasks: TaskOption[],
   labels: ProjectLabel[],
-  assignments: TaskLabelAssignment[]
+  assignments: TaskLabelAssignment[],
+  t: (source: string, variables?: Record<string, string | number>) => string
 ): CanvasLayout {
   const labelsById = new Map(labels.map((label) => [label.id, label]));
   const taskLabels = indexTaskLabels(assignments, labelsById);
@@ -964,7 +968,7 @@ function buildGroupedCanvasLayout(
         id: "unfiled",
         organizationId: "",
         projectId: "",
-        name: "Sans dossier",
+        name: t("No folder"),
         color: "#94A3B8",
         createdBy: "",
         createdAt: "",
@@ -993,7 +997,7 @@ function buildGroupedCanvasLayout(
       width: groupWidth,
       height: groupHeight,
       title: group.label.name,
-      subtitle: `${group.tasks.length} tâche${group.tasks.length > 1 ? "s" : ""}`,
+      subtitle: t(group.tasks.length === 1 ? "{count} task" : "{count} tasks", { count: group.tasks.length }),
       color: group.label.color
     });
     group.tasks.slice(0, 8).forEach((task, taskIndex) => {
@@ -1034,7 +1038,8 @@ function buildGraphLayout(
   tasks: TaskOption[],
   labels: ProjectLabel[],
   assignments: TaskLabelAssignment[],
-  hierarchy: TaskParentAssignment[]
+  hierarchy: TaskParentAssignment[],
+  t: (source: string, variables?: Record<string, string | number>) => string
 ): CanvasLayout {
   const labelsById = new Map(labels.map((label) => [label.id, label]));
   const taskLabels = indexTaskLabels(assignments, labelsById);
@@ -1078,8 +1083,8 @@ function buildGraphLayout(
       y: groupY,
       width: 180,
       height: 72,
-      title: label?.name ?? "Sans dossier",
-      subtitle: `${group.tasks.length} tâche${group.tasks.length > 1 ? "s" : ""}`,
+      title: label?.name ?? t("No folder"),
+      subtitle: t(group.tasks.length === 1 ? "{count} task" : "{count} tasks", { count: group.tasks.length }),
       color: label?.color ?? "#94A3B8"
     });
     if (label?.parentLabelId) {

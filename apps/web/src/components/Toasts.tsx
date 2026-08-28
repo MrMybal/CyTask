@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useI18n } from "../i18n";
 
 export interface Toast {
   id: number;
@@ -25,13 +26,14 @@ export function useToasts() {
 }
 
 export function ToastStack({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  const { t } = useI18n();
   if (toasts.length === 0) return null;
   return (
     <div className="toast-stack" aria-live="polite">
       {toasts.map((toast) => (
         <div className={`toast toast-${toast.kind}`} key={toast.id} role={toast.kind === "error" ? "alert" : "status"}>
           <span>{toast.message}</span>
-          <button type="button" aria-label="Fermer le message" onClick={() => onDismiss(toast.id)}>×</button>
+          <button type="button" aria-label={t("Close notification")} onClick={() => onDismiss(toast.id)}>×</button>
         </div>
       ))}
     </div>

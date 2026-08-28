@@ -9,11 +9,11 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 {
     private static readonly (string Key, string Name, string Color)[] DefaultStatuses =
     [
-        ("todo", "À faire", "#7C8B9A"),
-        ("in_progress", "En cours", "#F2A93B"),
-        ("blocked", "Bloquée", "#FF5C6C"),
-        ("done", "Terminée", "#61E6B5"),
-        ("cancelled", "Annulée", "#7B8491")
+        ("todo", "To do", "#7C8B9A"),
+        ("in_progress", "In progress", "#F2A93B"),
+        ("blocked", "Blocked", "#FF5C6C"),
+        ("done", "Done", "#61E6B5"),
+        ("cancelled", "Cancelled", "#7B8491")
     ];
     public async Task<bool> IsReadyAsync(CancellationToken cancellationToken)
     {

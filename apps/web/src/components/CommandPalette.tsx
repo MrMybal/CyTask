@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Project, WorkItem } from "../api";
+import { useI18n } from "../i18n";
 
 export interface PaletteAction {
   id: string;
@@ -33,9 +34,9 @@ interface PaletteEntry {
  * Score de correspondance approximative : sous-séquence ordonnée, avec bonus
  * pour les débuts de mots et les caractères contigus. 0 = aucune correspondance.
  */
-function fuzzyScore(query: string, candidate: string): number {
+function fuzzyScore(query: string, candidate: string, locale: "en" | "fr"): number {
   if (!query) return 1;
-  const text = candidate.toLocaleLowerCase("fr");
+  const text = candidate.toLocaleLowerCase(locale);
   let score = 0;
   let position = 0;
   let previousMatch = -2;
@@ -59,6 +60,7 @@ export function CommandPalette({
   onOpenProject,
   onClose
 }: CommandPaletteProps) {
+  const { locale, t } = useI18n();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,11 +75,11 @@ export function CommandPalette({
   }, [open]);
 
   const entries = useMemo<PaletteEntry[]>(() => {
-    const needle = query.trim().toLocaleLowerCase("fr");
+    const needle = query.trim().toLocaleLowerCase(locale);
     const matches: PaletteEntry[] = [];
 
     for (const action of actions) {
-      const score = fuzzyScore(needle, `${action.label} ${action.keywords ?? ""}`);
+      const score = fuzzyScore(needle, `${action.label} ${action.keywords ?? ""}`, locale);
       if (score > 0) {
         matches.push({
           id: `action-${action.id}`,
@@ -92,7 +94,7 @@ export function CommandPalette({
     }
 
     for (const task of tasks) {
-      const score = fuzzyScore(needle, `${task.key} ${task.title}`);
+      const score = fuzzyScore(needle, `${task.key} ${task.title}`, locale);
       if (score > 0) {
         matches.push({
           id: `task-${task.id}`,
@@ -107,7 +109,7 @@ export function CommandPalette({
     }
 
     for (const project of projects) {
-      const score = fuzzyScore(needle, `${project.key} ${project.name}`);
+      const score = fuzzyScore(needle, `${project.key} ${project.name}`, locale);
       if (score > 0) {
         matches.push({
           id: `project-${project.id}`,
@@ -122,7 +124,7 @@ export function CommandPalette({
     }
 
     return matches.sort((left, right) => right.score - left.score).slice(0, 12);
-  }, [actions, onOpenProject, onOpenTask, projects, query, tasks]);
+  }, [actions, locale, onOpenProject, onOpenTask, projects, query, tasks]);
 
   useEffect(() => {
     setActiveIndex((current) => Math.min(current, Math.max(0, entries.length - 1)));
@@ -150,15 +152,15 @@ export function CommandPalette({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Palette de commandes">
+      <div className="palette" role="dialog" aria-modal="true" aria-label={t("Command palette")}>
         <input
           ref={inputRef}
           className="palette-input"
           type="text"
           autoFocus
           value={query}
-          placeholder="Tâche, projet ou action…"
-          aria-label="Rechercher une commande"
+          placeholder={t("Task, project or action…")}
+          aria-label={t("Search commands")}
           onChange={(event) => {
             setQuery(event.currentTarget.value);
             setActiveIndex(0);
@@ -197,12 +199,12 @@ export function CommandPalette({
               </button>
             </li>
           ))}
-          {entries.length === 0 && <li className="palette-empty">Aucun résultat.</li>}
+          {entries.length === 0 && <li className="palette-empty">{t("No results.")}</li>}
         </ul>
         <footer className="palette-footer">
-          <span><kbd>↑</kbd><kbd>↓</kbd> naviguer</span>
-          <span><kbd>↵</kbd> ouvrir</span>
-          <span><kbd>Échap</kbd> fermer</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> {t("navigate")}</span>
+          <span><kbd>↵</kbd> {t("open")}</span>
+          <span><kbd>Esc</kbd> {t("close")}</span>
         </footer>
       </div>
     </div>

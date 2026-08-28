@@ -5,6 +5,7 @@ import {
   type NativeAuthorizationRequest,
   type Session
 } from "../api";
+import { LanguageSwitcher, useI18n } from "../i18n";
 
 interface NativeAuthorizationScreenProps {
   request: NativeAuthorizationRequest;
@@ -12,12 +13,12 @@ interface NativeAuthorizationScreenProps {
   onCancel: () => void;
 }
 
-function callbackLabel(value: string): string {
+function callbackLabel(value: string, invalidLabel: string): string {
   try {
     const callback = new URL(value);
-    return `${callback.hostname}:${callback.port}`;
+    return callback.hostname + ":" + callback.port;
   } catch {
-    return "callback invalide";
+    return invalidLabel;
   }
 }
 
@@ -26,6 +27,7 @@ export function NativeAuthorizationScreen({
   session,
   onCancel
 }: NativeAuthorizationScreenProps) {
+  const { t } = useI18n();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -44,11 +46,11 @@ export function NativeAuthorizationScreen({
         callback.searchParams.get("state") !== request.state ||
         !callback.searchParams.has("code")
       ) {
-        throw new Error("Le serveur a retourné un callback inattendu.");
+        throw new Error("Unexpected callback returned by the server.");
       }
       window.location.replace(callback.toString());
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : "L’autorisation a échoué.");
+      setError(reason instanceof ApiError ? reason.message : t("Authorization failed."));
       setPending(false);
     }
   }
@@ -56,17 +58,20 @@ export function NativeAuthorizationScreen({
   return (
     <main className="native-auth-shell">
       <section className="native-auth-card">
-        <a className="brand" href="/" aria-label="CyTask, accueil">
-          <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
-          <span>CyTask</span>
-        </a>
+        <div className="native-auth-topline">
+          <a className="brand" href="/" aria-label="CyTask">
+            <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
+            <span>CyTask</span>
+          </a>
+          <LanguageSwitcher />
+        </div>
 
         <div>
-          <p className="eyebrow">Connexion à l’éditeur</p>
-          <h1>Autoriser CyTask pour Unreal Engine ?</h1>
+          <p className="eyebrow">{t("Editor sign-in")}</p>
+          <h1>{t("Authorize CyTask for Unreal Engine?")}</h1>
           <p className="muted">
-            Le plugin agira avec les droits du compte <strong>{session.displayName}</strong>
-            {` (${session.role})`}.
+            {t("The plugin will use the permissions of")} <strong>{session.displayName}</strong>
+            {" (" + session.role + ")"}.
           </p>
         </div>
 
@@ -74,31 +79,28 @@ export function NativeAuthorizationScreen({
           <span className="native-auth-icon">UE</span>
           <div>
             <strong>CyTask Unreal</strong>
-            <small>Retour local vers {callbackLabel(request.redirectUri)}</small>
+            <small>{t("Local return to")} {callbackLabel(request.redirectUri, t("invalid callback"))}</small>
           </div>
         </div>
 
         <div className="native-auth-permissions">
-          <p>Cette connexion permettra au plugin de :</p>
+          <p>{t("This connection lets the plugin:")}</p>
           <ul>
-            <li>consulter les projets, tâches, commentaires et pièces jointes ;</li>
-            <li>créer ou modifier selon votre rôle dans l’espace ;</li>
-            <li>préparer les recettes d’assets explicitement confirmées dans Unreal.</li>
+            <li>{t("view projects, tasks, comments and attachments;")}</li>
+            <li>{t("create or edit according to your workspace role;")}</li>
+            <li>{t("prepare asset recipes explicitly confirmed in Unreal.")}</li>
           </ul>
         </div>
 
         <p className="security-note native-auth-note">
-          Aucun mot de passe n’est transmis au plugin. Le code de retour expire rapidement,
-          ne fonctionne qu’une fois et reste lié à la preuve PKCE créée par Unreal.
+          {t("No password is sent to the plugin. The return code expires quickly, works only once and remains bound to the PKCE proof created by Unreal.")}
         </p>
 
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="native-auth-actions">
-          <button className="text-button" type="button" onClick={onCancel} disabled={pending}>
-            Annuler
-          </button>
+          <button className="text-button" type="button" onClick={onCancel} disabled={pending}>{t("Cancel")}</button>
           <button className="primary-button" type="button" onClick={() => void authorize()} disabled={pending}>
-            {pending ? "Autorisation…" : "Autoriser et revenir à Unreal"}
+            {t(pending ? "Authorizing…" : "Authorize and return to Unreal")}
           </button>
         </div>
       </section>

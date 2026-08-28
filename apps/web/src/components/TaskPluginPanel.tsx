@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, type PluginFieldDefinition, type PluginTaskTabDefinition, type TaskPlugin } from "../api";
 import { TaskAiAssistantPanel } from "./TaskAiAssistantPanel";
 import { TaskCyAnnotaPanel } from "./TaskCyAnnotaPanel";
+import { useI18n } from "../i18n";
 
 interface TaskPluginPanelProps {
   taskId: string;
@@ -47,6 +48,7 @@ function GenericTaskPluginPanel({
   onError,
   onNotice
 }: TaskPluginPanelProps) {
+  const { t } = useI18n();
   const [values, setValues] = useState<Record<string, unknown>>(plugin.data);
   const [saving, setSaving] = useState(false);
 
@@ -67,9 +69,9 @@ function GenericTaskPluginPanel({
         expectedRevision: plugin.revision
       });
       onSaved(updated);
-      onNotice(`Données ${plugin.manifest.name} enregistrées.`);
+      onNotice(t("{name} data saved.", { name: plugin.manifest.name }));
     } catch (reason) {
-      onError(reason instanceof Error ? reason.message : "L’enregistrement du plugin a échoué.");
+      onError(reason instanceof Error ? reason.message : t("Unable to save plugin data."));
     } finally {
       setSaving(false);
     }
@@ -83,7 +85,7 @@ function GenericTaskPluginPanel({
           <h3>{tab.title}</h3>
           <p>{plugin.manifest.description}</p>
         </div>
-        <span className="plugin-revision">rév. {plugin.revision}</span>
+        <span className="plugin-revision">{t("rev.")} {plugin.revision}</span>
       </header>
 
       <form className="task-plugin-form" onSubmit={save}>
@@ -98,11 +100,11 @@ function GenericTaskPluginPanel({
         ))}
         <div className="task-plugin-actions">
           <small>
-            Schéma {plugin.manifest.id} · les champs inconnus sont refusés par le serveur.
+            {t("Schema")} {plugin.manifest.id} · {t("unknown fields are rejected by the server.")}
           </small>
           {canEdit && (
             <button className="primary-button small" type="submit" disabled={saving}>
-              {saving ? "Enregistrement…" : "Enregistrer"}
+              {t(saving ? "Saving…" : "Save")}
             </button>
           )}
         </div>
@@ -122,6 +124,7 @@ function PluginField({
   disabled: boolean;
   onChange: (value: unknown) => void;
 }) {
+  const { t } = useI18n();
   const text = field.type === "string-list"
     ? Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").join("\n") : ""
     : typeof value === "string" || typeof value === "number" ? String(value) : "";
@@ -153,7 +156,7 @@ function PluginField({
           disabled={disabled}
           onChange={(event) => onChange(event.currentTarget.value)}
         >
-          <option value="">Non défini</option>
+          <option value="">{t("Not set")}</option>
           {(field.options ?? []).map((option) => <option value={option} key={option}>{option}</option>)}
         </select>
         {field.description && <small>{field.description}</small>}

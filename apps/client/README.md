@@ -1,8 +1,12 @@
+[**English**](README.md) | [Français](README.fr.md)
+
 # CyTask Desktop
 
-Client Electron pour Windows, Linux et macOS. Il charge une instance CyTask distante ou lance un moteur local auto-contenu à partir d’un dossier. Il mémorise jusqu’à vingt espaces : domaines HTTPS, IP locales ou projets locaux compatibles Syncthing.
+Electron client for Windows, Linux and macOS. It connects to a remote CyTask instance or starts a self-contained local engine from a folder. It remembers up to twenty workspaces: HTTPS domains, local IP addresses or Syncthing-compatible local projects.
 
-## Développement
+English is the default interface language. French can be selected with the persistent **EN / FR** control.
+
+## Development
 
 ```powershell
 Push-Location apps/client
@@ -12,13 +16,13 @@ npm run dev
 Pop-Location
 ```
 
-Pour la démo serveur, utiliser `http://127.0.0.1:5173` et confirmer explicitement l’avertissement HTTP. Une instance d’équipe en Production doit être exposée en HTTPS.
+For the server demo, use `http://127.0.0.1:5173` and explicitly accept the HTTP warning. A production team instance must use HTTPS.
 
-## Mode local et Sync
+## Local and Sync mode
 
-Le sélecteur **Dossier local** lance le sidecar sur `127.0.0.1` et crée le manifeste, les snapshots et `.stignore` dans le dossier choisi. Le même dossier peut être ajouté à Syncthing ou transporté par le moteur CyRevision.
+The **Local folder** selector starts the sidecar on `127.0.0.1` and creates the manifest, snapshots and `.stignore` file in the chosen folder. The same folder can be added to Syncthing or transported by the CyRevision Sync engine.
 
-Construire seulement le site et le sidecar Windows courant :
+Build only the Web application and the current Windows sidecar:
 
 ```powershell
 npm run server:win
@@ -32,20 +36,20 @@ npm run dist:linux
 npm run dist:mac
 ```
 
-Les commandes construisent le site Web, publient le sidecar .NET auto-contenu pour la plateforme ciblée, puis l’intègrent aux ressources Electron. Les artefacts vont dans `apps/client/release` : portable et NSIS pour Windows, AppImage et DEB pour Linux, DMG et ZIP pour macOS. Chaque plateforme doit idéalement être construite et signée sur son système natif.
+These commands build the Web application, publish the self-contained .NET sidecar for the target platform and include it in the Electron resources. Artifacts are written to `apps/client/release`: portable and NSIS on Windows, AppImage and DEB on Linux, DMG and ZIP on macOS. Each platform should ideally be built and signed on its native operating system.
 
-## Sécurité
+## Security
 
-- le sélecteur local utilise le protocole privé `cytask-client://` et une CSP stricte ;
-- le contenu CyTask s’ouvre dans une fenêtre séparée sans preload ni API Node ;
-- `nodeIntegration` et les WebView sont désactivés, l’isolation de contexte et le sandbox Chromium restent actifs ;
-- les navigations et nouvelles fenêtres hors de l’origine approuvée sont envoyées au navigateur système ;
-- chaque origine distante ou dossier local possède une partition persistante distincte pour ses cookies ;
-- le sidecar local écoute uniquement sur `127.0.0.1`, sur un port libre ;
-- caméra, microphone, notifications, plein écran et partage de la fenêtre CyTask ne sont accordés qu’à l’origine exacte ;
-- les certificats TLS invalides ne sont jamais contournés ;
-- `servers.json` contient uniquement les noms, URL ou chemins de dossiers, jamais les mots de passe ni les jetons ;
-- l’identité de l’appareil reste hors du dossier synchronisé ;
-- la fermeture laisse au snapshot périodique le temps de rendre la dernière mutation durable avant d’arrêter le sidecar.
+- the local selector uses the private `cytask-client://` protocol and a strict CSP;
+- CyTask content opens in a separate window without preload or Node APIs;
+- `nodeIntegration` and WebViews are disabled while context isolation and the Chromium sandbox remain enabled;
+- navigation and new windows outside the approved origin are sent to the system browser;
+- every remote origin or local folder gets a separate persistent cookie partition;
+- the local sidecar listens only on `127.0.0.1` and a free port;
+- camera, microphone, notifications, fullscreen and CyTask window sharing are granted only to the exact trusted origin;
+- invalid TLS certificates are never bypassed;
+- `servers.json` contains only names, URLs or folder paths, never passwords or tokens;
+- the device identity remains outside the synchronized folder;
+- shutdown allows the periodic snapshot to make the last mutation durable before stopping the sidecar.
 
-Voir aussi [Mode local et synchronisation par dossier](../../docs/09-mode-local-sync.md).
+See also [Local mode and folder synchronization](../../docs/09-mode-local-sync.md).

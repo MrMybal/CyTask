@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type { WorkItem } from "../api";
+import { useI18n } from "../i18n";
 
 export type TaskFilterSnapshot = {
   query: string;
@@ -97,6 +98,7 @@ export function TaskSavedViews({
   onDelete,
   onReset
 }: TaskSavedViewsProps) {
+  const { t } = useI18n();
   const [editor, setEditor] = useState<"save" | "rename">();
   const [name, setName] = useState("");
   const [deleteArmed, setDeleteArmed] = useState(false);
@@ -123,22 +125,22 @@ export function TaskSavedViews({
   }
 
   return (
-    <div className="saved-view-bar" role="group" aria-label="Vues enregistrées">
+    <div className="saved-view-bar" role="group" aria-label={t("Saved views")}>
       <label className="saved-view-select">
-        <span>Vue</span>
+        <span>{t("View")}</span>
         <select
           value={activeViewId ?? ""}
           onChange={(event) => onSelect(event.currentTarget.value || undefined)}
-          aria-label="Appliquer une vue de tâches"
+          aria-label={t("Apply a task view")}
         >
-          <option value="">Vue libre</option>
-          <optgroup label="Vues rapides">
+          <option value="">{t("Free view")}</option>
+          <optgroup label={t("Quick views")}>
             {presets.map((view) => (
               <option value={view.id} key={view.id}>{view.name}</option>
             ))}
           </optgroup>
           {savedViews.length > 0 && (
-            <optgroup label="Mes vues">
+            <optgroup label={t("My views")}>
               {savedViews.map((view) => (
                 <option value={view.id} key={view.id}>{view.name}</option>
               ))}
@@ -148,12 +150,12 @@ export function TaskSavedViews({
       </label>
 
       <span className={dirty ? "saved-view-state dirty" : "saved-view-state"} aria-live="polite">
-        {activeViewId ? (dirty ? "Modifiée" : "Synchronisée") : "Filtres libres"}
+        {t(activeViewId ? (dirty ? "Modified" : "Synced") : "Free filters")}
       </span>
 
       <div className="saved-view-actions">
         <button className="text-button" type="button" onClick={() => openEditor("save")}>
-          Enregistrer
+          {t("Save")}
         </button>
         {activeSavedView && (
           <>
@@ -162,9 +164,9 @@ export function TaskSavedViews({
               type="button"
               disabled={!dirty}
               onClick={onUpdate}
-            >Mettre à jour</button>
+            >{t("Update")}</button>
             <button className="text-button" type="button" onClick={() => openEditor("rename")}>
-              Renommer
+              {t("Rename")}
             </button>
             <button
               className={deleteArmed ? "text-button danger" : "text-button"}
@@ -173,10 +175,10 @@ export function TaskSavedViews({
                 if (deleteArmed) onDelete();
                 else setDeleteArmed(true);
               }}
-            >{deleteArmed ? "Confirmer" : "Supprimer"}</button>
+            >{t(deleteArmed ? "Confirm" : "Delete")}</button>
           </>
         )}
-        <button className="text-button" type="button" onClick={onReset}>Réinitialiser</button>
+        <button className="text-button" type="button" onClick={onReset}>{t("Reset")}</button>
       </div>
 
       {editor && (
@@ -186,16 +188,16 @@ export function TaskSavedViews({
             onChange={(event) => setName(event.currentTarget.value)}
             minLength={1}
             maxLength={40}
-            placeholder={editor === "rename" ? "Nouveau nom" : "Nom de la vue"}
-            aria-label={editor === "rename" ? "Nouveau nom de la vue" : "Nom de la vue à enregistrer"}
+            placeholder={t(editor === "rename" ? "New name" : "View name")}
+            aria-label={t(editor === "rename" ? "New view name" : "View name to save")}
             autoFocus
             required
           />
           <button className="primary-button small" type="submit">
-            {editor === "rename" ? "Renommer" : "Créer"}
+            {t(editor === "rename" ? "Rename" : "Create")}
           </button>
           <button className="text-button" type="button" onClick={() => setEditor(undefined)}>
-            Annuler
+            {t("Cancel")}
           </button>
         </form>
       )}

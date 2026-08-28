@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OrganizationMember } from "../api";
+import { useI18n } from "../i18n";
 
 interface TaskAssigneePickerProps {
   members: OrganizationMember[];
@@ -20,6 +21,7 @@ export function TaskAssigneePicker({
   compact = false,
   onChange
 }: TaskAssigneePickerProps) {
+  const { t } = useI18n();
   const [internalIds, setInternalIds] = useState(initialSelectedIds);
   const [draftIds, setDraftIds] = useState(selectedIds ?? initialSelectedIds);
   const [isOpen, setIsOpen] = useState(false);
@@ -81,7 +83,7 @@ export function TaskAssigneePicker({
           setIsOpen(open);
         }}
       >
-        <summary aria-label="Modifier les responsables">
+        <summary aria-label={t("Edit assignees")}>
           <span className="assignee-picker-avatars" aria-hidden="true">
             {selectedMembers.slice(0, 3).map((member) => (
               <i key={member.userId}>{initials(member.displayName)}</i>
@@ -89,20 +91,20 @@ export function TaskAssigneePicker({
           </span>
           <span>
             {selectedMembers.length === 0
-              ? "Personne"
+              ? t("Nobody")
               : selectedMembers.length <= 2
                 ? selectedMembers.map((member) => member.displayName).join(", ")
-                : `${selectedMembers.length} responsables`}
+                : t("{count} assignees", { count: selectedMembers.length })}
           </span>
           {!disabled && <b aria-hidden="true">＋</b>}
         </summary>
         {isOpen && !disabled && (
           <div className="assignee-picker-menu">
             <header>
-              <strong>Responsables</strong>
-              <small>Plusieurs personnes possibles</small>
+              <strong>{t("Assignees")}</strong>
+              <small>{t("Multiple people allowed")}</small>
             </header>
-            {members.length === 0 && <p className="assignee-picker-empty">Aucun membre disponible.</p>}
+            {members.length === 0 && <p className="assignee-picker-empty">{t("No members available.")}</p>}
             {members.map((member) => (
               <label key={member.userId}>
                 <input
@@ -116,8 +118,8 @@ export function TaskAssigneePicker({
             ))}
             {controlled && (
               <footer className="assignee-picker-actions">
-                <button type="button" onClick={cancelDraft}>Annuler</button>
-                <button type="button" className="primary" onClick={applyDraft}>Appliquer</button>
+                <button type="button" onClick={cancelDraft}>{t("Cancel")}</button>
+                <button type="button" className="primary" onClick={applyDraft}>{t("Apply")}</button>
               </footer>
             )}
           </div>

@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { ApiError, api, type InvitationPreview, type Session } from "../api";
+import { LanguageSwitcher, useI18n } from "../i18n";
 
 interface InvitationScreenProps {
   token: string;
@@ -7,13 +8,8 @@ interface InvitationScreenProps {
   onCancel: () => void;
 }
 
-const roleLabels: Record<InvitationPreview["role"], string> = {
-  admin: "Administrateur",
-  member: "Membre",
-  viewer: "Lecteur"
-};
-
 export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScreenProps) {
+  const { t } = useI18n();
   const [preview, setPreview] = useState<InvitationPreview>();
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
@@ -26,13 +22,13 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
         if (active) setPreview(invitation);
       })
       .catch(() => {
-        if (active) setError("Cette invitation est invalide, expirée ou déjà utilisée.");
+        if (active) setError(t("This invitation is invalid, expired or has already been used."));
       })
       .finally(() => {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [token]);
+  }, [t, token]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,36 +44,43 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
       onAccepted(session);
     } catch (reason) {
       setError(reason instanceof ApiError
-        ? "L’invitation n’est plus disponible. Demandez un nouveau lien."
-        : "Impossible de rejoindre cet espace.");
+        ? t("This invitation is no longer available. Ask for a new link.")
+        : t("Unable to join this workspace."));
     } finally {
       setPending(false);
     }
   }
 
+  const roleLabel = preview
+    ? t({ admin: "Administrator", member: "Member", viewer: "Viewer" }[preview.role])
+    : "";
+
   return (
     <main className="auth-shell invitation-shell">
       <section className="auth-story">
-        <a className="brand" href="/" aria-label="CyTask, accueil">
+        <a className="brand" href="/" aria-label="CyTask">
           <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
           <span>CyTask</span>
         </a>
         <div>
-          <p className="eyebrow">Invitation sécurisée</p>
-          <h1>Rejoignez le travail, sans friction.</h1>
-          <p className="hero-copy">Ce lien est personnel, temporaire et ne peut être utilisé qu’une fois.</p>
+          <p className="eyebrow">{t("Secure invitation")}</p>
+          <h1>{t("Join the work, without friction.")}</h1>
+          <p className="hero-copy">{t("This link is personal, temporary and can only be used once.")}</p>
         </div>
-        <p className="auth-footnote">CyTask · Espace auto-hébergé</p>
+        <p className="auth-footnote">{t("CyTask · Self-hosted workspace")}</p>
       </section>
 
       <section className="auth-panel">
         <form className="auth-card" onSubmit={submit}>
+          <div className="auth-language"><LanguageSwitcher /></div>
           <div>
-            <p className="eyebrow">Nouvel accès</p>
-            <h2>{loading ? "Vérification…" : preview ? `Rejoindre ${preview.organizationName}` : "Lien indisponible"}</h2>
+            <p className="eyebrow">{t("New access")}</p>
+            <h2>{loading
+              ? t("Checking…")
+              : preview ? t("Join {name}", { name: preview.organizationName }) : t("Link unavailable")}</h2>
             {preview && (
               <p className="muted">
-                Invitation pour <strong>{preview.email}</strong> · {roleLabels[preview.role]}
+                {t("Invitation for")} <strong>{preview.email}</strong> · {roleLabel}
               </p>
             )}
           </div>
@@ -85,13 +88,13 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
           {preview && (
             <>
               <label>
-                Nom affiché
+                {t("Display name")}
                 <input name="displayName" autoComplete="name" minLength={1} maxLength={80} required autoFocus />
               </label>
               <label>
-                Créer un mot de passe
+                {t("Create a password")}
                 <input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={200} required />
-                <small>12 caractères minimum. Utilisez une phrase longue et unique.</small>
+                <small>{t("At least 12 characters. Use a long, unique passphrase.")}</small>
               </label>
             </>
           )}
@@ -99,10 +102,10 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
           {error && <p className="form-error" role="alert">{error}</p>}
           {preview && (
             <button className="primary-button" disabled={pending} type="submit">
-              {pending ? "Création du compte…" : "Rejoindre l’espace"}
+              {t(pending ? "Creating account…" : "Join workspace")}
             </button>
           )}
-          {!loading && !preview && <button className="text-button" type="button" onClick={onCancel}>Retour à la connexion</button>}
+          {!loading && !preview && <button className="text-button" type="button" onClick={onCancel}>{t("Back to sign in")}</button>}
         </form>
       </section>
     </main>

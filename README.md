@@ -1,109 +1,62 @@
+[**English**](README.md) | [Français](README.fr.md)
+
 <p align="center">
-  <img src="assets/branding/cytask-logo.png" alt="Logo CyTask" width="360" />
+  <img src="assets/branding/cytask-logo.png" alt="CyTask logo" width="360" />
 </p>
 
 # CyTask
 
-CyTask est un gestionnaire de projets et de tâches open source, auto-hébergeable,
-conçu pour les équipes de production numérique et les projets Unreal Engine.
+CyTask is an open-source, self-hostable project and task manager built for digital production teams and Unreal Engine projects.
 
-Le produit doit fonctionner avec ou sans dépôt Git. Git, Unreal Engine, les
-traitements médias et CyRevision sont des intégrations autour d'un
-cœur qui reste utilisable seul.
+It works with or without a Git repository. Git, Unreal Engine, media processing, AI assistants, CyRevision and CyAnnota are optional integrations around a standalone core.
 
-## Objectifs
+## Goals
 
-- application Web rapide et installable, client Electron Windows/Linux/macOS, puis Android ;
-- serveur d'équipe auto-hébergeable avec une sécurité vérifiable ;
-- tâches, projets, sous-tâches, labels, commentaires, dépendances, pièces jointes et temps réel ;
-- images et vidéos avec conversion locale optionnelle et traitement serveur ;
-- commits, branches et demandes de fusion reliés aux tâches via un plugin Git ;
-- panneau CyTask dans Unreal Engine 4.27 à 5.8 ;
-- recettes d'assets contrôlées, prévisualisables et exécutables depuis Unreal ;
-- extensions signées et limitées par permissions ;
-- fondations compatibles avec un futur mode décentralisé CyRevision/Syncthing.
+- fast installable Web application and Electron client for Windows, Linux and macOS, with Android planned;
+- secure and auditable self-hosted team server;
+- projects, folders, tasks, subtasks, labels, comments, dependencies, attachments and real-time updates;
+- image and video previews with optional local conversion and server-side processing;
+- commits, branches and pull requests linked to tasks through the Git plugin;
+- CyTask panel for Unreal Engine 4.27 through 5.8;
+- controlled asset recipes that can be reviewed and executed from Unreal;
+- signed, permission-scoped extensions;
+- local-first projects and folder synchronization compatible with Syncthing and CyRevision Sync.
 
-## État du dépôt
+## Current state
 
-La première tranche verticale est implémentée : amorçage sécurisé du premier
-compte, sessions, invitations à usage unique, rôles, organisation, projets,
-tâches éditables avec contrôle de révision, sous-tâches, labels, checklists, commentaires et événements temps réel.
-La recherche, le journal d’activité et l’export JSON sont également disponibles.
-Le pipeline de pièces jointes calcule les empreintes côté client, envoie les données
-par blocs vérifiés et conserve les originaux en quarantaine hors du Web. Un worker
-d'analyse en sort chaque fichier : il parcourt réellement le conteneur PNG, JPEG,
-GIF, WebP, MP4 ou WebM, refuse les fichiers tronqués ou dont le contenu ne
-correspond pas au type annoncé, puis rend le fichier téléchargeable dans la seule
-organisation qui l'a déposé. Les vidéos MP4 et WebM exposent leurs dimensions et leur
-durée, se lisent directement dans la tâche et se déplacent dans la timeline grâce aux
-requêtes de plage. Le réencodage et l'analyse antivirale restent à faire.
-Les tâches peuvent aussi recevoir des références Git manuelles génériques ; aucun
-dépôt ni secret n'est requis tant que le connecteur Git officiel n'est pas activé.
-Le premier plugin Unreal source est également présent : panneau Slate, tâches personnelles et création auto-assignée, fichiers/assets historisés, connexion
-PKCE dans le navigateur système, consultation des projets et tâches, révocation du
-jeton, validateur strict et exécuteur confirmé de recettes d'assets. Le flux natif
-utilise un code unique et un jeton Bearer opaque révocable réservé au client
-`cytask-unreal` ; le jeton reste uniquement en mémoire dans l'éditeur.
+The first secure vertical slice is implemented: initial owner bootstrap, sessions, single-use invitations, roles, organizations, projects, editable revision-controlled tasks, multiple assignees, custom colored statuses, subtasks, labels, checklists, comments, dependencies, search, activity history, JSON export and real-time events.
 
-La première plateforme de plugins déclaratifs est également disponible. Un administrateur
-active Git, AI Assistant, Unreal Engine, CyRevision ou CyAnnota par projet depuis la page **Plugins**. AI Assistant gère plusieurs profils OpenAI, Anthropic, API compatible, Ollama, LM Studio, Codex, Claude Code ou OpenCode ; les jetons restent chiffrés côté serveur et chaque ticket choisit sa connexion. CyTask ajoute les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
-et validés par le serveur sont rendus. Le connecteur compagnon CyRevision recherche les tickets,
-ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de fin après fusion.
-Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
-du moteur complète.
-Le client Web responsive et installable consomme la même API que CyTask Desktop
-Electron et le plugin Unreal. Le client desktop mémorise plusieurs IP ou domaines, isole les sessions par origine et
-charge le site distant sans accès Node. Il peut aussi ouvrir un **dossier local** : un sidecar
-auto-contenu limité à `127.0.0.1` conserve des snapshots immuables et des médias compatibles
-avec Syncthing ou le moteur Sync de CyRevision, sans jamais répliquer une base active. Son interface de tâches propose maintenant cinq vues :
-Liste, Compacte en colonnes, Kanban, Canvas libre multimédia et graphe relationnel.
-Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
-des labels colorés, priorités, échéances, assignations multiples, vues rapides et filtres nommés mémorisés localement.
-La vue compacte se trie directement par chaque colonne et permet de modifier le statut, la priorité, l’échéance
-ou les responsables sans ouvrir la fiche complète. Ses dossiers sont repliables et ses sélections par ligne,
-par dossier ou globales permettent d’appliquer un statut, une priorité, une échéance ou plusieurs responsables à plusieurs tâches,
-et d’ajouter ou retirer un dossier/label sans effacer les autres classements. Les colonnes visibles et leur ordre sont configurables,
-réinitialisables et mémorisés par appareil ; les opérations groupées utilisent une concurrence bornée.
-Chaque espace possède une bibliothèque commune où documents, canvas et fichiers serveur
-peuvent être rangés dans les mêmes dossiers que les tâches, filtrés, regroupés et triés
-par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même passage en
-quarantaine que les pièces jointes de tâches.
-La discussion d’équipe fournit des salons par projet, messages, mentions, images, vidéos
-et fichiers issus de cette bibliothèque. Le vocal et le partage d’écran reposent sur WebRTC avec une signalisation
-WebSocket authentifiée. Le mode actuel est pair-à-pair direct ; un relais TURN privé
-sera nécessaire pour les déploiements dont les membres sont séparés par des NAT ou
-pare-feu stricts. Des groupes privés limitent côté serveur la liste des salons, les
-messages et la signalisation aux seuls membres invités. Les liens de tâches génèrent
-une carte ouvrable ; images et vidéos disposent d’un aperçu, d’une visionneuse
-agrandie, d’un lecteur intégré et d’un téléchargement direct.
-Elle propose aussi des vignettes et le téléchargement des fichiers validés, un motif pour les fichiers refusés,
-drag-and-drop multi-fichier sur toute la fenêtre de tâche, galerie intégrée aux détails
-et jusqu'à quatre aperçus image/vidéo par carte Kanban. Le Canvas permet d'ajouter
-et déplacer des textes, formes, tâches, images et vidéos, ainsi que de dessiner à main
-levée ; ses objets et blobs multimédias sont conservés localement dans le navigateur.
-L’interface comprend aussi une palette de commandes `Ctrl/⌘ + K`, l’ajout rapide
-d’une tâche en une ligne, le préchargement du détail au survol, la pagination serveur
-à curseur avec filtres, le chargement progressif et des notifications non bloquantes.
-Le déplacement optimiste utilise le contrôle de révision ; le détail reste organisé
-en onglets et possède des liens directs partageables. Les tâches intègrent des checklists avec progression, une hiérarchie
-parent/sous-tâches acyclique et des dépendances indiquant le travail qu'elles bloquent.
-PostgreSQL est la persistance cible ; un stockage mémoire explicite est disponible
-pour les tests et le développement rapide.
+The responsive Web client provides List, Compact table, Kanban, free multimedia Canvas and relationship Graph views. It includes persistent folders and subfolders, saved views, per-column sorting, configurable columns, bulk updates, light and dark themes, command palette, quick task creation, server cursor pagination and shareable task links. A demo seed generates 220 realistic tasks for interface and performance testing.
 
-## Démarrage rapide
+Attachments are hashed in the browser, uploaded in verified chunks and quarantined outside the Web root. The media worker validates PNG, JPEG, GIF, WebP, MP4 and WebM containers before making them available to their organization. Validated images and videos have previews, downloads and in-task playback with range requests. Video transcoding and antivirus scanning remain planned.
 
-Avec Node.js 22 et le SDK local `.tools/dotnet` déjà installé :
+Each workspace has a resource library for documents, canvases and server files. Team chat supports project channels, private groups, mentions, task link previews, images, videos and files. Voice and screen sharing use authenticated WebRTC signaling; deployments across strict NAT or firewalls will require a private TURN relay.
+
+The declarative plugin platform currently includes Git, AI Assistant, Unreal Engine, CyRevision and CyAnnota integrations. Plugin manifests cannot inject JavaScript or HTML: only server-validated declarative fields are rendered. AI Assistant supports multiple encrypted connection profiles for OpenAI, Anthropic, compatible APIs, Ollama, LM Studio, Codex, Claude Code and OpenCode.
+
+CyTask Desktop can connect to multiple IP addresses or domains with sessions isolated by origin. It can also open a local folder through a self-contained sidecar bound to `127.0.0.1`. Local mode stores immutable snapshots and media in a format designed for Syncthing or CyRevision Sync without replicating a live database.
+
+The Unreal source plugin includes a Slate panel, personal tasks, self-assigned task creation, file/asset history, browser PKCE sign-in, project and task browsing, token revocation and validated asset recipes. The connector currently compiles on UE 5.2 and 5.8; UE 4.27 validation still requires a complete engine installation.
+
+PostgreSQL is the production persistence target. Explicit in-memory storage is available for tests and fast local development.
+
+## Languages
+
+English is the default language in the Web application, PWA metadata and Desktop workspace selector. French remains available from the **EN / FR** selector and the preference is saved locally on each client.
+
+System status names are translated by the interface. Project names, custom status names, tasks, comments and other user-authored content are never translated or renamed automatically.
+
+## Quick start
+
+With Node.js 22 and the local `.tools/dotnet` SDK already installed:
 
 ```powershell
 ./scripts/dev.ps1
 ```
 
-Ouvrir ensuite `http://127.0.0.1:5173`. Ce mode perd ses données au redémarrage.
-Le même script lance la copie CyAnnota sur le port 5174 et la sert sous
-`/plugins/cyannota/` via le domaine CyTask.
-Pour PostgreSQL et le déploiement conteneurisé, voir [infra/README.md](infra/README.md).
+Then open `http://127.0.0.1:5173`. This development configuration uses in-memory storage and loses its data after restart. For PostgreSQL and container deployment, see [infra/README.md](infra/README.md).
 
-Le client desktop se construit depuis `apps/client` :
+Build the Desktop client from `apps/client`:
 
 ```powershell
 Push-Location apps/client
@@ -112,25 +65,15 @@ npm run dist:win
 Pop-Location
 ```
 
-Pour remplir le serveur local avec le projet fictif **Nebula Station**, lancer dans
-un second terminal pendant que le mode développement fonctionne :
+To populate the local server with the fictional **Nebula Station** project, run this in another terminal while development mode is active:
 
 ```powershell
 pwsh ./scripts/seed-demo.ps1
 ```
 
-Le script crée une équipe et un jeu de charge de **220 tâches** réalistes avec états, priorités,
-échéances, responsables, dossiers et sous-dossiers, ainsi que des sous-tâches, checklists, commentaires,
-références Git et dépendances. Il active aussi les **5 plugins officiels** avec des données
-Git, AI Assistant, Unreal et CyRevision, ainsi que CyAnnota pour les médias, puis ajoute **6 contenus d’espace**, **4 salons** et
-une conversation d’exemple avec mentions et documents joints. Il est idempotent : une nouvelle exécution complète seulement les tâches
-manquantes. Le jeu de démonstration ajoute également un groupe privé et un lien de
-tâche prévisualisable. Les identifiants de démonstration sont affichés à la fin de son exécution.
+The idempotent seed creates a team, **220 tasks**, statuses, priorities, deadlines, multiple assignees, folders and subfolders, subtasks, checklists, comments, Git references, dependencies, plugin data, six workspace resources, four chat channels, a private group and example discussions. Demo credentials are printed at the end.
 
-L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :
-un jeton personnel `cytask_pat_…` se crée depuis la section **API** du client Web,
-avec une portée lecture ou lecture/écriture, une expiration optionnelle et une
-révocation immédiate. Le contrat complet est servi par `/api/v1/openapi.json`.
+Plugins and scripts can use the API through a personal `cytask_pat_…` token created in the Web client's **API** section. Tokens support read-only or read/write scopes, optional expiration and immediate revocation. The OpenAPI contract is served at `/api/v1/openapi.json`.
 
 ```bash
 curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/projects
@@ -138,32 +81,34 @@ curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/proj
 
 ## Documentation
 
-- [Vision et périmètre](docs/01-vision-produit.md)
-- [Architecture](docs/02-architecture.md)
-- [Sécurité](docs/03-securite.md)
-- [Feuille de route](docs/04-feuille-de-route.md)
-- [Guide de développement](docs/05-developpement.md)
-- [Interface des tâches](docs/06-interface-taches.md)
-- [API pour plugins et intégrations](docs/07-api-plugins.md)
-- [Annotations CyAnnota](docs/08-cyannota.md)
-- [Mode local et synchronisation par dossier](docs/09-mode-local-sync.md)
-- [Client desktop](apps/client/README.md)
-- [Décisions d'architecture](docs/decisions)
-- [Contrats de plugins](packages/contracts)
-- [Plugin Unreal](integrations/unreal/README.md)
+Most detailed technical documents are currently written in French:
 
-## Organisation prévue
+- [Product vision and scope](docs/01-vision-produit.md)
+- [Architecture](docs/02-architecture.md)
+- [Security](docs/03-securite.md)
+- [Roadmap](docs/04-feuille-de-route.md)
+- [Development guide](docs/05-developpement.md)
+- [Task interface](docs/06-interface-taches.md)
+- [Plugin and integration API](docs/07-api-plugins.md)
+- [CyAnnota annotations](docs/08-cyannota.md)
+- [Local mode and folder synchronization](docs/09-mode-local-sync.md)
+- [Desktop client](apps/client/README.md)
+- [Architecture decisions](docs/decisions)
+- [Plugin contracts](packages/contracts)
+- [Unreal plugin](integrations/unreal/README.md)
+
+## Repository layout
 
 ```text
-apps/                  serveur, Web et clients
-integrations/unreal/   plugin Unreal et couches de compatibilité
-packages/              contrats et SDK partagés
-plugins/               plugins officiels, dont Git
-infra/                 déploiement local et production
-docs/                  produit, architecture, sécurité et décisions
+apps/                  server, Web and clients
+integrations/unreal/   Unreal plugin and compatibility layers
+packages/              shared contracts and SDKs
+plugins/               official plugins, including Git
+infra/                 local and production deployment
+docs/                  product, architecture, security and decisions
 ```
 
-## Vérifications
+## Verification
 
 ```powershell
 ./.tools/dotnet/dotnet test CyTask.slnx
@@ -172,12 +117,8 @@ Push-Location plugins/cyannota/web; npm run build; Pop-Location
 Push-Location apps/client; npm run check; Pop-Location
 ```
 
-Les commandes de construction et de tests Unreal sont documentées dans
-[`integrations/unreal/README.md`](integrations/unreal/README.md).
+Unreal build and test commands are documented in [`integrations/unreal/README.md`](integrations/unreal/README.md).
 
-## Licence
+## License
 
-CyTask est distribué sous la licence
-[GNU Affero General Public License v3.0](LICENSE), comme CyRevision. Les versions
-modifiées proposées à travers un réseau doivent conserver les mêmes libertés et
-mettre leur code source correspondant à disposition de leurs utilisateurs.
+CyTask is distributed under the [GNU Affero General Public License v3.0](LICENSE), like CyRevision. Modified versions offered over a network must preserve the same freedoms and make their corresponding source code available to users.
