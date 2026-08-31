@@ -85,6 +85,10 @@ function profilesPath() {
   return path.join(app.getPath("userData"), "servers.json");
 }
 
+function localSessionStoragePath(profile) {
+  return path.join(app.getPath("userData"), "local-sessions", profile.id + ".json");
+}
+
 function normalizeServerUrl(value) {
   if (typeof value !== "string") throw new Error(nativeText("The server address is required.", "L’adresse du serveur est obligatoire."));
   let candidate = value.trim();
@@ -262,6 +266,7 @@ async function startLocalServer(profile) {
       CyTask__LocalWorkspacePath: folderPath,
       CyTask__LocalDeviceId: deviceId,
       CyTask__LocalSyncSeconds: "1",
+      CyTask__LocalSessionStoragePath: localSessionStoragePath(profile),
       CyTask__MediaStoragePath: path.join(folderPath, ".cytask", "media")
     },
     stdio: ["ignore", "ignore", "pipe"]
@@ -552,8 +557,16 @@ function registerIpc() {
   ipcMain.handle("cytask:remove-server", async (event, id) => {
     assertSelectorSender(event);
     if (typeof id !== "string" || !SERVER_ID.test(id)) throw new Error(nativeText("Invalid server profile.", "Serveur invalide."));
-    const profiles = (await readProfiles()).filter((profile) => profile.id !== id);
+    const storedProfiles = await readProfiles();
+    const removedProfile = storedProfiles.find((profile) => profile.id === id);
+    const profiles = storedProfiles.filter((profile) => profile.id !== id);
     await writeProfiles(profiles);
+    if (removedProfile) {
+      await session.fromPartition(partitionFor(removedProfile)).clearStorageData({ storages: ["cookies"] });
+      if (removedProfile.type === "local") {
+        await fs.rm(localSessionStoragePath(removedProfile), { force: true });
+      }
+    }
     return profiles;
   });
   ipcMain.handle("cytask:choose-local-folder", async (event) => {

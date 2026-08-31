@@ -7,12 +7,15 @@ import "./styles.css";
 import "./content.css";
 import "./chat.css";
 import "./plugin.css";
+import "./professional.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AppErrorBoundary>
-      <App />
-    </AppErrorBoundary>
+    <I18nProvider>
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
+    </I18nProvider>
   </StrictMode>
 );
 

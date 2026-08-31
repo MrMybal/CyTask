@@ -46,6 +46,7 @@ import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
 import { ProjectContentPane } from "./ProjectContentPane";
 import { TeamChatPane } from "./TeamChatPane";
 import { PluginManagerPane } from "./PluginManagerPane";
+import { MigrationPane } from "./MigrationPane";
 import { TaskPluginPanel } from "./TaskPluginPanel";
 import { LanguageSwitcher, localizedStatusName, useI18n } from "../i18n";
 import {
@@ -82,6 +83,33 @@ const priorities: WorkItem["priority"][] = ["urgent", "high", "normal", "low"];
 
 const gitPluginId = "dev.cytask.git";
 
+type ThemeMode = "graphite" | "midnight" | "forest" | "cloud" | "paper" | "contrast";
+
+interface ThemeOption {
+  id: ThemeMode;
+  label: string;
+  description: string;
+  preview: { background: string; surface: string; accent: string };
+}
+
+const themeOptions: ThemeOption[] = [
+  { id: "graphite", label: "Graphite", description: "Neutral dark", preview: { background: "#11161c", surface: "#1a222b", accent: "#63b49b" } },
+  { id: "midnight", label: "Midnight", description: "Deep navy", preview: { background: "#0d1520", surface: "#162334", accent: "#78a6d8" } },
+  { id: "forest", label: "Forest", description: "Muted green", preview: { background: "#111713", surface: "#1b251c", accent: "#83b17d" } },
+  { id: "cloud", label: "Cloud", description: "Cool light", preview: { background: "#e7ebef", surface: "#f7f8f9", accent: "#23745e" } },
+  { id: "paper", label: "Paper", description: "Warm light", preview: { background: "#ece9e2", surface: "#f8f5ef", accent: "#7b6042" } },
+  { id: "contrast", label: "High contrast", description: "Maximum readability", preview: { background: "#07090c", surface: "#141a21", accent: "#f3c85b" } }
+];
+
+const lightThemeModes = new Set<ThemeMode>(["cloud", "paper"]);
+
+function storedThemeMode(): ThemeMode {
+  const stored = window.localStorage.getItem("cytask.theme");
+  if (stored === "light") return "cloud";
+  if (stored === "dark") return "graphite";
+  return themeOptions.some((theme) => theme.id === stored) ? stored as ThemeMode : "graphite";
+}
+
 type TaskView = TaskFilterSnapshot["view"];
 type TaskStatusFilter = TaskFilterSnapshot["status"];
 type TaskPriorityFilter = TaskFilterSnapshot["priority"];
@@ -97,7 +125,7 @@ type DetailTab =
   | `plugin:${string}:${string}`;
 type TaskSort = TaskFilterSnapshot["sort"];
 type SidebarSection = "project" | "inbox" | "mine" | "today" | "later" | "completed";
-type WorkspaceArea = "tasks" | "contents" | "chat" | "plugins";
+type WorkspaceArea = "tasks" | "contents" | "chat" | "plugins" | "migration";
 type DetailBundle = [
   TaskDetails,
   Attachment[],
@@ -133,6 +161,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
+  const [showWorkspaceSettings, setShowWorkspaceSettings] = useState(false);
+  const [showInlineFolderForm, setShowInlineFolderForm] = useState(false);
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -193,9 +223,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [workspaceArea, setWorkspaceArea] = useState<WorkspaceArea>("tasks");
   const [showTokens, setShowTokens] = useState(false);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("project");
-  const [themeMode, setThemeMode] = useState<"dark" | "light">(() =>
-    window.localStorage.getItem("cytask.theme") === "light" ? "light" : "dark"
-  );
+  const [themeMode, setThemeMode] = useState<ThemeMode>(storedThemeMode);
+  const themeTone = lightThemeModes.has(themeMode) ? "light" : "dark";
   const [folderEditorParentId, setFolderEditorParentId] =
     useState<string | null | undefined>();
   const taskRequestSequence = useRef(0);
@@ -262,7 +291,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     ? (selectedFolder ? t("Contents") + " · " + selectedFolder.name : t("Workspace contents"))
     : workspaceArea === "chat"
       ? t("Team chat")
-      : workspaceArea === "plugins" ? t("Project plugins") : undefined;
+      : workspaceArea === "plugins" ? t("Project plugins")
+        : workspaceArea === "migration" ? t("Migration tool") : undefined;
   const workspaceTitle = selectedFolder?.name ?? (sidebarSection === "project"
     ? selectedProject?.name
     : {
@@ -954,6 +984,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         dueAt: localDateTimeToIso(String(data.get("dueAt"))),
         assigneeId: optionalId(data.get("assigneeId"))
       });
+      if (selectedFolder) await api.addTaskLabel(task.id, selectedFolder.id);
       form.reset();
       setShowTaskForm(false);
       notify("success", t("{key} created.", { key: task.key }));
@@ -981,6 +1012,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         dueAt: null,
         assigneeId: null
       });
+      if (selectedFolder) await api.addTaskLabel(task.id, selectedFolder.id);
       await loadTasks(selectedProjectId);
       notify("success", t("{key} created.", { key: task.key }));
     } catch (reason) {
@@ -1195,6 +1227,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
       form.reset();
       setFolderEditorParentId(undefined);
+      setShowInlineFolderForm(false);
       await loadTaskSupport(selectedProjectId);
       notify(
         "success",
@@ -2041,7 +2074,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   }, [canAdminister, canContribute, selectedProjectId, sidebarCollapsed, taskView]);
 
   return (
-    <div className={`workspace-shell theme-${themeMode}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+    <div className={`workspace-shell theme-${themeTone} theme-${themeMode}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-top">
           <a className="brand compact" href="/" aria-label={t("CyTask home")}>
@@ -2165,6 +2198,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         }}>
                         <span>＋</span><span>Plugins</span>
                       </button>
+                      {canAdminister && (
+                        <button className={workspaceArea === "migration" ? "active" : ""} type="button"
+                          onClick={() => {
+                            closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                            setWorkspaceArea("migration"); setSidebarSection("project");
+                          }}>
+                          <span>↥</span><span>{t("Migration")}</span>
+                        </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -2174,49 +2216,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </nav>
         </div>
 
-        {localSync?.enabled && (
-          <button
-            className={`team-link local-sync-link${localSync.conflictCount > 0 ? " has-conflicts" : ""}`}
-            type="button"
-            title={`${localSync.message ?? t("Local mode")} · ${t("{count} device(s)", { count: localSync.peerDeviceCount ?? 0 })} · ${t("{count} snapshot(s)", { count: localSync.snapshotCount ?? 0 })}`}
-            disabled={localSyncFlushing}
-            onClick={() => void flushLocalSync()}
-          >
-            <span className="project-avatar">{localSync.conflictCount > 0 ? "!" : "↻"}</span>
-            <span>{localSyncFlushing ? t("Saving…") : localSync.conflictCount > 0
-              ? t("{count} Sync conflict(s)", { count: localSync.conflictCount }) : t("Local · Synced")}</span>
-          </button>
-        )}
-        <button className="team-link" title={t("Team")} onClick={() => void openTeam()}>
-          <span className="project-avatar">EQ</span>
-          <span>{t("Team")}</span>
-        </button>
-        <button className="team-link activity-link" title={t("Activity")} onClick={() => void openActivity()}>
-          <span className="project-avatar">AC</span>
-          <span>{t("Activity")}</span>
-        </button>
-        <button className="team-link" title={t("API and tokens")} onClick={() => {
-          closeTask();
-          setShowTeam(false);
-          setShowActivity(false);
-          setShowTokens(true);
-        }}>
-          <span className="project-avatar">AP</span>
-          <span>API</span>
-        </button>
-
         <button
-          className="team-link theme-link"
+          className={`team-link workspace-settings-trigger${localSync?.conflictCount ? " has-conflicts" : ""}`}
           type="button"
-          title={t(themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode")}
-          onClick={() => setThemeMode((current) => current === "dark" ? "light" : "dark")}
+          title={t("Settings and tools")}
+          onClick={() => setShowWorkspaceSettings(true)}
         >
-          <span className="project-avatar">{themeMode === "dark" ? "☀" : "☾"}</span>
-          <span>{t(themeMode === "dark" ? "Light mode" : "Dark mode")}</span>
+          <span className="project-avatar">⚙</span>
+          <span>{t("Settings and tools")}</span>
+          {localSync?.conflictCount ? <strong>{localSync.conflictCount}</strong> : null}
         </button>
-
-        <div className="sidebar-language"><LanguageSwitcher compact /></div>
-
         <div className="profile-block">
           <span className="profile-avatar">{initials(session.displayName)}</span>
           <span className="profile-copy">
@@ -2226,6 +2235,81 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           <button className="text-button" onClick={logout}>{t("Log out")}</button>
         </div>
       </aside>
+
+      {showWorkspaceSettings && (
+        <div className="workspace-settings-backdrop">
+          <button
+            className="workspace-settings-scrim"
+            type="button"
+            aria-label={t("Close settings")}
+            onClick={() => setShowWorkspaceSettings(false)}
+          />
+          <section className="workspace-settings" role="dialog" aria-modal="true" aria-labelledby="workspace-settings-title">
+            <header>
+              <div>
+                <p className="eyebrow">{t("Workspace")}</p>
+                <h2 id="workspace-settings-title">{t("Settings and tools")}</h2>
+              </div>
+              <button className="icon-button quiet" type="button" aria-label={t("Close")} onClick={() => setShowWorkspaceSettings(false)}>×</button>
+            </header>
+
+            <div className="workspace-settings-grid">
+              {localSync?.enabled && (
+                <button
+                  className={`workspace-settings-option wide${localSync.conflictCount > 0 ? " has-conflicts" : ""}`}
+                  type="button"
+                  disabled={localSyncFlushing}
+                  onClick={() => void flushLocalSync()}
+                >
+                  <span className="project-avatar">{localSync.conflictCount > 0 ? "!" : "↻"}</span>
+                  <span><strong>{localSyncFlushing ? t("Saving…") : t("Local sync")}</strong><small>{localSync.message ?? t("Local · Synced")}</small></span>
+                  <em>{t("{count} snapshot(s)", { count: localSync.snapshotCount ?? 0 })}</em>
+                </button>
+              )}
+              <button className="workspace-settings-option" type="button" onClick={() => { setShowWorkspaceSettings(false); void openTeam(); }}>
+                <span className="project-avatar">EQ</span><span><strong>{t("Team")}</strong><small>{t("Members and invitations")}</small></span>
+              </button>
+              <button className="workspace-settings-option" type="button" onClick={() => { setShowWorkspaceSettings(false); void openActivity(); }}>
+                <span className="project-avatar">AC</span><span><strong>{t("Activity")}</strong><small>{t("Workspace history")}</small></span>
+              </button>
+              <button className="workspace-settings-option" type="button" onClick={() => {
+                setShowWorkspaceSettings(false); closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(true);
+              }}>
+                <span className="project-avatar">AP</span><span><strong>{t("API")}</strong><small>{t("API tokens")}</small></span>
+              </button>
+            </div>
+
+            <section className="workspace-settings-section theme-setting">
+              <div className="theme-setting-copy"><h3>{t("Appearance")}</h3><small>{t("Choose the interface theme.")}</small></div>
+              <div className="theme-picker" role="radiogroup" aria-label={t("Color theme")}>
+                {themeOptions.map((theme) => (
+                  <button
+                    className={themeMode === theme.id ? "theme-option active" : "theme-option"}
+                    type="button"
+                    role="radio"
+                    aria-checked={themeMode === theme.id}
+                    key={theme.id}
+                    onClick={() => setThemeMode(theme.id)}
+                    style={{
+                      "--theme-preview-bg": theme.preview.background,
+                      "--theme-preview-surface": theme.preview.surface,
+                      "--theme-preview-accent": theme.preview.accent
+                    } as CSSProperties}
+                  >
+                    <span className="theme-preview" aria-hidden="true"><i /><i /><i /></span>
+                    <span className="theme-option-copy"><strong>{t(theme.label)}</strong><small>{t(theme.description)}</small></span>
+                    <span className="theme-option-check" aria-hidden="true">✓</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="workspace-settings-section language-setting">
+              <div><h3>{t("Language")}</h3><small>{t("Interface language")}</small></div>
+              <LanguageSwitcher />
+            </section>
+          </section>
+        </div>
+      )}
 
       <main className="task-pane">
         <header className="pane-header">
@@ -2303,7 +2387,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </form>
         )}
 
-        {workspaceArea === "plugins" && selectedProject ? (
+        {workspaceArea === "migration" && selectedProject ? (
+          <MigrationPane
+            projectId={selectedProject.id}
+            statuses={projectStatuses}
+            members={members}
+            onImported={() => loadTasks(selectedProject.id)}
+            onError={setError}
+            onNotice={(message) => notify("success", message)}
+          />
+        ) : workspaceArea === "plugins" && selectedProject ? (
           <PluginManagerPane
             projectId={selectedProject.id}
             canAdminister={canAdminister}
@@ -2539,6 +2632,36 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               </div>
             </section>
 
+            {canContribute && (
+              <section className="task-context-create" aria-label={t("Create in the current view")}>
+                <form className="context-task-form" onSubmit={quickAddTask}>
+                  <input
+                    name="title"
+                    maxLength={240}
+                    autoComplete="off"
+                    placeholder={t("Add a task to {name}…", { name: selectedFolder?.name ?? t("Project root") })}
+                    aria-label={t("Quickly add a task")}
+                    required
+                  />
+                  <button className="primary-button small" type="submit">+ {t("Task")}</button>
+                </form>
+                <button
+                  className="secondary-button small context-group-trigger"
+                  type="button"
+                  aria-expanded={showInlineFolderForm}
+                  onClick={() => setShowInlineFolderForm((value) => !value)}
+                >+ {t("Group")}</button>
+                {showInlineFolderForm && (
+                  <form className="context-group-form" onSubmit={createProjectFolder}>
+                    <input name="parentLabelId" type="hidden" value={selectedFolder?.id ?? ""} />
+                    <input name="color" type="color" defaultValue={selectedFolder?.color ?? "#3B82F6"} aria-label={t("Folder color")} />
+                    <input name="name" maxLength={80} placeholder={t("Group name")} aria-label={t("Group name")} autoFocus required />
+                    <button className="primary-button small" type="submit">{t("Create")}</button>
+                    <button className="text-button" type="button" onClick={() => setShowInlineFolderForm(false)}>{t("Cancel")}</button>
+                  </form>
+                )}
+              </section>
+            )}
             {tasksLoading && <p className="task-loading" role="status">{t("Refreshing tasks…")}</p>}
 
             {tasksLoading && tasks.length === 0 ? (
@@ -2593,17 +2716,6 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               />
             ) : taskView === "list" ? (
               <section className="task-list" aria-label={t("Tasks in list view")}>
-                {canContribute && (
-                  <form className="quick-add" onSubmit={quickAddTask}>
-                    <input
-                      name="title"
-                      placeholder={t("Quick add: title then Enter")}
-                      aria-label={t("Quickly add a task")}
-                      maxLength={240}
-                      autoComplete="off"
-                    />
-                  </form>
-                )}
                 <div className="list-header"><span>{t("Task")}</span><span>{t("Status")}</span><span>{t("Updated")}</span></div>
                 {filteredTasks.map((task) => (
                   <button

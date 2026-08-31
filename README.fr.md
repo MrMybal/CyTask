@@ -47,6 +47,8 @@ jeton, validateur strict et exécuteur confirmé de recettes d'assets. Le flux n
 utilise un code unique et un jeton Bearer opaque révocable réservé au client
 `cytask-unreal` ; le jeton reste uniquement en mémoire dans l'éditeur.
 
+Les propriétaires et administrateurs disposent maintenant d’un écran **Migration** dans chaque projet. Il analyse une liste ClickUp ou un projet Jira Cloud, permet de vérifier les correspondances d’états et de responsables, puis réalise un import idempotent. Les jetons de la source ne sont jamais enregistrés et les aperçus expirent après 30 minutes. Tâches, descriptions, priorités, dates, responsables, commentaires, checklists, labels, relations parentales et dépendances prises en charge sont conservés. Dans cette première version, les pièces jointes distantes restent des liens HTTPS sûrs vers la source.
+
 La première plateforme de plugins déclaratifs est également disponible. Un administrateur
 active Git, AI Assistant, Unreal Engine, CyRevision ou CyAnnota par projet depuis la page **Plugins**. AI Assistant gère plusieurs profils OpenAI, Anthropic, API compatible, Ollama, LM Studio, Codex, Claude Code ou OpenCode ; les jetons restent chiffrés côté serveur et chaque ticket choisit sa connexion. CyTask ajoute les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
 et validés par le serveur sont rendus. Le connecteur compagnon CyRevision recherche les tickets,

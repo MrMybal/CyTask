@@ -26,10 +26,10 @@
   letter-spacing: .04em;
 }
 .plugin-security-badge { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); }
-.plugin-card-grid { display: grid; gap: 14px; max-width: 1100px; margin: 0 auto; }
+.plugin-card-grid { display: grid; gap: 14px; width: 100%; max-width: 1100px; margin: 0 auto; }
 .plugin-card {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-columns: 58px minmax(0, 1fr) minmax(110px, auto);
   align-items: center;
   gap: 18px;
   padding: 20px;
@@ -67,7 +67,8 @@
   background: var(--surface-raised);
   font-size: 10px;
 }
-.plugin-card-actions { display: grid; justify-items: end; gap: 10px; min-width: 120px; }
+.plugin-card-actions { display: grid; justify-items: stretch; gap: 10px; min-width: 110px; }
+.plugin-card-actions button { width: 100%; min-width: 0; }
 .plugin-state.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 
 .detail-tabs .plugin-tab { gap: 5px; }

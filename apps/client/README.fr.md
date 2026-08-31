@@ -42,11 +42,12 @@ Les commandes construisent le site Web, publient le sidecar .NET auto-contenu po
 - le contenu CyTask s’ouvre dans une fenêtre séparée sans preload ni API Node ;
 - `nodeIntegration` et les WebView sont désactivés, l’isolation de contexte et le sandbox Chromium restent actifs ;
 - les navigations et nouvelles fenêtres hors de l’origine approuvée sont envoyées au navigateur système ;
-- chaque origine distante ou dossier local possède une partition persistante distincte pour ses cookies ;
+- chaque origine distante ou dossier local possède une partition persistante distincte pour ses cookies, afin de rouvrir une connexion encore valide sans redemander le mot de passe ;
 - le sidecar local écoute uniquement sur `127.0.0.1`, sur un port libre ;
 - caméra, microphone, notifications, plein écran et partage de la fenêtre CyTask ne sont accordés qu’à l’origine exacte ;
 - les certificats TLS invalides ne sont jamais contournés ;
 - `servers.json` contient uniquement les noms, URL ou chemins de dossiers, jamais les mots de passe ni les jetons ;
+- le mode local conserve seulement les empreintes de session et CSRF dans le profil desktop (`local-sessions`), hors du dossier Syncthing ; les jetons bruts restent dans le magasin de cookies protégé de Chromium ;
 - l’identité de l’appareil reste hors du dossier synchronisé ;
 - la fermeture laisse au snapshot périodique le temps de rendre la dernière mutation durable avant d’arrêter le sidecar.
 

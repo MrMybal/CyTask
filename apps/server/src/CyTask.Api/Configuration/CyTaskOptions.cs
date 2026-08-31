@@ -11,6 +11,7 @@ public sealed class CyTaskOptions
     public string? LocalDeviceId { get; init; }
     public int LocalSyncSeconds { get; init; } = 2;
     public int SessionHours { get; init; } = 12;
+    public string? LocalSessionStoragePath { get; init; }
     public int NativeAuthorizationCodeMinutes { get; init; } = 5;
     public int NativeAccessTokenMinutes { get; init; } = 60;
     public int InvitationHours { get; init; } = 72;

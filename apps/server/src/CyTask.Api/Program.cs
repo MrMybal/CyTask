@@ -5,6 +5,7 @@ using CyTask.Api.Endpoints;
 using CyTask.Api.Infrastructure;
 using CyTask.Api.LocalSync;
 using CyTask.Api.Media;
+using CyTask.Api.Migrations;
 using CyTask.Api.Plugins;
 using CyTask.Api.Realtime;
 using CyTask.Api.Security;
@@ -50,6 +51,9 @@ builder.Services.AddOptions<CyTaskOptions>()
         "LocalWorkspacePath is required in local mode.")
     .Validate(options => !options.LocalMode || Guid.TryParse(options.LocalDeviceId, out var deviceId) && deviceId != Guid.Empty,
         "LocalDeviceId must be a non-empty GUID in local mode.")
+    .Validate(options => string.IsNullOrWhiteSpace(options.LocalSessionStoragePath)
+        || Path.IsPathFullyQualified(options.LocalSessionStoragePath),
+        "LocalSessionStoragePath must be an absolute path when configured.")
     .Validate(options => options.LocalSyncSeconds is >= 1 and <= 60,
         "LocalSyncSeconds must be between 1 and 60.")
     .Validate(options => options.SessionHours is >= 1 and <= 168, "SessionHours must be between 1 and 168.")
@@ -162,6 +166,16 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("migration", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 8,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 builder.Services.AddSingleton<PasswordService>();
@@ -170,9 +184,22 @@ builder.Services.AddSingleton<WorkspaceEventHub>();
 builder.Services.AddSingleton<PluginCatalog>();
 builder.Services.AddSingleton<AiSecretProtector>();
 builder.Services.AddSingleton<AiAssistantExecutor>();
+builder.Services.AddSingleton<MigrationSourceClient>();
+builder.Services.AddSingleton<MigrationService>();
 builder.Services.AddHttpClient("ai-assistant", client =>
 {
     client.DefaultRequestHeaders.UserAgent.ParseAdd("CyTask-AI-Assistant/0.2");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false,
+    AutomaticDecompression = System.Net.DecompressionMethods.GZip
+        | System.Net.DecompressionMethods.Deflate
+});
+builder.Services.AddHttpClient("migration", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.MaxResponseContentBufferSize = 25_000_000;
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("CyTask-Migrator/0.1");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,

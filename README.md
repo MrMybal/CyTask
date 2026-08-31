@@ -32,6 +32,8 @@ Attachments are hashed in the browser, uploaded in verified chunks and quarantin
 
 Each workspace has a resource library for documents, canvases and server files. Team chat supports project channels, private groups, mentions, task link previews, images, videos and files. Voice and screen sharing use authenticated WebRTC signaling; deployments across strict NAT or firewalls will require a private TURN relay.
 
+Owners and administrators can open **Migration** inside a project to analyze a ClickUp list or Jira Cloud project, map source statuses and users, preview the result and run an idempotent import. Source tokens are never persisted; previews expire after 30 minutes. Tasks, descriptions, priorities, dates, assignees, comments, checklists, labels, parent links and supported dependencies are preserved. Remote attachments remain safe HTTPS source links in this first version.
+
 The declarative plugin platform currently includes Git, AI Assistant, Unreal Engine, CyRevision and CyAnnota integrations. Plugin manifests cannot inject JavaScript or HTML: only server-validated declarative fields are rendered. AI Assistant supports multiple encrypted connection profiles for OpenAI, Anthropic, compatible APIs, Ollama, LM Studio, Codex, Claude Code and OpenCode.
 
 CyTask Desktop can connect to multiple IP addresses or domains with sessions isolated by origin. It can also open a local folder through a self-contained sidecar bound to `127.0.0.1`. Local mode stores immutable snapshots and media in a format designed for Syncthing or CyRevision Sync without replicating a live database.

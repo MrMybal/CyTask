@@ -1583,6 +1583,40 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         return result;
     }
 
+    public async Task<IReadOnlyList<ExternalReference>?> ListProjectExternalReferencesAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT er.id, er.organization_id, er.task_id, er.provider, er.repository,
+                   er.reference_type, er.reference_value, er.label, er.web_url,
+                   er.created_by, er.created_at
+            FROM external_references er
+            JOIN tasks t ON t.id = er.task_id
+            WHERE er.organization_id = @organization_id
+              AND t.organization_id = @organization_id
+              AND t.project_id = @project_id
+            ORDER BY er.created_at, er.id;
+            """);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("project_id", projectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<ExternalReference>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(ReadExternalReference(reader));
+        }
+
+        if (result.Count == 0
+            && !await ProjectExistsAsync(organizationId, projectId, cancellationToken))
+        {
+            return null;
+        }
+
+        return result;
+    }
+
     public async Task<ExternalReference?> CreateExternalReferenceAsync(
         Guid organizationId,
         Guid taskId,
