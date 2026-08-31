@@ -20,4 +20,5 @@ PostgreSQL. Les migrations ne sont appliquées automatiquement que lorsque
 - `POST /api/v1/bootstrap`, utilisable une seule fois ;
 - `POST /api/v1/sessions` et `DELETE /api/v1/session` ;
 - projets, tâches, hiérarchies de sous-tâches, labels, checklists et commentaires sous `/api/v1` ;
+- outil de migration ClickUp/Jira Cloud sous `/api/v1/migrations`, réservé aux propriétaires et administrateurs ;
 - flux SSE authentifié sur `GET /api/v1/events`.

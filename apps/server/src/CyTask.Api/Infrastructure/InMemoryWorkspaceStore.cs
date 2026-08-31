@@ -1,5 +1,8 @@
+using System.Text.Json;
+using CyTask.Api.Configuration;
 using CyTask.Api.Domain;
 using CyTask.Api.LocalSync;
+using Microsoft.Extensions.Options;
 
 namespace CyTask.Api.Infrastructure;
 
@@ -14,6 +17,25 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         ("cancelled", "Cancelled", "#7B8491")
     ];
 
+    private const int MaxPersistedSessions = 100;
+    private const long MaxSessionFileBytes = 1_048_576;
+    private static readonly JsonSerializerOptions LocalSessionJson = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true
+    };
+
+    private static readonly Action<ILogger, Exception?> LogLocalSessionLoadFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(4101, nameof(LogLocalSessionLoadFailed)),
+            "The local session registry could not be loaded.");
+    private static readonly Action<ILogger, Exception?> LogLocalSessionSaveFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(4102, nameof(LogLocalSessionSaveFailed)),
+            "The local session registry could not be saved.");
+    private readonly ILogger<InMemoryWorkspaceStore> _logger;
+    private readonly string? _localSessionStoragePath;
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, UserAccount> _users = [];
     private readonly Dictionary<Guid, Organization> _organizations = [];
@@ -38,6 +60,21 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private readonly Dictionary<Guid, ExternalReference> _externalReferences = [];
     private readonly Dictionary<(Guid TaskId, Guid DependsOnTaskId), TaskDependencyEntry> _taskDependencies = [];
     private readonly Dictionary<Guid, TaskChecklistItem> _checklistItems = [];
+
+    public InMemoryWorkspaceStore(
+        IOptions<CyTaskOptions> options,
+        ILogger<InMemoryWorkspaceStore> logger)
+    {
+        _logger = logger;
+        var configuredPath = options.Value.LocalSessionStoragePath;
+        if (!options.Value.LocalMode || string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return;
+        }
+
+        _localSessionStoragePath = Path.GetFullPath(configuredPath);
+        LoadLocalSessions();
+    }
 
     public Task<bool> IsReadyAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 
@@ -84,7 +121,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             _users.Add(user.Id, user);
             _organizations.Add(organization.Id, organization);
             _memberships.Add(user.Id, (user.Id, organization.Id, "owner"));
-            _sessions.Add(Convert.ToHexString(sessionHash), new SessionEntry(authenticated));
+            _sessions.Add(Convert.ToHexString(sessionHash), new SessionEntry(user.Id, csrfHash, sessionExpiresAt));
+            PersistLocalSessionsUnderLock();
             AddActivity(
                 organization.Id, "organization.created", "organization", organization.Id,
                 user.Id, user.DisplayName, $"Espace {organization.Name} créé", now);
@@ -132,7 +170,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 csrfHash,
                 sessionExpiresAt);
 
-            _sessions[Convert.ToHexString(sessionHash)] = new SessionEntry(authenticated);
+            _sessions[Convert.ToHexString(sessionHash)] = new SessionEntry(user.Id, csrfHash, sessionExpiresAt);
+            PersistLocalSessionsUnderLock();
             return Task.FromResult<LoginResult?>(new(authenticated, sessionToken, csrfToken));
         }
     }
@@ -147,13 +186,27 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 return Task.FromResult<AuthenticatedUser?>(null);
             }
 
-            if (session.User.SessionExpiresAt <= DateTimeOffset.UtcNow)
+            if (session.ExpiresAt <= DateTimeOffset.UtcNow)
             {
                 _sessions.Remove(key);
+                PersistLocalSessionsUnderLock();
                 return Task.FromResult<AuthenticatedUser?>(null);
             }
 
-            return Task.FromResult<AuthenticatedUser?>(session.User);
+            if (!_users.TryGetValue(session.UserId, out var user) ||
+                !_memberships.TryGetValue(session.UserId, out var membership))
+            {
+                return Task.FromResult<AuthenticatedUser?>(null);
+            }
+
+            return Task.FromResult<AuthenticatedUser?>(new AuthenticatedUser(
+                user.Id,
+                membership.OrganizationId,
+                user.Email,
+                user.DisplayName,
+                membership.Role,
+                session.CsrfHash,
+                session.ExpiresAt));
         }
     }
 
@@ -161,7 +214,10 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     {
         lock (_gate)
         {
-            _sessions.Remove(Convert.ToHexString(sessionHash));
+            if (_sessions.Remove(Convert.ToHexString(sessionHash)))
+            {
+                PersistLocalSessionsUnderLock();
+            }
             return Task.CompletedTask;
         }
     }
@@ -562,7 +618,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 sessionExpiresAt);
             _users.Add(user.Id, user);
             _memberships.Add(user.Id, (user.Id, invitation.OrganizationId, invitation.Role));
-            _sessions.Add(Convert.ToHexString(sessionHash), new SessionEntry(authenticated));
+            _sessions.Add(Convert.ToHexString(sessionHash), new SessionEntry(user.Id, csrfHash, sessionExpiresAt));
+            PersistLocalSessionsUnderLock();
             _invitations[invitationKey] = invitation with { AcceptedAt = now };
             AddActivity(
                 invitation.OrganizationId, "invitation.accepted", "member", user.Id,
@@ -1009,6 +1066,33 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             IReadOnlyList<ExternalReference> result = _externalReferences.Values
                 .Where(reference => reference.OrganizationId == organizationId && reference.TaskId == taskId)
                 .OrderBy(reference => reference.CreatedAt)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<ExternalReference>?>(result);
+        }
+    }
+
+    public Task<IReadOnlyList<ExternalReference>?> ListProjectExternalReferencesAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(projectId, out var project)
+                || project.OrganizationId != organizationId)
+            {
+                return Task.FromResult<IReadOnlyList<ExternalReference>?>(null);
+            }
+
+            var projectTaskIds = _tasks.Values
+                .Where(task => task.OrganizationId == organizationId && task.ProjectId == projectId)
+                .Select(task => task.Id)
+                .ToHashSet();
+            IReadOnlyList<ExternalReference> result = _externalReferences.Values
+                .Where(reference => reference.OrganizationId == organizationId
+                    && projectTaskIds.Contains(reference.TaskId))
+                .OrderBy(reference => reference.CreatedAt)
+                .ThenBy(reference => reference.Id)
                 .ToArray();
             return Task.FromResult<IReadOnlyList<ExternalReference>?>(result);
         }
@@ -2258,7 +2342,128 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
     private static TaskRelation ToTaskRelation(WorkItem task, DateTimeOffset linkedAt) =>
         new(task.Id, task.ProjectId, task.Key, task.Title, task.Status, linkedAt);
 
-    private sealed record SessionEntry(AuthenticatedUser User);
+    private void LoadLocalSessions()
+    {
+        if (_localSessionStoragePath is null || !File.Exists(_localSessionStoragePath))
+        {
+            return;
+        }
+
+        try
+        {
+            var file = new FileInfo(_localSessionStoragePath);
+            if (file.Length > MaxSessionFileBytes)
+            {
+                throw new InvalidDataException("The local session registry exceeds the allowed size.");
+            }
+
+            var persisted = JsonSerializer.Deserialize<PersistedLocalSession?[]>(
+                File.ReadAllText(_localSessionStoragePath), LocalSessionJson) ?? [];
+            var now = DateTimeOffset.UtcNow;
+            foreach (var item in persisted.Take(MaxPersistedSessions))
+            {
+                if (item is null || !IsSha256Hex(item.TokenHash) || !IsSha256Hex(item.CsrfHash) ||
+                    item.UserId == Guid.Empty || item.ExpiresAt <= now)
+                {
+                    continue;
+                }
+
+                byte[] csrfHash;
+                try
+                {
+                    csrfHash = Convert.FromHexString(item.CsrfHash);
+                }
+                catch (FormatException)
+                {
+                    continue;
+                }
+                if (csrfHash.Length != 32)
+                {
+                    continue;
+                }
+
+                _sessions[item.TokenHash.ToUpperInvariant()] = new SessionEntry(
+                    item.UserId, csrfHash, item.ExpiresAt);
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException
+                                      or JsonException or InvalidDataException)
+        {
+            LogLocalSessionLoadFailed(_logger, error);
+        }
+    }
+
+    private void PersistLocalSessionsUnderLock()
+    {
+        if (_localSessionStoragePath is null)
+        {
+            return;
+        }
+
+        string? temporaryPath = null;
+        try
+        {
+            var directory = Path.GetDirectoryName(_localSessionStoragePath)
+                ?? throw new InvalidOperationException("The local session registry has no parent directory.");
+            Directory.CreateDirectory(directory);
+            var now = DateTimeOffset.UtcNow;
+            var persisted = _sessions
+                .Where(pair => pair.Value.ExpiresAt > now)
+                .OrderByDescending(pair => pair.Value.ExpiresAt)
+                .Take(MaxPersistedSessions)
+                .Select(pair => new PersistedLocalSession(
+                    pair.Key,
+                    pair.Value.UserId,
+                    Convert.ToHexString(pair.Value.CsrfHash),
+                    pair.Value.ExpiresAt))
+                .ToArray();
+            temporaryPath = _localSessionStoragePath + "." + Environment.ProcessId + ".tmp";
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(persisted, LocalSessionJson));
+            File.Move(temporaryPath, _localSessionStoragePath, true);
+            temporaryPath = null;
+
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    _localSessionStoragePath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException
+                                      or InvalidOperationException)
+        {
+            LogLocalSessionSaveFailed(_logger, error);
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                try
+                {
+                    File.Delete(temporaryPath);
+                }
+                catch (IOException)
+                {
+                    // A later save uses a process-specific temporary file and remains safe.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Logging the original persistence error is sufficient here.
+                }
+            }
+        }
+    }
+
+    private static bool IsSha256Hex(string? value) =>
+        value is { Length: 64 } && value.All(Uri.IsHexDigit);
+
+    private sealed record PersistedLocalSession(
+        string TokenHash,
+        Guid UserId,
+        string CsrfHash,
+        DateTimeOffset ExpiresAt);
+
+    private sealed record SessionEntry(Guid UserId, byte[] CsrfHash, DateTimeOffset ExpiresAt);
 
     private sealed record NativeAuthorizationEntry(
         Guid Id,

@@ -204,6 +204,11 @@ public interface IWorkspaceStore
         Guid taskId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ExternalReference>?> ListProjectExternalReferencesAsync(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken);
+
     Task<ExternalReference?> CreateExternalReferenceAsync(
         Guid organizationId,
         Guid taskId,

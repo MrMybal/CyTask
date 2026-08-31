@@ -14,21 +14,28 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
     setError("");
     const data = new FormData(event.currentTarget);
+    const password = String(data.get("password"));
+
+    if (bootstrapRequired && password !== String(data.get("confirmPassword"))) {
+      setError(t("Passwords do not match."));
+      return;
+    }
+
+    setPending(true);
 
     try {
       const session = bootstrapRequired
         ? await api.bootstrap({
             email: String(data.get("email")),
             displayName: String(data.get("displayName")),
-            password: String(data.get("password")),
+            password,
             organizationName: String(data.get("organizationName"))
           })
         : await api.login({
             email: String(data.get("email")),
-            password: String(data.get("password"))
+            password
           });
       onAuthenticated(session);
     } catch (reason) {
@@ -95,6 +102,20 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
             />
             {bootstrapRequired && <small>{t("At least 12 characters. A long passphrase works very well.")}</small>}
           </label>
+
+          {bootstrapRequired && (
+            <label>
+              {t("Confirm password")}
+              <input
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                maxLength={200}
+                required
+              />
+            </label>
+          )}
 
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="primary-button" disabled={pending} type="submit">

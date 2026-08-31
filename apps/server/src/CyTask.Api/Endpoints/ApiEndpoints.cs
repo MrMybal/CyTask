@@ -1,3 +1,4 @@
+using CyTask.Api.Migrations;
 using System.Text.Json;
 using System.Text;
 using System.Globalization;
@@ -162,6 +163,7 @@ public static class ApiEndpoints
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
 
+        authenticated.MapMigrationEndpoints();
         authenticated.MapCollaborationEndpoints();
         authenticated.MapPluginEndpoints();
         return endpoints;

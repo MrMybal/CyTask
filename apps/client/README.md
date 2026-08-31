@@ -44,11 +44,12 @@ These commands build the Web application, publish the self-contained .NET sideca
 - CyTask content opens in a separate window without preload or Node APIs;
 - `nodeIntegration` and WebViews are disabled while context isolation and the Chromium sandbox remain enabled;
 - navigation and new windows outside the approved origin are sent to the system browser;
-- every remote origin or local folder gets a separate persistent cookie partition;
+- every remote origin or local folder gets a separate persistent cookie partition, so an unexpired connection reopens without asking for the password;
 - the local sidecar listens only on `127.0.0.1` and a free port;
 - camera, microphone, notifications, fullscreen and CyTask window sharing are granted only to the exact trusted origin;
 - invalid TLS certificates are never bypassed;
 - `servers.json` contains only names, URLs or folder paths, never passwords or tokens;
+- local mode keeps only session and CSRF hashes in the desktop profile (`local-sessions`), outside the Syncthing folder; raw tokens remain in the protected Chromium cookie store;
 - the device identity remains outside the synchronized folder;
 - shutdown allows the periodic snapshot to make the last mutation durable before stopping the sidecar.
 

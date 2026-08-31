@@ -407,12 +407,96 @@ export interface ChatMessage {
   mentionedUserIds: string[];
 }
 
+export type MigrationSource = "clickup" | "jira";
+
+export interface MigrationSummary {
+  tasks: number;
+  comments: number;
+  checklistItems: number;
+  attachments: number;
+  parentRelations: number;
+  dependencies: number;
+}
+
+export interface MigrationSourceStatus {
+  name: string;
+  color: string;
+  taskCount: number;
+  suggestedTargetStatus: string;
+}
+
+export interface MigrationSourceAssignee {
+  identity: string;
+  displayName: string;
+  email: string | null;
+  taskCount: number;
+  suggestedMemberId: string | null;
+}
+
+export interface MigrationPreviewItem {
+  sourceId: string;
+  sourceKey: string;
+  title: string;
+  status: string;
+  priority: WorkItem["priority"];
+  sourceCreatedAt: string | null;
+  sourceUpdatedAt: string | null;
+  dueAt: string | null;
+  assignees: string[];
+  commentCount: number;
+  checklistCount: number;
+  attachmentCount: number;
+  hasParent: boolean;
+  dependencyCount: number;
+}
+
+export interface MigrationPreview {
+  id: string;
+  source: MigrationSource;
+  sourceName: string;
+  sourceInstance: string;
+  targetProjectId: string;
+  expiresAt: string;
+  summary: MigrationSummary;
+  statuses: MigrationSourceStatus[];
+  assignees: MigrationSourceAssignee[];
+  items: MigrationPreviewItem[];
+  warnings: string[];
+}
+
+export interface MigrationImportedItem {
+  sourceId: string;
+  sourceKey: string;
+  taskId: string | null;
+  taskKey: string | null;
+  outcome: "created" | "skipped" | "failed";
+  message: string | null;
+}
+
+export interface MigrationImportResult {
+  previewId: string;
+  source: MigrationSource;
+  sourceName: string;
+  targetProjectId: string;
+  created: number;
+  skipped: number;
+  failed: number;
+  commentsCreated: number;
+  checklistItemsCreated: number;
+  labelsCreated: number;
+  parentRelationsCreated: number;
+  dependenciesCreated: number;
+  items: MigrationImportedItem[];
+  warnings: string[];
+  completedAt: string;
+}
+
 export interface ExternalReference {
   id: string;
   taskId: string;
   provider: string;
   repository: string;
-  referenceType: "commit" | "branch" | "tag" | "merge_request";
+  referenceType: "commit" | "branch" | "tag" | "merge_request" | "task";
   referenceValue: string;
   label: string;
   webUrl?: string;
@@ -539,6 +623,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  analyzeMigration: (body: {
+    source: MigrationSource;
+    targetProjectId: string;
+    apiToken: string;
+    containerId: string;
+    siteUrl?: string | null;
+    accountEmail?: string | null;
+    includeCompleted: boolean;
+    includeComments: boolean;
+    maxItems: number;
+  }) => request<MigrationPreview>("/api/v1/migrations/analyze", {
+    method: "POST", body: JSON.stringify(body)
+  }),
+  importMigration: (previewId: string, body: {
+    statusMappings: { sourceStatus: string; targetStatus: string }[];
+    assigneeMappings: { sourceIdentity: string; targetUserId: string | null }[];
+    importComments: boolean;
+    importChecklists: boolean;
+    createLabels: boolean;
+    linkParents: boolean;
+    linkDependencies: boolean;
+  }) => request<MigrationImportResult>(
+    `/api/v1/migrations/${previewId}/import`,
+    { method: "POST", body: JSON.stringify(body) }
+  ),
   projects: () => request<Project[]>("/api/v1/projects"),
   createProject: (body: { name: string; key: string }) =>
     request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),

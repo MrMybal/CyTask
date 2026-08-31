@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 import type { ProjectLabel } from "../api";
 import { useI18n } from "../i18n";
 
@@ -31,6 +31,13 @@ export function ProjectFolderTree({
 }: ProjectFolderTreeProps) {
   const { locale, t } = useI18n();
   const roots = buildTree(labels, locale);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const toggleFolder = (folderId: string) => setCollapsedIds((current) => {
+    const next = new Set(current);
+    if (next.has(folderId)) next.delete(folderId);
+    else next.add(folderId);
+    return next;
+  });
   return (
     <div className="space-tree" aria-label={t("Project folders")}>
       <div className="space-tree-heading">
@@ -65,6 +72,8 @@ export function ProjectFolderTree({
           onStartCreate={onStartCreate}
           onCancelCreate={onCancelCreate}
           onCreate={onCreate}
+          collapsedIds={collapsedIds}
+          onToggle={toggleFolder}
         />
       ))}
       {labels.length === 0 && editorParentId === undefined && (
@@ -76,6 +85,8 @@ export function ProjectFolderTree({
 
 interface FolderBranchProps extends Omit<ProjectFolderTreeProps, "labels"> {
   folder: FolderNode;
+  collapsedIds: ReadonlySet<string>;
+  onToggle: (folderId: string) => void;
 }
 
 function FolderBranch({
@@ -87,23 +98,35 @@ function FolderBranch({
   onSelect,
   onStartCreate,
   onCancelCreate,
-  onCreate
+  onCreate,
+  collapsedIds,
+  onToggle
 }: FolderBranchProps) {
   const { t } = useI18n();
+  const hasChildren = folder.children.length > 0;
+  const collapsed = hasChildren && collapsedIds.has(folder.id);
   return (
     <div className="folder-branch">
       <div className="folder-row">
+        {hasChildren ? (
+          <button
+            className="folder-expander"
+            type="button"
+            aria-label={t(collapsed ? "Expand {name}" : "Collapse {name}", { name: folder.name })}
+            aria-expanded={!collapsed}
+            onClick={() => onToggle(folder.id)}
+          >{collapsed ? "›" : "⌄"}</button>
+        ) : (
+          <span className="folder-expander-placeholder" aria-hidden="true">·</span>
+        )}
         <button
           className={selectedLabelId === folder.id ? "folder-link active" : "folder-link"}
           type="button"
           title={folder.name + " · " + (counts.get(folder.id) ?? 0) + " " + t("tasks")}
           onClick={() => onSelect(folder.id)}
         >
-          <span className="folder-expander" aria-hidden="true">
-            {folder.children.length > 0 ? "⌄" : "·"}
-          </span>
           <span className="folder-icon" style={{ color: folder.color }}>▰</span>
-          <span>{folder.name}</span>
+          <span className="folder-name">{folder.name}</span>
           <small>{counts.get(folder.id) ?? 0}</small>
         </button>
         {canCreate && (
@@ -124,7 +147,7 @@ function FolderBranch({
           onCancel={onCancelCreate}
         />
       )}
-      {folder.children.length > 0 && (
+      {hasChildren && !collapsed && (
         <div className="folder-children">
           {folder.children.map((child) => (
             <FolderBranch
@@ -138,6 +161,8 @@ function FolderBranch({
               onStartCreate={onStartCreate}
               onCancelCreate={onCancelCreate}
               onCreate={onCreate}
+              collapsedIds={collapsedIds}
+              onToggle={onToggle}
             />
           ))}
         </div>

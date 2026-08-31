@@ -36,6 +36,80 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task LocalSessionSurvivesServerRestartWithoutPassword()
+    {
+        var testId = Guid.NewGuid().ToString("N");
+        var localPath = Path.Combine(Path.GetTempPath(), "CyTask.LocalSession.Tests", testId, "workspace");
+        var sessionRoot = Path.Combine(Path.GetTempPath(), "CyTask.LocalSession.Tests", testId, "device");
+        var sessionPath = Path.Combine(sessionRoot, "sessions.json");
+        var deviceId = Guid.NewGuid();
+        Directory.CreateDirectory(localPath);
+        string cookieHeader;
+
+        try
+        {
+            await using (var firstFactory = new CyTaskApiFactory(localPath, deviceId, sessionPath))
+            using (var firstClient = firstFactory.CreateClient(new WebApplicationFactoryClientOptions
+                   {
+                       HandleCookies = false
+                   }))
+            {
+                using var bootstrap = await firstClient.PostAsJsonAsync(
+                    new Uri("/api/v1/bootstrap", UriKind.Relative),
+                    CreateBootstrapRequest(),
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+                var session = await ReadJsonAsync(bootstrap);
+                var cookies = bootstrap.Headers.GetValues("Set-Cookie")
+                    .Select(value => value.Split(';', 2)[0])
+                    .ToArray();
+                cookieHeader = string.Join("; ", cookies);
+                var sessionSecret = cookies
+                    .Single(value => value.StartsWith("CyTask.Session=", StringComparison.Ordinal))
+                    .Split('=', 2)[1];
+
+                firstClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", cookieHeader);
+                firstClient.DefaultRequestHeaders.Add(
+                    "X-CSRF-Token", session.GetProperty("csrfToken").GetString());
+                using var flush = await firstClient.PostAsync(
+                    new Uri("/api/v1/local-sync/flush", UriKind.Relative),
+                    null,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, flush.StatusCode);
+
+                Assert.True(File.Exists(sessionPath));
+                var persisted = await File.ReadAllTextAsync(
+                    sessionPath, TestContext.Current.CancellationToken);
+                Assert.DoesNotContain(sessionSecret, persisted, StringComparison.Ordinal);
+                Assert.DoesNotContain("correct horse battery staple", persisted, StringComparison.Ordinal);
+            }
+
+            await using (var secondFactory = new CyTaskApiFactory(localPath, deviceId, sessionPath))
+            using (var secondClient = secondFactory.CreateClient(new WebApplicationFactoryClientOptions
+                   {
+                       HandleCookies = false
+                   }))
+            {
+                secondClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", cookieHeader);
+                using var me = await secondClient.GetAsync(
+                    new Uri("/api/v1/me", UriKind.Relative),
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, me.StatusCode);
+                var restoredSession = await ReadJsonAsync(me);
+                Assert.Equal("owner@cytask.local", restoredSession.GetProperty("email").GetString());
+            }
+        }
+        finally
+        {
+            var root = Path.GetDirectoryName(localPath)!;
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task LocalFolderSnapshotsRestoreWorkspaceOnAnotherDevice()
     {
         var localPath = Path.Combine(Path.GetTempPath(), "CyTask.LocalSync.Tests", Guid.NewGuid().ToString("N"));
@@ -2056,6 +2130,53 @@ public sealed class CyTaskApiTests
     }
 
     [Fact]
+    public async Task MigrationEndpointsRequireAuthenticationAndValidateTheTargetBeforeContactingTheSource()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var client = factory.CreateClient();
+
+        using (var anonymous = await client.GetAsync(
+            new Uri("/api/v1/migrations/capabilities", UriKind.Relative),
+            TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        }
+
+        var csrf = await BootstrapAsync(client);
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        using (var capabilities = await client.GetAsync(
+            new Uri("/api/v1/migrations/capabilities", UriKind.Relative),
+            TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, capabilities.StatusCode);
+            var body = await ReadJsonAsync(capabilities);
+            Assert.False(body.GetProperty("credentialsStored").GetBoolean());
+            Assert.Contains(body.GetProperty("sources").EnumerateArray(),
+                source => source.GetProperty("id").GetString() == "clickup");
+            Assert.Contains(body.GetProperty("sources").EnumerateArray(),
+                source => source.GetProperty("id").GetString() == "jira");
+        }
+
+        const string secret = "must-not-be-echoed";
+        using var analyze = await client.PostAsJsonAsync(
+            new Uri("/api/v1/migrations/analyze", UriKind.Relative),
+            new
+            {
+                source = "clickup",
+                targetProjectId = Guid.NewGuid(),
+                apiToken = secret,
+                containerId = "123456",
+                includeCompleted = true,
+                includeComments = true,
+                maxItems = 50
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, analyze.StatusCode);
+        Assert.DoesNotContain(secret, await analyze.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GitReferenceCanBeLinkedWithoutGivingTheServerRepositoryAccess()
     {
         await using var factory = new CyTaskApiFactory();
@@ -2902,11 +3023,16 @@ public sealed class CyTaskApiTests
             Path.GetTempPath(), "CyTask.Tests", Guid.NewGuid().ToString("N"));
         private readonly string? _localPath;
         private readonly Guid? _deviceId;
+        private readonly string? _localSessionStoragePath;
 
-        public CyTaskApiFactory(string? localPath = null, Guid? deviceId = null)
+        public CyTaskApiFactory(
+            string? localPath = null,
+            Guid? deviceId = null,
+            string? localSessionStoragePath = null)
         {
             _localPath = localPath;
             _deviceId = deviceId;
+            _localSessionStoragePath = localSessionStoragePath;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -2922,6 +3048,10 @@ public sealed class CyTaskApiTests
                 builder.UseSetting("CyTask:LocalWorkspacePath", _localPath);
                 builder.UseSetting("CyTask:LocalDeviceId", (_deviceId ?? Guid.NewGuid()).ToString("D"));
                 builder.UseSetting("CyTask:LocalSyncSeconds", "60");
+                if (_localSessionStoragePath is not null)
+                {
+                    builder.UseSetting("CyTask:LocalSessionStoragePath", _localSessionStoragePath);
+                }
             }
         }
 

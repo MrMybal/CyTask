@@ -16,9 +16,99 @@
     { "name": "tâches" },
     { "name": "fichiers", "description": "Envoi par blocs, quarantaine, validation et téléchargement" },
     { "name": "git", "description": "Références externes génériques vers commits, branches et demandes de fusion" },
+    { "name": "migration", "description": "Import contrôlé et idempotent depuis ClickUp et Jira Cloud" },
     { "name": "plugins", "description": "Extensions déclaratives activées projet par projet" }
   ],
   "paths": {
+    "/api/v1/migrations/capabilities": {
+      "get": {
+        "tags": ["migration"],
+        "summary": "Lister les sources de migration disponibles",
+        "responses": {
+          "200": {
+            "description": "Capacités du migrateur",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/migrations/analyze": {
+      "post": {
+        "tags": ["migration"],
+        "summary": "Analyser une liste ClickUp ou un projet Jira Cloud",
+        "description": "Réservé aux propriétaires et administrateurs. Les identifiants de la source sont utilisés pour cet appel uniquement et ne sont jamais persistés. L’aperçu normalisé expire après 30 minutes.",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["source", "targetProjectId", "apiToken", "containerId", "includeCompleted", "includeComments", "maxItems"],
+                "properties": {
+                  "source": { "type": "string", "enum": ["clickup", "jira"] },
+                  "targetProjectId": { "type": "string", "format": "uuid" },
+                  "apiToken": { "type": "string", "writeOnly": true, "maxLength": 4096 },
+                  "containerId": { "type": "string", "maxLength": 80 },
+                  "siteUrl": { "type": ["string", "null"], "format": "uri", "description": "Adresse HTTPS *.atlassian.net pour Jira Cloud" },
+                  "accountEmail": { "type": ["string", "null"], "format": "email" },
+                  "includeCompleted": { "type": "boolean" },
+                  "includeComments": { "type": "boolean" },
+                  "maxItems": { "type": "integer", "minimum": 1, "maximum": 2000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Aperçu, compteurs et correspondances suggérées", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "description": "Limite de débit atteinte" },
+          "502": { "description": "La source est inaccessible ou a refusé les identifiants" }
+        }
+      }
+    },
+    "/api/v1/migrations/{previewId}/import": {
+      "post": {
+        "tags": ["migration"],
+        "summary": "Importer un aperçu validé dans CyTask",
+        "description": "Réservé aux propriétaires et administrateurs. Une reprise ignore les tickets déjà associés au même identifiant source.",
+        "parameters": [
+          { "$ref": "#/components/parameters/CsrfHeader" },
+          { "name": "previewId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["statusMappings", "assigneeMappings"],
+                "properties": {
+                  "statusMappings": { "type": "array", "items": { "type": "object" } },
+                  "assigneeMappings": { "type": "array", "items": { "type": "object" } },
+                  "importComments": { "type": "boolean", "default": true },
+                  "importChecklists": { "type": "boolean", "default": true },
+                  "createLabels": { "type": "boolean", "default": true },
+                  "linkParents": { "type": "boolean", "default": true },
+                  "linkDependencies": { "type": "boolean", "default": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Rapport détaillé de l’import", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "description": "Limite de débit atteinte" }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "tags": ["santé"],
