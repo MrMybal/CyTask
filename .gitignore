@@ -49,3 +49,12 @@ CLAUDE.md
 AGENTS.md
 GEMINI.md
 .github/copilot-instructions.md
+
+# Private local data and diagnostic outputs
+.cyrevision/
+/.openai/hosting.json
+*.p12
+*.dmp
+*.etl
+*.binlog
+*.log
