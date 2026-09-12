@@ -7,7 +7,10 @@ import sys
 
 PROFILE_PATH = re.compile(rb"(?i)[a-z]:[\\/]+Users[\\/]+(?!Public\b|Default\b|<)[A-Za-z0-9_.-]+")
 LOCAL_PROJECT = re.compile(rb"(?i)[a-z]:[\\/]+_Project[\\/]+")
+POSIX_PROFILE = re.compile(rb"(?i)/(?:Users|home)/(?!shared(?:/|\b)|public(?:/|\b)|<)[A-Za-z0-9_.-]+/")
+PERSONAL_EMAIL = re.compile(rb"(?i)\b[A-Z0-9._%+-]+@(?:gmail|googlemail|hotmail|outlook|yahoo|icloud)\.[A-Z]{2,}\b")
 PRIVATE_KEY = re.compile(rb"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----")
+PROVIDER_TOKEN = re.compile(rb"(?<![A-Za-z0-9_-])(?:github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-(?:proj|svcacct|admin|ant)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48}|xai-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{30,})(?![A-Za-z0-9_-])")
 NATIVE_SOURCE = re.compile(rb"[A-Za-z]:[\\/][\x20-\x7e]+[\\/]Source[\\/][\x20-\x7e]+\.(?:cpp|h|hpp|inl)\x00")
 
 def git(*args):
@@ -28,7 +31,9 @@ def inspect(path,data):
     texts = [data]
     if b'\0' in data[:8192]:
         texts.append(b'\n'.join(s[::2] for s in re.findall(rb'(?:[\x20-\x7e]\x00){6,}',data)))
-    for rule,pattern in [('Windows user profile path',PROFILE_PATH),('local project path',LOCAL_PROJECT),('private key',PRIVATE_KEY)]:
+    for rule,pattern in [('Windows user profile path',PROFILE_PATH),('local project path',LOCAL_PROJECT),
+                         ('POSIX user profile path',POSIX_PROFILE),('personal email address',PERSONAL_EMAIL),
+                         ('private key',PRIVATE_KEY),('provider access token',PROVIDER_TOKEN)]:
         if any(pattern.search(t) for t in texts):issues.append(rule)
     if data.startswith(b'MZ') and NATIVE_SOURCE.search(data):issues.append('native diagnostic source path')
     return issues

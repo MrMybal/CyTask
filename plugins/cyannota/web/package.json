@@ -11,6 +11,8 @@
     "dev": "vite --host 127.0.0.1",
     "prebuild": "node scripts/sync-ffmpeg.mjs",
     "build": "tsc --noEmit && vite build",
+    "prebuild:release": "node scripts/sync-ffmpeg.mjs",
+    "build:release": "tsc --noEmit && vite build --mode release",
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {

@@ -2,6 +2,19 @@
 
 All notable changes to CyTask are documented in this file.
 
+## [0.2.1] - 2026-09-13
+
+### Changed
+
+- Desktop release builds now omit Web source maps and .NET debug symbols.
+- The desktop sidecar now builds and embeds the CyAnnota Web plugin during every release build.
+- Added a dedicated release build mode for the main Web interface and the CyAnnota integration.
+
+### Distribution
+
+- Updated Windows x64 portable executable and interactive NSIS installer.
+- Binaries are not yet Authenticode-signed. Verify SHA256SUMS.txt before running them; Windows SmartScreen may display a warning.
+
 ## [0.2.0] - 2026-08-31
 
 ### Added
@@ -51,5 +64,6 @@ First public Windows client release.
 
 The Windows binaries are not yet Authenticode-signed. Verify the published SHA-256 checksums before launching them.
 
+[0.2.1]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.1
 [0.2.0]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.0
 [0.1.0]: https://github.com/MrMybal/CyTask/releases/tag/v0.1.0

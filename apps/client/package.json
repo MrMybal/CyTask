@@ -1,6 +1,6 @@
 {
   "name": "@cytask/desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Client desktop sécurisé pour les serveurs CyTask auto-hébergés",
   "main": "main.cjs",
@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "electron .",
     "check": "node --check main.cjs && node --check preload.cjs && node --check renderer/selector.js",
+    "audit:release:win": "python ../../scripts/check-release-privacy.py --electron-runtime node_modules/electron/dist release/win-unpacked",
     "server": "node scripts/build-server.cjs",
     "server:win": "node scripts/build-server.cjs win-x64",
     "server:linux": "node scripts/build-server.cjs linux-x64",

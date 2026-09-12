@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/postcss";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: "/plugins/cyannota/",
   plugins: [react()],
   css: { postcss: { plugins: [tailwindcss()] } },
@@ -13,6 +13,6 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    sourcemap: true
+    sourcemap: mode !== "release"
   }
-});
+}));

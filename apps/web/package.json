@@ -1,6 +1,6 @@
 {
   "name": "@cytask/web",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build",
+    "build:release": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --mode release",
     "typecheck": "tsc --noEmit -p tsconfig.app.json --pretty false && tsc --noEmit -p tsconfig.node.json --pretty false"
   },
   "dependencies": {

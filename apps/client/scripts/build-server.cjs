@@ -11,8 +11,8 @@ function currentRid() {
   if (process.platform === "darwin") return `osx-${architecture}`;
   return `linux-${architecture}`;
 }
-function run(command, args, cwd, shell = false) {
-  const result = spawnSync(command, args, { cwd, shell, stdio: "inherit", env: process.env });
+function run(command, args, cwd, shell = false, environment = process.env) {
+  const result = spawnSync(command, args, { cwd, shell, stdio: "inherit", env: environment });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
@@ -26,7 +26,15 @@ const output = path.join(serverRoot, "current");
 if (!output.startsWith(`${serverRoot}${path.sep}`)) throw new Error("Chemin de publication desktop refusé.");
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-run(npmCommand, ["run", "build"], path.join(root, "apps", "web"), process.platform === "win32");
+const cyAnnotaRoot = path.join(root, "plugins", "cyannota", "web");
+run(npmCommand, ["run", "build:release"], cyAnnotaRoot, process.platform === "win32");
+run(
+  npmCommand,
+  ["run", "build:release"],
+  path.join(root, "apps", "web"),
+  process.platform === "win32",
+  { ...process.env, CYTASK_RELEASE_BUILD: "1" }
+);
 
 const bundledDotnet = path.join(root, ".tools", "dotnet", process.platform === "win32" ? "dotnet.exe" : "dotnet");
 const dotnet = process.env.CYTASK_DOTNET || (fs.existsSync(bundledDotnet) ? bundledDotnet : "dotnet");
@@ -38,6 +46,7 @@ run(dotnet, [
   "publish", path.join(root, "apps", "server", "src", "CyTask.Api", "CyTask.Api.csproj"),
   "--configuration", "Release", "--runtime", rid, "--self-contained", "true",
   "--output", output, "-p:PublishSingleFile=false", "-p:PublishTrimmed=false",
+  "-p:DebugType=None", "-p:DebugSymbols=false",
   `-p:NuGetLockFilePath=${lockPath}`
 ], root);
 
@@ -45,5 +54,6 @@ const webDist = path.join(root, "apps", "web", "dist");
 const webRoot = path.join(output, "wwwroot");
 fs.rmSync(webRoot, { recursive: true, force: true });
 fs.cpSync(webDist, webRoot, { recursive: true });
+fs.cpSync(path.join(cyAnnotaRoot, "dist"), path.join(webRoot, "plugins", "cyannota"), { recursive: true });
 fs.writeFileSync(path.join(output, "runtime.json"), `${JSON.stringify({ rid, builtAt: new Date().toISOString() }, null, 2)}\n`);
 console.log(`CyTask local sidecar prêt : ${output} (${rid})`);
