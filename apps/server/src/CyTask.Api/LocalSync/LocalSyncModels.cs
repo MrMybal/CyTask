@@ -28,7 +28,9 @@ public sealed record WorkspaceLocalState(
     IReadOnlyList<Attachment> Attachments,
     IReadOnlyList<ExternalReference> ExternalReferences,
     IReadOnlyList<LocalTaskDependency> TaskDependencies,
-    IReadOnlyList<TaskChecklistItem> Checklist);
+    IReadOnlyList<TaskChecklistItem> Checklist,
+    IReadOnlyList<AgentMember>? Agents = null,
+    IReadOnlyList<AgentNotification>? AgentNotifications = null);
 
 public sealed record CollaborationLocalState(
     IReadOnlyList<ProjectResource> Resources,
@@ -43,7 +45,8 @@ public sealed record PluginLocalState(
 public sealed record LocalSyncPayload(
     WorkspaceLocalState Workspace,
     CollaborationLocalState Collaboration,
-    PluginLocalState Plugins);
+    PluginLocalState Plugins,
+    IReadOnlyList<CyAnnotaDocument>? Annotations = null);
 
 public sealed record LocalSyncTombstone(
     string EntityType,

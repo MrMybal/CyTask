@@ -41,6 +41,21 @@ jobs:
             apps/web/package-lock.json
             plugins/cyannota/web/package-lock.json
             apps/client/package-lock.json
+            apps/server/tests/postgres-smoke/package-lock.json
+
+      - name: Install PostgreSQL test dependencies
+        working-directory: apps/server/tests/postgres-smoke
+        # Exercise SQL through Npgsql without requiring a shared database.
+        run: npm ci --no-fund --no-audit
+
+      - name: Check PostgreSQL queries
+        working-directory: apps/server/tests/postgres-smoke
+        env:
+          CYTASK_TEST_CONFIGURATION: Release
+        run: npm test
+
+      - name: Check MCP server
+        run: node --test integrations/mcp/test/*.test.mjs
 
       - name: Install Web dependencies
         working-directory: apps/web

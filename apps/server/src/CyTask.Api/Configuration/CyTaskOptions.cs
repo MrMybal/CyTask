@@ -9,6 +9,8 @@ public sealed class CyTaskOptions
     public bool LocalMode { get; init; }
     public string? LocalWorkspacePath { get; init; }
     public string? LocalDeviceId { get; init; }
+    public string? LocalAccessKey { get; init; }
+    public string LocalWorkspaceName { get; init; } = "Local workspace";
     public int LocalSyncSeconds { get; init; } = 2;
     public int SessionHours { get; init; } = 12;
     public string? LocalSessionStoragePath { get; init; }

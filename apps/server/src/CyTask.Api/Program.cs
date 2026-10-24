@@ -51,6 +51,10 @@ builder.Services.AddOptions<CyTaskOptions>()
         "LocalWorkspacePath is required in local mode.")
     .Validate(options => !options.LocalMode || Guid.TryParse(options.LocalDeviceId, out var deviceId) && deviceId != Guid.Empty,
         "LocalDeviceId must be a non-empty GUID in local mode.")
+    .Validate(options => !options.LocalMode || options.LocalAccessKey is { Length: >= 32 and <= 128 },
+        "LocalAccessKey must contain between 32 and 128 characters in local mode.")
+    .Validate(options => options.LocalWorkspaceName.Trim().Length is >= 1 and <= 120,
+        "LocalWorkspaceName must contain between 1 and 120 characters.")
     .Validate(options => string.IsNullOrWhiteSpace(options.LocalSessionStoragePath)
         || Path.IsPathFullyQualified(options.LocalSessionStoragePath),
         "LocalSessionStoragePath must be an absolute path when configured.")
@@ -206,6 +210,7 @@ builder.Services.AddHttpClient("migration", client =>
     AutomaticDecompression = System.Net.DecompressionMethods.GZip
         | System.Net.DecompressionMethods.Deflate
 });
+builder.Services.AddSingleton<LocalStateClock>();
 builder.Services.AddSingleton<LocalMediaStorage>();
 builder.Services.AddSingleton<ChatSignalHub>();
 builder.Services.AddSingleton<RequireSessionFilter>();
@@ -226,7 +231,8 @@ if (cyTaskOptions.UseInMemoryStore)
     builder.Services.AddSingleton<LocalSyncCoordinator>();
     builder.Services.AddSingleton<ILocalSyncService>(provider => provider.GetRequiredService<LocalSyncCoordinator>());
     builder.Services.AddHostedService(provider => provider.GetRequiredService<LocalSyncCoordinator>());
-    builder.Services.AddSingleton<ICyAnnotaStore, InMemoryCyAnnotaStore>();
+    builder.Services.AddSingleton<InMemoryCyAnnotaStore>();
+    builder.Services.AddSingleton<ICyAnnotaStore>(provider => provider.GetRequiredService<InMemoryCyAnnotaStore>());
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
         provider => provider.GetRequiredService<WorkspaceEventHub>());
 }
@@ -296,7 +302,7 @@ app.Use((context, next) =>
                   "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; " +
                   "connect-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:; " +
                   "object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'"
-                : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+                : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; " +
                   "connect-src 'self'; frame-src 'self'; object-src 'none'; frame-ancestors 'none'; " +
                   "base-uri 'self'; form-action 'self'";
         context.Response.Headers.Append("Content-Security-Policy", policy);

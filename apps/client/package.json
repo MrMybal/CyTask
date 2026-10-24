@@ -24,7 +24,7 @@
     "dist:mac": "npm run server:mac && electron-builder --mac dmg zip"
   },
   "devDependencies": {
-    "electron": "44.0.0",
+    "electron": "44.9.3",
     "electron-builder": "26.15.3"
   }
 }

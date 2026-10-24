@@ -11,6 +11,8 @@
     { "name": "santé", "description": "Sondes de disponibilité, sans authentification" },
     { "name": "authentification", "description": "Amorçage, sessions, invitations et flux natif PKCE" },
     { "name": "jetons", "description": "Jetons d'API personnels pour plugins et scripts" },
+    { "name": "agents", "description": "Membres non interactifs, notifications et prise de tâches pour orchestrateurs" },
+    { "name": "synchronisation locale", "description": "Mode local et dossier synchronisable" },
     { "name": "espace", "description": "Membres, activité, recherche, export et temps réel" },
     { "name": "projets" },
     { "name": "tâches" },
@@ -227,6 +229,161 @@
         "responses": {
           "200": { "description": "Identité", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
           "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/local/session": {
+      "post": {
+        "tags": ["authentification"],
+        "summary": "Ouvrir automatiquement l'espace local du client desktop",
+        "description": "Disponible uniquement en mode local depuis la boucle locale. La clé éphémère est injectée au lancement par le client desktop.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "X-CyTask-Local-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "minLength": 32, "maxLength": 128 }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Espace local ouvert", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/agents": {
+      "get": {
+        "tags": ["agents"],
+        "summary": "Lister les membres agents",
+        "responses": {
+          "200": { "description": "Agents", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AgentMember" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["agents"],
+        "summary": "Créer un agent sans mot de passe interactif",
+        "description": "Rôles owner et admin. Le jeton retourné n'est affiché qu'une seule fois.",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["key", "displayName"],
+            "properties": {
+              "key": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+              "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "description": { "type": ["string", "null"], "maxLength": 2000 },
+              "capabilities": { "type": ["array", "null"], "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9:._-]{0,63}$" } }
+            }
+          } } }
+        },
+        "responses": {
+          "201": { "description": "Agent et jeton créés", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatedAgentMember" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/agents/{agentUserId}/status": {
+      "patch": {
+        "tags": ["agents"],
+        "summary": "Activer, mettre en pause ou désactiver un agent",
+        "parameters": [
+          { "$ref": "#/components/parameters/CsrfHeader" },
+          { "$ref": "#/components/parameters/agentUserId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["status"],
+            "properties": { "status": { "type": "string", "enum": ["active", "paused", "disabled"] } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "Agent mis à jour", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentMember" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/agents/{agentUserId}/notifications": {
+      "post": {
+        "tags": ["agents"],
+        "summary": "Appeler un agent ou lui envoyer une notification durable",
+        "parameters": [
+          { "$ref": "#/components/parameters/CsrfHeader" },
+          { "$ref": "#/components/parameters/agentUserId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["title"],
+            "properties": {
+              "type": { "type": ["string", "null"], "pattern": "^[a-z][a-z0-9_.-]{0,39}$", "default": "work.requested" },
+              "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+              "body": { "type": ["string", "null"], "maxLength": 10000 },
+              "taskId": { "type": ["string", "null"], "format": "uuid" }
+            }
+          } } }
+        },
+        "responses": {
+          "201": { "description": "Notification créée", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentNotification" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Validation" }
+        }
+      }
+    },
+    "/api/v1/agent/context": {
+      "get": {
+        "tags": ["agents"],
+        "summary": "Lire le contexte de travail compact de l'agent courant",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Identité, projets, tâches assignées et notifications", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentContext" } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/agent/notifications": {
+      "get": {
+        "tags": ["agents"],
+        "summary": "Lister les notifications de l'agent courant",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "includeAcknowledged", "in": "query", "required": false, "schema": { "type": "boolean", "default": false } }
+        ],
+        "responses": {
+          "200": { "description": "Notifications", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AgentNotification" } } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/agent/notifications/{notificationId}/ack": {
+      "post": {
+        "tags": ["agents"],
+        "summary": "Acquitter une notification de l'agent courant",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/notificationId" }],
+        "responses": {
+          "200": { "description": "Notification acquittée", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentNotification" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/agent/tasks/{taskId}/claim": {
+      "post": {
+        "tags": ["agents"],
+        "summary": "Prendre atomiquement une tâche disponible",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/taskId" }],
+        "responses": {
+          "200": { "description": "Tâche prise ou déjà détenue par cet agent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ClaimAgentTaskResult" } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     },
@@ -1253,7 +1410,9 @@
       "pluginId": { "name": "pluginId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$" } },
       "attachmentId": { "name": "attachmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "uploadId": { "name": "uploadId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
-      "tokenId": { "name": "tokenId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      "tokenId": { "name": "tokenId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "agentUserId": { "name": "agentUserId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "notificationId": { "name": "notificationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
     },
     "responses": {
       "Unauthorized": { "description": "Authentification requise ou invalide" },
@@ -1263,6 +1422,66 @@
       "Validation": { "description": "Corps invalide, détails par champ dans `errors`" }
     },
     "schemas": {
+      "AgentMember": {
+        "type": "object",
+        "required": ["userId", "organizationId", "key", "displayName", "description", "capabilities", "status", "createdBy", "createdAt", "revision"],
+        "properties": {
+          "userId": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "key": { "type": "string" },
+          "displayName": { "type": "string" },
+          "description": { "type": "string" },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "status": { "type": "string", "enum": ["active", "paused", "disabled"] },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "lastSeenAt": { "type": ["string", "null"], "format": "date-time" },
+          "revision": { "type": "integer", "format": "int64" }
+        }
+      },
+      "CreatedAgentMember": {
+        "type": "object",
+        "required": ["agent", "apiToken"],
+        "properties": {
+          "agent": { "$ref": "#/components/schemas/AgentMember" },
+          "apiToken": { "type": "string", "writeOnly": true }
+        }
+      },
+      "AgentNotification": {
+        "type": "object",
+        "required": ["id", "organizationId", "agentUserId", "createdBy", "type", "title", "body", "revision", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "agentUserId": { "type": "string", "format": "uuid" },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "taskId": { "type": ["string", "null"], "format": "uuid" },
+          "revision": { "type": "integer", "format": "int64" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "acknowledgedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "ClaimAgentTaskResult": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["Claimed", "AlreadyClaimed", "NotFound", "AssignedToAnotherMember", "AgentUnavailable"] },
+          "task": { "oneOf": [{ "$ref": "#/components/schemas/WorkItem" }, { "type": "null" }] }
+        }
+      },
+      "AgentContext": {
+        "type": "object",
+        "required": ["agent", "projects", "assignedTasks", "notifications"],
+        "properties": {
+          "agent": { "$ref": "#/components/schemas/AgentMember" },
+          "projects": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } },
+          "assignedTasks": { "type": "array", "items": { "$ref": "#/components/schemas/WorkItem" } },
+          "notifications": { "type": "array", "items": { "$ref": "#/components/schemas/AgentNotification" } }
+        }
+      },
       "LocalSyncStatus": {
         "type": "object",
         "required": ["enabled", "mode", "peerDeviceCount", "snapshotCount", "conflictCount"],
@@ -1427,7 +1646,8 @@
           "name": { "type": "string", "minLength": 1, "maxLength": 60 },
           "color": { "type": "string", "pattern": "^#[0-9A-F]{6}$" },
           "position": { "type": "integer", "minimum": 0 },
-          "isSystem": { "type": "boolean" }
+          "isSystem": { "type": "boolean" },
+          "revision": { "type": "integer", "format": "int64", "minimum": 1 }
         }
       },
       "TaskAssignee": {

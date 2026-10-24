@@ -34,14 +34,16 @@ import {
   type WorkItem
 } from "../api";
 import { sha256 } from "../sha256";
+import { createWorkspaceEventStream } from "../workspaceEvents";
 import { CommandPalette, type PaletteAction } from "./CommandPalette";
 import { ApiTokensPane } from "./ApiTokensPane";
+import { AgentsPane } from "./AgentsPane";
 import { ToastStack, useToasts } from "./Toasts";
 import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
 import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { ProjectFolderTree } from "./ProjectFolderTree";
-import { ProjectCanvas } from "./ProjectCanvas";
+import { SharedProjectCanvas } from "./SharedProjectCanvas";
 import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
 import { ProjectContentPane } from "./ProjectContentPane";
 import { TeamChatPane } from "./TeamChatPane";
@@ -222,6 +224,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [workspaceArea, setWorkspaceArea] = useState<WorkspaceArea>("tasks");
   const [showTokens, setShowTokens] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("project");
   const [themeMode, setThemeMode] = useState<ThemeMode>(storedThemeMode);
   const themeTone = lightThemeModes.has(themeMode) ? "light" : "dark";
@@ -724,18 +727,38 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   }, [loadDetails]);
 
   useEffect(() => {
-    const stream = new EventSource("/api/v1/events");
-    const refreshProjects = () => void loadProjects();
+    const stream = createWorkspaceEventStream();
+    const pending = new Set<"projects" | "tasks" | "details" | "activity" | "members">();
+    let timer: number | undefined;
+    const schedule = (kind: "projects" | "tasks" | "details" | "activity" | "members") => {
+      pending.add(kind);
+      if (timer !== undefined) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        const jobs: Promise<unknown>[] = [];
+        if (pending.has("projects")) jobs.push(loadProjects());
+        if (pending.has("members")) jobs.push(loadMembers());
+        if (pending.has("tasks") && selectedProjectId) jobs.push(loadTasks(selectedProjectId));
+        if (pending.has("details") && selectedTaskId) jobs.push(loadDetails(selectedTaskId));
+        if (pending.has("activity") && showActivity) jobs.push(loadActivity());
+        pending.clear();
+        void Promise.all(jobs).catch(reason => setError(messageFor(reason)));
+      }, 100);
+    };
+    const refreshProjects = () => schedule("projects");
     const refreshTasks = () => {
-      if (selectedProjectId) void loadTasks(selectedProjectId);
+      if (selectedProjectId) schedule("tasks");
     };
     const refreshComment = () => {
       refreshTasks();
-      if (selectedTaskId) void loadDetails(selectedTaskId);
+      if (selectedTaskId) schedule("details");
     };
     stream.addEventListener("project.created", refreshProjects);
     stream.addEventListener("task.created", refreshTasks);
     stream.addEventListener("task.updated", refreshComment);
+    stream.addEventListener("task.claimed", refreshComment);
+    stream.addEventListener("project.status_created", refreshTasks);
+    stream.addEventListener("project.status_updated", refreshTasks);
     stream.addEventListener("task.dependency_added", refreshComment);
     stream.addEventListener("task.dependency_removed", refreshComment);
     stream.addEventListener("comment.created", refreshComment);
@@ -749,15 +772,16 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("task.parent_set", refreshComment);
     stream.addEventListener("task.parent_removed", refreshComment);
     const refreshActivity = () => {
-      if (showActivity) void loadActivity();
+      if (showActivity) schedule("activity");
     };
     const resynchronize = () => {
-      void loadProjects();
-      void loadMembers();
+      schedule("projects");
+      schedule("members");
       refreshComment();
       refreshActivity();
     };
     stream.addEventListener("reset", resynchronize);
+    stream.addEventListener("workspace.synchronized", resynchronize);
     stream.addEventListener("project.created", refreshActivity);
     stream.addEventListener("task.created", refreshActivity);
     stream.addEventListener("task.updated", refreshActivity);
@@ -773,7 +797,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("task.parent_removed", refreshActivity);
     stream.addEventListener("invitation.created", refreshActivity);
     const refreshAttachments = () => {
-      if (selectedTaskId) void loadDetails(selectedTaskId);
+      if (selectedTaskId) schedule("details");
       refreshTasks();
       refreshActivity();
     };
@@ -783,10 +807,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     stream.addEventListener("attachment.rejected", refreshAttachments);
     stream.addEventListener("external_reference.created", refreshAttachments);
     stream.addEventListener("invitation.accepted", () => {
-      void loadMembers();
+      schedule("members");
       refreshActivity();
     });
-    return () => stream.close();
+    return () => { window.clearTimeout(timer); stream.close(); };
   }, [
     loadActivity,
     loadDetails,
@@ -822,6 +846,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setShowTeam(false);
     setShowActivity(false);
     setShowTokens(false);
+    setShowAgents(false);
     setSearchHits(undefined);
     setWorkspaceArea("tasks");
     setSidebarSection(section);
@@ -1403,7 +1428,6 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         status,
         priority: task.priority,
         dueAt: task.dueAt,
-        assigneeIds: taskAssigneeIds(task),
         expectedRevision: task.revision
       });
       setTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
@@ -1479,7 +1503,6 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         status: optimistic.status,
         priority: optimistic.priority,
         dueAt: optimistic.dueAt,
-        assigneeIds: taskAssigneeIds(optimistic),
         expectedRevision: task.revision
       });
       setTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
@@ -1906,6 +1929,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     closeTask();
     setShowActivity(false);
     setShowTokens(false);
+    setShowAgents(false);
     setShowTeam(true);
     setError("");
     try {
@@ -1919,6 +1943,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     closeTask();
     setShowTeam(false);
     setShowTokens(false);
+    setShowAgents(false);
     setShowActivity(true);
     setError("");
     try {
@@ -1926,6 +1951,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     } catch (reason) {
       setError(messageFor(reason));
     }
+  }
+
+  function openAgents() {
+    closeTask();
+    setShowTeam(false);
+    setShowActivity(false);
+    setShowTokens(false);
+    setShowAgents(true);
+    setError("");
   }
 
   async function search(event: FormEvent<HTMLFormElement>) {
@@ -1938,6 +1972,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       setSearchHits(await api.search(query));
       setShowTeam(false);
       setShowActivity(false);
+      setShowTokens(false);
+      setShowAgents(false);
       closeTask();
     } catch (reason) {
       setError(messageFor(reason));
@@ -1953,6 +1989,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
     setShowTeam(false);
     setShowActivity(false);
+    setShowTokens(false);
+    setShowAgents(false);
     openTask(hit.id);
   }
 
@@ -1960,6 +1998,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setShowTeam(false);
     setShowActivity(false);
     setShowTokens(false);
+    setShowAgents(false);
     setIsEditing(false);
     setDetailTab("overview");
     setTaskLinkLabel("Copy link");
@@ -2050,8 +2089,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           closeTask();
           setShowTeam(false);
           setShowActivity(false);
+          setShowAgents(false);
           setShowTokens(true);
         }
+      },
+      {
+        id: "agents",
+        label: t("Agents"),
+        keywords: "mcp ia ai orchestrator sous-agent automation",
+        run: openAgents
       },
       {
         id: "sidebar",
@@ -2180,6 +2226,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       <button className={workspaceArea === "contents" ? "active" : ""} type="button"
                         onClick={() => {
                           closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                          setShowAgents(false);
                           setWorkspaceArea("contents"); setSidebarSection("project");
                         }}>
                         <span>◇</span><span>{t("Contents")} &amp; {t("Files").toLocaleLowerCase(locale)}</span>
@@ -2187,6 +2234,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       <button className={workspaceArea === "chat" ? "active" : ""} type="button"
                         onClick={() => {
                           closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                          setShowAgents(false);
                           setWorkspaceArea("chat"); setSidebarSection("project");
                         }}>
                         <span>#</span><span>{t("Team chat")}</span>
@@ -2194,6 +2242,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                       <button className={workspaceArea === "plugins" ? "active" : ""} type="button"
                         onClick={() => {
                           closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                          setShowAgents(false);
                           setWorkspaceArea("plugins"); setSidebarSection("project");
                         }}>
                         <span>＋</span><span>Plugins</span>
@@ -2202,6 +2251,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         <button className={workspaceArea === "migration" ? "active" : ""} type="button"
                           onClick={() => {
                             closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
+                            setShowAgents(false);
                             setWorkspaceArea("migration"); setSidebarSection("project");
                           }}>
                           <span>↥</span><span>{t("Migration")}</span>
@@ -2273,9 +2323,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 <span className="project-avatar">AC</span><span><strong>{t("Activity")}</strong><small>{t("Workspace history")}</small></span>
               </button>
               <button className="workspace-settings-option" type="button" onClick={() => {
-                setShowWorkspaceSettings(false); closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(true);
+                setShowWorkspaceSettings(false); closeTask(); setShowTeam(false); setShowActivity(false); setShowAgents(false); setShowTokens(true);
               }}>
                 <span className="project-avatar">AP</span><span><strong>{t("API")}</strong><small>{t("API tokens")}</small></span>
+              </button>
+              <button className="workspace-settings-option" type="button" onClick={() => { setShowWorkspaceSettings(false); openAgents(); }}>
+                <span className="project-avatar">AI</span><span><strong>{t("Agents")}</strong><small>{t("MCP and automation members")}</small></span>
               </button>
             </div>
 
@@ -2698,11 +2751,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 onBulkLabelChange={changeTaskLabelsBulk}
               />
             ) : taskView === "canvas" ? (
-              <ProjectCanvas
+              <SharedProjectCanvas
                 key={selectedProjectId}
                 projectId={selectedProjectId!}
                 tasks={taskOptions}
                 onOpenTask={openTask}
+                canEdit={canContribute}
+                onError={setError}
               />
             ) : taskView === "graph" ? (
               <TaskCanvas
@@ -2914,7 +2969,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         </aside>
       )}
 
-      {showTeam && !showActivity && !showTokens && (
+      {showTeam && !showActivity && !showTokens && !showAgents && (
         <aside className="detail-pane team-pane">
           <header className="detail-header">
             <span className="task-key">{t("TEAM")}</span>
@@ -2968,7 +3023,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         </aside>
       )}
 
-      {showTokens && !showTeam && !showActivity && (
+      {showTokens && !showTeam && !showActivity && !showAgents && (
         <ApiTokensPane
           onClose={() => setShowTokens(false)}
           onError={setError}
@@ -2976,7 +3031,17 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         />
       )}
 
-      {!details && detailsLoading && !showTeam && !showActivity && !showTokens && (
+      {showAgents && !showTeam && !showActivity && !showTokens && (
+        <AgentsPane
+          canAdminister={canAdminister}
+          tasks={taskOptions}
+          onClose={() => setShowAgents(false)}
+          onError={setError}
+          onNotice={(message) => notify("success", message)}
+        />
+      )}
+
+      {!details && detailsLoading && !showTeam && !showActivity && !showTokens && !showAgents && (
         <aside className="detail-pane task-detail-pane" aria-busy="true">
           <div className="detail-skeleton" aria-hidden="true">
             <span className="skeleton-line wide" />
@@ -2988,7 +3053,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         </aside>
       )}
 
-      {details && !showTeam && !showActivity && !showTokens && (
+      {details && !showTeam && !showActivity && !showTokens && !showAgents && (
         <aside
           className="detail-pane task-detail-pane"
           aria-busy={detailsLoading}
@@ -3707,6 +3772,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           setShowTeam(false);
           setShowActivity(false);
           setShowTokens(false);
+          setShowAgents(false);
           setSearchHits(undefined);
           setSelectedProjectId(projectId);
         }}

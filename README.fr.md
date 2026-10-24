@@ -94,6 +94,8 @@ parent/sous-tâches acyclique et des dépendances indiquant le travail qu'elles 
 PostgreSQL est la persistance cible ; un stockage mémoire explicite est disponible
 pour les tests et le développement rapide.
 
+Un dossier local s’ouvre désormais directement en mode solo, sans écran de création de compte. CyTask sait aussi créer des membres agents sans mot de passe interactif, leur envoyer des appels de travail persistants et leur permettre de prendre atomiquement une tâche libre. Le SDK JavaScript sans dépendance s’intègre dans une autre application ; le pont MCP stdio expose les projets, la hiérarchie, le découpage des tâches, les commentaires, les agents et leurs notifications aux orchestrateurs compatibles. Ces identités se gèrent dans **Paramètres et outils → Agents**.
+
 ## Client Windows
 
 Téléchargez le dernier installateur Windows x64 ou la version portable depuis les [releases GitHub](https://github.com/MrMybal/CyTask/releases/latest). Les releases fournissent les empreintes SHA-256. Les binaires actuels ne sont pas encore signés avec Authenticode ; Windows SmartScreen peut donc afficher un avertissement.
@@ -138,6 +140,8 @@ L'API est utilisable par des plugins et des scripts sans passer par le flux Unre
 un jeton personnel `cytask_pat_…` se crée depuis la section **API** du client Web,
 avec une portée lecture ou lecture/écriture, une expiration optionnelle et une
 révocation immédiate. Le contrat complet est servi par `/api/v1/openapi.json`.
+
+Les exemples MCP sont dans [`integrations/mcp`](integrations/mcp) et le client embarquable dans [`packages/sdk-js`](packages/sdk-js).
 
 ```bash
 curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/projects

@@ -73,9 +73,17 @@ public sealed partial class PostgresCollaborationStore
             "chat.message_created", id,
             new { id, channelId, channel.ProjectId, authorId }, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        var resources = attachments.Length == 0 ? [] :
-            (await ListResourcesAsync(organizationId, channel.ProjectId, cancellationToken))!
-                .Where(item => attachments.Contains(item.Id)).ToArray();
+        IReadOnlyList<ProjectResource> resources = [];
+        if (attachments.Length > 0)
+        {
+            await using var resourceCommand = new NpgsqlCommand(
+                $"SELECT {ResourceColumns} FROM project_resources r JOIN users u ON u.id=r.created_by " +
+                "WHERE r.organization_id=@organization AND r.project_id=@project AND r.id=ANY(@ids);", connection);
+            resourceCommand.Parameters.AddWithValue("organization", organizationId);
+            resourceCommand.Parameters.AddWithValue("project", channel.ProjectId);
+            resourceCommand.Parameters.AddWithValue("ids", attachments);
+            resources = await ReadResourcesAsync(resourceCommand, cancellationToken);
+        }
         return new(id, organizationId, channelId, authorId, authorName, body, now, null,
             resources, mentions);
     }

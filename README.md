@@ -38,6 +38,8 @@ The declarative plugin platform currently includes Git, AI Assistant, Unreal Eng
 
 CyTask Desktop can connect to multiple IP addresses or domains with sessions isolated by origin. It can also open a local folder through a self-contained sidecar bound to `127.0.0.1`. Local mode stores immutable snapshots and media in a format designed for Syncthing or CyRevision Sync without replicating a live database.
 
+Local folders now open directly in solo mode without an interactive account screen. CyTask can also create passwordless agent members with explicit capabilities, durable work calls and atomic task claiming. The dependency-free JavaScript SDK can be embedded in another application, while the MCP stdio bridge exposes projects, task hierarchy, task splitting, comments, agents and notifications to compatible orchestrators.
+
 The Unreal source plugin includes a Slate panel, personal tasks, self-assigned task creation, file/asset history, browser PKCE sign-in, project and task browsing, token revocation and validated asset recipes. The connector currently compiles on UE 5.2 and 5.8; UE 4.27 validation still requires a complete engine installation.
 
 PostgreSQL is the production persistence target. Explicit in-memory storage is available for tests and fast local development.
@@ -80,6 +82,8 @@ The idempotent seed creates a team, **220 tasks**, statuses, priorities, deadlin
 
 Plugins and scripts can use the API through a personal `cytask_pat_…` token created in the Web client's **API** section. Tokens support read-only or read/write scopes, optional expiration and immediate revocation. The OpenAPI contract is served at `/api/v1/openapi.json`.
 
+Agent identities are managed from **Settings and tools → Agents**. Integration examples are available in [`integrations/mcp`](integrations/mcp) and the embeddable client lives in [`packages/sdk-js`](packages/sdk-js).
+
 ```bash
 curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/projects
 ```
@@ -97,6 +101,7 @@ Most detailed technical documents are currently written in French:
 - [Plugin and integration API](docs/07-api-plugins.md)
 - [CyAnnota annotations](docs/08-cyannota.md)
 - [Local mode and folder synchronization](docs/09-mode-local-sync.md)
+- [Agent orchestration, MCP and SDK](docs/10-agents-mcp.md)
 - [Desktop client](apps/client/README.md)
 - [Architecture decisions](docs/decisions)
 - [Plugin contracts](packages/contracts)

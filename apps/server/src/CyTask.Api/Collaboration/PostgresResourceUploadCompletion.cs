@@ -45,7 +45,7 @@ public sealed partial class PostgresCollaborationStore
             "project.resource_available", resourceId.Value,
             new { id = resourceId, projectId }, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return await GetResourceAsync(organizationId, resourceId.Value, cancellationToken);
+        return await GetResourceCoreAsync(connection, null, organizationId, resourceId.Value, cancellationToken);
     }
 
     public async Task RejectResourceUploadAsync(

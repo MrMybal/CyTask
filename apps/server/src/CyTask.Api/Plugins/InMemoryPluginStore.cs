@@ -3,9 +3,9 @@ using CyTask.Api.LocalSync;
 
 namespace CyTask.Api.Plugins;
 
-public sealed class InMemoryPluginStore : IPluginStore
+public sealed class InMemoryPluginStore(LocalStateClock localState) : IPluginStore
 {
-    private readonly Lock _gate = new();
+    private readonly object _gate = localState.Gate;
     private readonly Dictionary<(Guid ProjectId, string PluginId), ProjectPluginState> _projects = [];
     private readonly Dictionary<(Guid TaskId, string PluginId), TaskPluginData> _tasks = [];
     private readonly Dictionary<(Guid TaskId, string PluginId), List<TaskPluginData>> _history = [];
@@ -35,6 +35,7 @@ public sealed class InMemoryPluginStore : IPluginStore
             var state = new ProjectPluginState(
                 organizationId, projectId, pluginId, true, userId, DateTimeOffset.UtcNow);
             _projects[key] = state;
+            localState.Changed();
             return Task.FromResult(state);
         }
     }
@@ -45,8 +46,10 @@ public sealed class InMemoryPluginStore : IPluginStore
         lock (_gate)
         {
             var key = (projectId, pluginId);
-            return Task.FromResult(_projects.TryGetValue(key, out var current)
-                && current.OrganizationId == organizationId && _projects.Remove(key));
+            var removed = _projects.TryGetValue(key, out var current)
+                && current.OrganizationId == organizationId && _projects.Remove(key);
+            if (removed) localState.Changed();
+            return Task.FromResult(removed);
         }
     }
 
@@ -98,6 +101,7 @@ public sealed class InMemoryPluginStore : IPluginStore
                 _history[key] = history;
             }
             history.Add(next);
+            localState.Changed();
             return Task.FromResult<TaskPluginData?>(next);
         }
     }

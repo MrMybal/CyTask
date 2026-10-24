@@ -49,6 +49,6 @@ Les commandes construisent le site Web, publient le sidecar .NET auto-contenu po
 - `servers.json` contient uniquement les noms, URL ou chemins de dossiers, jamais les mots de passe ni les jetons ;
 - le mode local conserve seulement les empreintes de session et CSRF dans le profil desktop (`local-sessions`), hors du dossier Syncthing ; les jetons bruts restent dans le magasin de cookies protégé de Chromium ;
 - l’identité de l’appareil reste hors du dossier synchronisé ;
-- la fermeture laisse au snapshot périodique le temps de rendre la dernière mutation durable avant d’arrêter le sidecar.
+- la fermeture attend la confirmation d’un checkpoint avant d’arrêter le sidecar ; en cas d’échec de sauvegarde, le moteur reste ouvert et une erreur est affichée.
 
 Voir aussi [Mode local et synchronisation par dossier](../../docs/09-mode-local-sync.md).

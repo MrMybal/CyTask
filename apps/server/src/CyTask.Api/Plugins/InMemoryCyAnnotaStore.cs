@@ -1,10 +1,11 @@
 using System.Text.Json;
+using CyTask.Api.LocalSync;
 
 namespace CyTask.Api.Plugins;
 
-public sealed class InMemoryCyAnnotaStore : ICyAnnotaStore
+public sealed class InMemoryCyAnnotaStore(LocalStateClock localState) : ICyAnnotaStore
 {
-    private readonly Lock _gate = new();
+    private readonly object _gate = localState.Gate;
     private readonly Dictionary<Guid, CyAnnotaDocument> _documents = [];
 
     public Task<IReadOnlyList<CyAnnotaDocument>> ListTaskDocumentsAsync(
@@ -53,7 +54,22 @@ public sealed class InMemoryCyAnnotaStore : ICyAnnotaStore
                 document.Clone(), annotationCount, (current?.Revision ?? 0) + 1,
                 userId, DateTimeOffset.UtcNow);
             _documents[attachmentId] = updated;
+            localState.Changed();
             return Task.FromResult<CyAnnotaDocument?>(updated);
+        }
+    }
+
+    internal IReadOnlyList<CyAnnotaDocument> CaptureLocalState()
+    {
+        lock (_gate) return _documents.Values.OrderBy(item => item.AttachmentId).ToArray();
+    }
+
+    internal void RestoreLocalState(IReadOnlyList<CyAnnotaDocument> documents)
+    {
+        lock (_gate)
+        {
+            _documents.Clear();
+            foreach (var item in documents) _documents[item.AttachmentId] = item;
         }
     }
 }

@@ -1,0 +1,17 @@
+{
+  "name": "@cytask/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP stdio bridge for CyTask orchestration.",
+  "type": "module",
+  "bin": {
+    "cytask-mcp": "./cytask-mcp.mjs"
+  },
+  "scripts": {
+    "check": "node --check cytask-mcp.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

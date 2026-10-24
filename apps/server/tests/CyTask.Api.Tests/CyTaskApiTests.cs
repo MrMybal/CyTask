@@ -18,8 +18,11 @@ using Xunit;
 
 namespace CyTask.Api.Tests;
 
-public sealed class CyTaskApiTests
+public sealed partial class CyTaskApiTests
 {
+    private const string LocalAccessKey = "local-test-key-0123456789-abcdefghijk";
+    private static readonly string[] BuildAgentCapabilities = ["build", "test"];
+
     [Fact]
     public async Task HealthEndpointsReportLiveAndReady()
     {
@@ -33,6 +36,180 @@ public sealed class CyTaskApiTests
 
         Assert.Equal(HttpStatusCode.OK, live.StatusCode);
         Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
+    }
+
+    [Fact]
+    public async Task LocalWorkspaceOpensWithoutAnInteractivePassword()
+    {
+        var localPath = Path.Combine(
+            Path.GetTempPath(), "CyTask.LocalOpen.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(localPath);
+        try
+        {
+            await using var factory = new CyTaskApiFactory(localPath, Guid.NewGuid());
+            using var client = factory.CreateClient();
+            using var rejected = await client.PostAsync(
+                new Uri("/api/v1/local/session", UriKind.Relative), null,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.NotFound, rejected.StatusCode);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/local/session");
+            request.Headers.Add("X-CyTask-Local-Key", LocalAccessKey);
+            using var opened = await client.SendAsync(request, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, opened.StatusCode);
+            var session = await ReadJsonAsync(opened);
+            Assert.Equal("Local owner", session.GetProperty("displayName").GetString());
+
+            using var bootstrap = await client.GetAsync(
+                new Uri("/api/v1/bootstrap/status", UriKind.Relative),
+                TestContext.Current.CancellationToken);
+            Assert.False((await ReadJsonAsync(bootstrap)).GetProperty("required").GetBoolean());
+            using var me = await client.GetAsync(
+                new Uri("/api/v1/me", UriKind.Relative), TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, me.StatusCode);
+        }
+        finally
+        {
+            if (Directory.Exists(localPath)) Directory.Delete(localPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LocalAgentTokenSurvivesRestartOutsideTheSynchronizedFolder()
+    {
+        var testRoot = Path.Combine(
+            Path.GetTempPath(), "CyTask.LocalAgent.Tests", Guid.NewGuid().ToString("N"));
+        var localPath = Path.Combine(testRoot, "workspace");
+        var sessionPath = Path.Combine(testRoot, "device", "sessions.json");
+        Directory.CreateDirectory(localPath);
+        string token;
+        try
+        {
+            await using (var firstFactory = new CyTaskApiFactory(localPath, Guid.NewGuid(), sessionPath))
+            using (var owner = firstFactory.CreateClient())
+            {
+                using var openRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/local/session");
+                openRequest.Headers.Add("X-CyTask-Local-Key", LocalAccessKey);
+                using var opened = await owner.SendAsync(openRequest, TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, opened.StatusCode);
+                owner.DefaultRequestHeaders.Add(
+                    "X-CSRF-Token", (await ReadJsonAsync(opened)).GetProperty("csrfToken").GetString());
+                var created = await PostAndReadAsync(owner, "/api/v1/agents", new
+                {
+                    key = "local-agent",
+                    displayName = "Local agent",
+                    description = "Persists across desktop restarts",
+                    capabilities = BuildAgentCapabilities
+                });
+                token = created.GetProperty("apiToken").GetString()!;
+                using var flush = await owner.PostAsync(
+                    new Uri("/api/v1/local-sync/flush", UriKind.Relative), null,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, flush.StatusCode);
+                var registry = await File.ReadAllTextAsync(
+                    sessionPath, TestContext.Current.CancellationToken);
+                Assert.DoesNotContain(token, registry, StringComparison.Ordinal);
+            }
+
+            await using (var secondFactory = new CyTaskApiFactory(localPath, Guid.NewGuid(), sessionPath))
+            using (var agent = secondFactory.CreateClient())
+            {
+                agent.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                using var context = await agent.GetAsync(
+                    new Uri("/api/v1/agent/context", UriKind.Relative),
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(HttpStatusCode.OK, context.StatusCode);
+                Assert.Equal(
+                    "local-agent",
+                    (await ReadJsonAsync(context)).GetProperty("agent").GetProperty("key").GetString());
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(testRoot)) Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AgentCanReceiveCallAndAtomicallyClaimTask()
+    {
+        await using var factory = new CyTaskApiFactory();
+        using var owner = factory.CreateClient();
+        var csrf = await BootstrapAsync(owner);
+        owner.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
+        var project = await PostAndReadAsync(owner, "/api/v1/projects", new { name = "Orchestration", key = "ORCH" });
+        var task = await PostAndReadAsync(
+            owner, $"/api/v1/projects/{project.GetProperty("id").GetGuid()}/tasks",
+            new { title = "Préparer le module", description = "Travail assignable" });
+
+        var createdAgent = await PostAndReadAsync(owner, "/api/v1/agents", new
+        {
+            key = "build-agent",
+            displayName = "Build agent",
+            description = "Executes build tasks",
+            capabilities = BuildAgentCapabilities
+        });
+        var agent = createdAgent.GetProperty("agent");
+        var agentId = agent.GetProperty("userId").GetGuid();
+        var token = createdAgent.GetProperty("apiToken").GetString();
+        Assert.StartsWith("cytask_pat_", token, StringComparison.Ordinal);
+
+        var notification = await PostAndReadAsync(
+            owner, $"/api/v1/agents/{agentId}/notifications", new
+            {
+                type = "work.requested",
+                title = "Prendre la tâche",
+                body = "Vérifier puis exécuter.",
+                taskId = task.GetProperty("id").GetGuid()
+            });
+
+        using var agentClient = factory.CreateClient();
+        agentClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var contextResponse = await agentClient.GetAsync(
+            new Uri("/api/v1/agent/context", UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, contextResponse.StatusCode);
+        var context = await ReadJsonAsync(contextResponse);
+        Assert.Equal("build-agent", context.GetProperty("agent").GetProperty("key").GetString());
+        Assert.Single(context.GetProperty("notifications").EnumerateArray());
+
+        using var claimedResponse = await agentClient.PostAsync(
+            new Uri($"/api/v1/agent/tasks/{task.GetProperty("id").GetGuid()}/claim", UriKind.Relative),
+            null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, claimedResponse.StatusCode);
+        var claimed = await ReadJsonAsync(claimedResponse);
+        Assert.Equal("Claimed", claimed.GetProperty("status").GetString());
+
+        using var duplicateClaim = await agentClient.PostAsync(
+            new Uri($"/api/v1/agent/tasks/{task.GetProperty("id").GetGuid()}/claim", UriKind.Relative),
+            null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, duplicateClaim.StatusCode);
+        Assert.Equal("AlreadyClaimed", (await ReadJsonAsync(duplicateClaim)).GetProperty("status").GetString());
+
+        using var acknowledged = await agentClient.PostAsync(
+            new Uri($"/api/v1/agent/notifications/{notification.GetProperty("id").GetGuid()}/ack", UriKind.Relative),
+            null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, acknowledged.StatusCode);
+        Assert.NotEqual(
+            default,
+            (await ReadJsonAsync(acknowledged)).GetProperty("acknowledgedAt").GetDateTimeOffset());
+
+        using var paused = await owner.PatchAsJsonAsync(
+            new Uri($"/api/v1/agents/{agentId}/status", UriKind.Relative),
+            new { status = "paused" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, paused.StatusCode);
+        using var pausedContext = await agentClient.GetAsync(
+            new Uri("/api/v1/agent/context", UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, pausedContext.StatusCode);
+
+        using var reactivated = await owner.PatchAsJsonAsync(
+            new Uri($"/api/v1/agents/{agentId}/status", UriKind.Relative),
+            new { status = "active" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, reactivated.StatusCode);
+        using var restoredContext = await agentClient.GetAsync(
+            new Uri("/api/v1/agent/context", UriKind.Relative), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, restoredContext.StatusCode);
     }
 
     [Fact]
@@ -3024,20 +3201,24 @@ public sealed class CyTaskApiTests
         private readonly string? _localPath;
         private readonly Guid? _deviceId;
         private readonly string? _localSessionStoragePath;
+        private readonly bool _production;
 
         public CyTaskApiFactory(
             string? localPath = null,
             Guid? deviceId = null,
-            string? localSessionStoragePath = null)
+            string? localSessionStoragePath = null,
+            bool production = false)
         {
             _localPath = localPath;
             _deviceId = deviceId;
             _localSessionStoragePath = localSessionStoragePath;
+            _production = production;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.UseEnvironment("Development");
+            builder.UseEnvironment(_production ? "Production" : "Development");
+            builder.UseSetting("CyTask:UseInMemoryStore", "true");
             builder.UseSetting("CyTask:MediaStoragePath", _localPath is null
                 ? _mediaPath : Path.Combine(_localPath, ".cytask", "media"));
             builder.UseSetting("CyTask:MediaReviewSeconds", "3600");
@@ -3047,6 +3228,8 @@ public sealed class CyTaskApiTests
                 builder.UseSetting("CyTask:LocalMode", "true");
                 builder.UseSetting("CyTask:LocalWorkspacePath", _localPath);
                 builder.UseSetting("CyTask:LocalDeviceId", (_deviceId ?? Guid.NewGuid()).ToString("D"));
+                builder.UseSetting("CyTask:LocalAccessKey", LocalAccessKey);
+                builder.UseSetting("CyTask:LocalWorkspaceName", "Local test workspace");
                 builder.UseSetting("CyTask:LocalSyncSeconds", "60");
                 if (_localSessionStoragePath is not null)
                 {

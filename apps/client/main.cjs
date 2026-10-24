@@ -13,7 +13,7 @@ const {
   shell
 } = require("electron");
 const { spawn } = require("node:child_process");
-const { createHash, randomUUID } = require("node:crypto");
+const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const fsSync = require("node:fs");
 const { promises: fs } = fsSync;
 const nodeNet = require("node:net");
@@ -50,6 +50,7 @@ let workspaceWindow = null;
 let currentProfile = null;
 let pendingSelectorError = "";
 let localServerProcess = null;
+let localServerRuntime = null;
 let localServerStopping = false;
 let localServerError = "";
 let localServerStopPromise = null;
@@ -224,10 +225,26 @@ async function stopLocalServer() {
   if (localServerStopPromise) return localServerStopPromise;
   const child = localServerProcess;
   if (!child) return;
+  const runtime = localServerRuntime;
   localServerStopping = true;
   localServerStopPromise = (async () => {
-    // Laisse au cycle de snapshot (1 s) le temps de rendre la dernière mutation durable.
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    // Wait for an acknowledged checkpoint instead of guessing how long a save takes.
+    if (runtime && child.exitCode === null) {
+      const localSession = session.fromPartition(partitionFor(runtime.profile));
+      const cookies = await localSession.cookies.get({ url: runtime.url, name: "CyTask.Csrf" });
+      const csrf = cookies[0]?.value;
+      if (csrf) {
+        const response = await localSession.fetch(new URL("/api/v1/local-sync/flush", runtime.url).toString(), {
+          method: "POST", headers: { "X-CSRF-Token": csrf },
+          signal: AbortSignal.timeout(30_000)
+        });
+        if (!response.ok) throw new Error(nativeText(
+          "The local workspace could not be saved. CyTask kept its engine running; please retry before closing.",
+          "L’espace local n’a pas pu être sauvegardé. Le moteur reste ouvert ; réessayez avant de fermer."
+        ));
+        await response.arrayBuffer();
+      }
+    }
     if (child.exitCode === null && !child.killed) child.kill();
     if (child.exitCode === null) {
       await Promise.race([
@@ -236,9 +253,11 @@ async function stopLocalServer() {
       ]);
     }
     if (localServerProcess === child) localServerProcess = null;
+    if (localServerRuntime === runtime) localServerRuntime = null;
+  })().finally(() => {
     localServerStopping = false;
     localServerStopPromise = null;
-  })();
+  });
   return localServerStopPromise;
 }
 
@@ -253,6 +272,7 @@ async function startLocalServer(profile) {
   const port = await findAvailablePort();
   const url = `http://127.0.0.1:${port}`;
   const deviceId = await getOrCreateDeviceId();
+  const localAccessKey = randomBytes(32).toString("base64url");
   localServerError = "";
   localServerStopping = false;
   const child = spawn(executable, [], {
@@ -265,6 +285,8 @@ async function startLocalServer(profile) {
       CyTask__LocalMode: "true",
       CyTask__LocalWorkspacePath: folderPath,
       CyTask__LocalDeviceId: deviceId,
+      CyTask__LocalAccessKey: localAccessKey,
+      CyTask__LocalWorkspaceName: profile.name,
       CyTask__LocalSyncSeconds: "1",
       CyTask__LocalSessionStoragePath: localSessionStoragePath(profile),
       CyTask__MediaStoragePath: path.join(folderPath, ".cytask", "media")
@@ -277,7 +299,7 @@ async function startLocalServer(profile) {
     localServerError = `${localServerError}${chunk}`.slice(-4000);
   });
   child.once("exit", (code) => {
-    if (localServerProcess === child) localServerProcess = null;
+    if (localServerProcess === child) { localServerProcess = null; localServerRuntime = null; }
     if (!localServerStopping && currentProfile?.id === profile.id) {
       setImmediate(() => showSelector(interfaceLocale === "fr" ? `Le moteur local CyTask s’est arrêté (${code ?? "inconnu"}).` : `The CyTask local engine stopped (${code ?? "unknown"}).`));
     }
@@ -285,7 +307,11 @@ async function startLocalServer(profile) {
 
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (child.exitCode !== null) break;
-    try { await checkServer(url); return url; } catch { /* Le serveur démarre encore. */ }
+    try {
+      await checkServer(url);
+      localServerRuntime = { url, profile };
+      return { url, localAccessKey };
+    } catch { /* Le serveur démarre encore. */ }
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   await stopLocalServer();
@@ -484,7 +510,9 @@ function createSelectorWindow() {
 }
 
 function showSelector(error = "") {
-  if (currentProfile?.type === "local") void stopLocalServer();
+  if (currentProfile?.type === "local") void stopLocalServer().catch((reason) => {
+    dialog.showErrorBox("CyTask", reason.message);
+  });
   pendingSelectorError = error;
   if (workspaceWindow && !workspaceWindow.isDestroyed()) {
     workspaceWindow.destroy();
@@ -493,11 +521,27 @@ function showSelector(error = "") {
   createSelectorWindow();
 }
 
-function openWorkspace(profile, runtimeUrl = profile.url) {
-  currentProfile = profile;
+async function openWorkspace(profile, runtimeUrl = profile.url, localAccessKey = null) {
   const trustedOrigin = new URL(runtimeUrl).origin;
   const targetSession = session.fromPartition(partitionFor(profile));
   configureTrustedSession(targetSession, trustedOrigin);
+
+  if (profile.type === "local") {
+    const response = await targetSession.fetch(new URL("/api/v1/local/session", runtimeUrl).toString(), {
+      method: "POST",
+      headers: { "X-CyTask-Local-Key": localAccessKey ?? "" },
+      cache: "no-store",
+      redirect: "error"
+    });
+    if (!response.ok) {
+      throw new Error(nativeText(
+        `The local workspace session could not be opened (${response.status}).`,
+        `La session de l’espace local n’a pas pu être ouverte (${response.status}).`
+      ));
+    }
+  }
+
+  currentProfile = profile;
 
   workspaceWindow = new BrowserWindow({
     width: 1500,
@@ -534,7 +578,10 @@ function openWorkspace(profile, runtimeUrl = profile.url) {
     showSelector(nativeText(`The CyTask client stopped (${details.reason}).`, `Le client CyTask s’est interrompu (${details.reason}).`));
   });
   workspaceWindow.on("closed", () => {
-    if (currentProfile?.type === "local") void stopLocalServer();
+    if (currentProfile?.type === "local") void stopLocalServer().catch((reason) => {
+      pendingSelectorError = reason.message;
+      createSelectorWindow();
+    });
     workspaceWindow = null;
     currentProfile = null;
     buildMenu();
@@ -595,10 +642,17 @@ function registerIpc() {
       folderPath, syncMode: "folder",
       createdAt: existing?.createdAt ?? now, lastUsedAt: now
     };
-    const runtimeUrl = await startLocalServer(profile);
+    const runtime = await startLocalServer(profile);
     const updated = [profile, ...profiles.filter((item) => item.id !== profile.id)].slice(0, MAX_SERVERS);
     await writeProfiles(updated);
-    setImmediate(() => openWorkspace(profile, runtimeUrl));
+    setImmediate(() => {
+      void openWorkspace(profile, runtime.url, runtime.localAccessKey).catch((error) => {
+        showSelector(error instanceof Error ? error.message : nativeText(
+          "The local workspace could not be opened.",
+          "L’espace local n’a pas pu être ouvert."
+        ));
+      });
+    });
     return { ok: true, profile };
   });
   ipcMain.handle("cytask:connect-server", async (event, payload) => {
@@ -628,7 +682,14 @@ function registerIpc() {
     };
     const updated = [profile, ...profiles.filter((item) => item.id !== profile.id)].slice(0, MAX_SERVERS);
     await writeProfiles(updated);
-    setImmediate(() => openWorkspace(profile));
+    setImmediate(() => {
+      void openWorkspace(profile).catch((error) => {
+        showSelector(error instanceof Error ? error.message : nativeText(
+          "The server workspace could not be opened.",
+          "L’espace serveur n’a pas pu être ouvert."
+        ));
+      });
+    });
     return { ok: true, profile };
   });
 }
@@ -656,7 +717,11 @@ app.on("before-quit", (event) => {
   if (!localServerProcess || quittingAfterLocalStop) return;
   event.preventDefault();
   quittingAfterLocalStop = true;
-  void stopLocalServer().finally(() => app.quit());
+  void stopLocalServer().then(() => app.quit()).catch((reason) => {
+    quittingAfterLocalStop = false;
+    dialog.showErrorBox("CyTask", reason.message);
+    createSelectorWindow();
+  });
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

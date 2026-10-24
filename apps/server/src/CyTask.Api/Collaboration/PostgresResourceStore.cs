@@ -60,7 +60,7 @@ public sealed partial class PostgresCollaborationStore
         await InsertOutboxAsync(connection, transaction, organizationId,
             "project.resource_created", id, new { id, projectId, resourceType, name }, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return await GetResourceAsync(organizationId, id, cancellationToken);
+        return await GetResourceCoreAsync(connection, null, organizationId, id, cancellationToken);
     }
 
     public async Task<ResourceUpdateResult> UpdateResourceAsync(
@@ -100,7 +100,7 @@ public sealed partial class PostgresCollaborationStore
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new(ResourceUpdateStatus.Updated,
-            await GetResourceAsync(organizationId, resourceId, cancellationToken));
+            await GetResourceCoreAsync(connection, null, organizationId, resourceId, cancellationToken));
     }
 
     private static async Task<ProjectResource?> GetResourceCoreAsync(

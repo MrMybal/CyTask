@@ -1,0 +1,14 @@
+{
+  "name": "@cytask/sdk",
+  "version": "0.1.0",
+  "description": "Dependency-free JavaScript client for CyTask servers and local workspaces.",
+  "type": "module",
+  "exports": "./src/index.mjs",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

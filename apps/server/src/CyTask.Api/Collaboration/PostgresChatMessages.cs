@@ -37,36 +37,44 @@ public sealed partial class PostgresCollaborationStore
                     reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)));
         }
         rows.Reverse();
+        if (rows.Count == 0) return [];
+        var ids = rows.Select(row => row.Id).ToArray();
+        var resources = new Dictionary<Guid, List<ProjectResource>>();
+        await using (var resourceCommand = new NpgsqlCommand(
+            $"SELECT mr.message_id, {ResourceColumns} FROM chat_message_resources mr " +
+            "JOIN project_resources r ON r.id=mr.resource_id JOIN users u ON u.id=r.created_by " +
+            "WHERE mr.message_id=ANY(@ids) AND r.organization_id=@organization " +
+            "ORDER BY mr.message_id,lower(r.name),r.id;", connection))
+        {
+            resourceCommand.Parameters.AddWithValue("ids", ids);
+            resourceCommand.Parameters.AddWithValue("organization", organizationId);
+            await using var reader = await resourceCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var messageId = reader.GetGuid(0);
+                if (!resources.TryGetValue(messageId, out var items)) resources[messageId] = items = [];
+                items.Add(ReadResource(reader, 1));
+            }
+        }
+        var mentions = new Dictionary<Guid, List<Guid>>();
+        await using (var mentionCommand = new NpgsqlCommand(
+            "SELECT message_id,user_id FROM chat_mentions WHERE message_id=ANY(@ids) ORDER BY message_id,user_id;", connection))
+        {
+            mentionCommand.Parameters.AddWithValue("ids", ids);
+            await using var reader = await mentionCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var messageId = reader.GetGuid(0);
+                if (!mentions.TryGetValue(messageId, out var items)) mentions[messageId] = items = [];
+                items.Add(reader.GetGuid(1));
+            }
+        }
         var result = new List<ChatMessage>();
         foreach (var row in rows)
             result.Add(new(row.Id, row.OrganizationId, row.ChannelId, row.AuthorId,
                 row.AuthorName, row.Body, row.CreatedAt, row.EditedAt,
-                await MessageResourcesAsync(connection, row.Id, cancellationToken),
-                await MessageMentionsAsync(connection, row.Id, cancellationToken)));
-        return result;
-    }
-
-    private static async Task<IReadOnlyList<ProjectResource>> MessageResourcesAsync(
-        NpgsqlConnection connection, Guid messageId, CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            $"SELECT {ResourceColumns} FROM chat_message_resources mr " +
-            "JOIN project_resources r ON r.id=mr.resource_id JOIN users u ON u.id=r.created_by " +
-            "WHERE mr.message_id=@message ORDER BY lower(r.name),r.id;", connection);
-        command.Parameters.AddWithValue("message", messageId);
-        return await ReadResourcesAsync(command, cancellationToken);
-    }
-
-    private static async Task<IReadOnlyList<Guid>> MessageMentionsAsync(
-        NpgsqlConnection connection, Guid messageId, CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            "SELECT user_id FROM chat_mentions WHERE message_id=@message ORDER BY user_id;",
-            connection);
-        command.Parameters.AddWithValue("message", messageId);
-        var result = new List<Guid>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) result.Add(reader.GetGuid(0));
+                resources.TryGetValue(row.Id, out var files) ? files : [],
+                mentions.TryGetValue(row.Id, out var users) ? users : []));
         return result;
     }
 }

@@ -3,9 +3,9 @@ using CyTask.Api.LocalSync;
 
 namespace CyTask.Api.Collaboration;
 
-public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICollaborationStore
+public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace, LocalStateClock localState) : ICollaborationStore
 {
-    private readonly object _gate = new();
+    private readonly object _gate = localState.Gate;
     private readonly Dictionary<Guid, ProjectResource> _resources = [];
     private readonly Dictionary<Guid, ProjectResourceUpload> _uploads = [];
     private readonly Dictionary<Guid, ChatChannel> _channels = [];
@@ -58,7 +58,11 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
         var resource = new ProjectResource(
             Guid.CreateVersion7(), organizationId, projectId, folderLabelId, resourceType,
             name, body, null, null, 0, null, "ready", null, 1, createdBy, creator, now, now);
-        lock (_gate) _resources.Add(resource.Id, resource);
+        lock (_gate)
+        {
+            _resources.Add(resource.Id, resource);
+            localState.Changed();
+        }
         return resource;
     }
 
@@ -98,6 +102,7 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
             if (latest?.Revision != expectedRevision)
                 return new(ResourceUpdateStatus.RevisionConflict, latest);
             _resources[resourceId] = updated;
+            localState.Changed();
         }
         return new(ResourceUpdateStatus.Updated, updated);
     }
@@ -192,6 +197,7 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
             };
             _resources[resource.Id] = resource;
             _uploads[uploadId] = upload with { Resource = resource, Status = "completed" };
+            localState.Changed();
             return Task.FromResult<ProjectResource?>(resource);
         }
     }
@@ -211,6 +217,7 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
             };
             _resources[resource.Id] = resource;
             _uploads[uploadId] = upload with { Resource = resource, Status = "rejected" };
+            localState.Changed();
         }
         return Task.CompletedTask;
     }
@@ -268,6 +275,7 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
                 Guid.CreateVersion7(), organizationId, projectId, name, slug, topic,
                 channelType, groupMembers, createdBy, DateTimeOffset.UtcNow);
             _channels.Add(channel.Id, channel);
+            localState.Changed();
             return channel;
         }
     }
@@ -320,6 +328,7 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace) : ICol
                 Guid.CreateVersion7(), organizationId, channelId, authorId, authorName, body,
                 DateTimeOffset.UtcNow, null, resources.Select(item => item!).ToArray(), mentions);
             _messages.Add(message.Id, message);
+            localState.Changed();
             return message;
         }
     }

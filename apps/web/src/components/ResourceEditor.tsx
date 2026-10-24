@@ -118,12 +118,14 @@ export function ResourceEditor({
           />
         ) : (
           <ProjectCanvas
+            key={resource.id}
             projectId={resource.projectId}
             storageId={resource.id}
             initialState={resource.body}
             tasks={tasks}
             onOpenTask={onOpenTask}
             onBoardChange={canContribute ? canvasChanged : undefined}
+            canEdit={canContribute}
           />
         )}
       </form>

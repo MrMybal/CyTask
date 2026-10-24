@@ -42,11 +42,11 @@ public sealed class AttachmentReviewService(
                 {
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
             }
-            catch (Exception exception) when (exception is IOException or InvalidOperationException)
+            catch (Exception exception)
             {
                 LogCycleFailed(logger, exception);
             }

@@ -10,6 +10,20 @@ public sealed record BootstrapRequest(
 
 public sealed record LoginRequest(string Email, string Password);
 
+public sealed record CreateAgentRequest(
+    string Key,
+    string DisplayName,
+    string? Description,
+    IReadOnlyList<string>? Capabilities);
+
+public sealed record UpdateAgentStatusRequest(string Status);
+
+public sealed record CreateAgentCallRequest(
+    string? Type,
+    string Title,
+    string? Body,
+    Guid? TaskId);
+
 public sealed record CreateNativeAuthorizationRequest(
     string ClientId,
     string RedirectUri,

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace CyTask.Api.Domain;
 
 public sealed record UserAccount(
@@ -38,7 +40,8 @@ public sealed record ProjectStatus(
     string Name,
     string Color,
     int Position,
-    bool IsSystem);
+    bool IsSystem,
+    long Revision = 1);
 
 public sealed record TaskAssignee(
     Guid UserId,
@@ -189,6 +192,52 @@ public sealed record OrganizationMember(
     string DisplayName,
     string Role,
     DateTimeOffset JoinedAt);
+
+public sealed record AgentMember(
+    Guid UserId,
+    Guid OrganizationId,
+    string Key,
+    string DisplayName,
+    string Description,
+    IReadOnlyList<string> Capabilities,
+    string Status,
+    Guid CreatedBy,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? LastSeenAt,
+    long Revision);
+
+public sealed record CreatedAgentMember(AgentMember Agent, string ApiToken);
+
+public sealed record AgentNotification(
+    Guid Id,
+    Guid OrganizationId,
+    Guid AgentUserId,
+    Guid CreatedBy,
+    string Type,
+    string Title,
+    string Body,
+    Guid? TaskId,
+    long Revision,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? AcknowledgedAt);
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ClaimAgentTaskStatus
+{
+    Claimed,
+    AlreadyClaimed,
+    NotFound,
+    AssignedToAnotherMember,
+    AgentUnavailable
+}
+
+public sealed record ClaimAgentTaskResult(ClaimAgentTaskStatus Status, WorkItem? Task);
+
+public sealed record AgentContext(
+    AgentMember Agent,
+    IReadOnlyList<Project> Projects,
+    IReadOnlyList<WorkItem> AssignedTasks,
+    IReadOnlyList<AgentNotification> Notifications);
 
 public sealed record InvitationPreview(
     string OrganizationName,

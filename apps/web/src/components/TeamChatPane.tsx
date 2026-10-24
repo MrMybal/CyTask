@@ -8,6 +8,7 @@ import {
   type TaskOption
 } from "../api";
 import { uploadProjectFile } from "../resourceUpload";
+import { createWorkspaceEventStream } from "../workspaceEvents";
 import { ChatMessageList } from "./ChatMessageList";
 import { useVoiceRoom } from "./useVoiceRoom";
 import { useI18n } from "../i18n";
@@ -44,6 +45,7 @@ export function TeamChatPane({
   const [newChannelType, setNewChannelType] = useState<"channel" | "group">("channel");
   const fileInput = useRef<HTMLInputElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const messageRequest = useRef(0);
   const selectedChannel = channels.find((channel) => channel.id === selectedChannelId);
   const voice = useVoiceRoom(selectedChannelId, currentUserId, onError);
 
@@ -59,12 +61,14 @@ export function TeamChatPane({
   }, [onError, projectId, t]);
 
   const loadMessages = useCallback(async () => {
+    const request = ++messageRequest.current;
     if (!selectedChannelId) {
       setMessages([]);
       return;
     }
     try {
-      setMessages(await api.chatMessages(selectedChannelId));
+      const next = await api.chatMessages(selectedChannelId);
+      if (request === messageRequest.current) setMessages(next);
     } catch {
       onError(t("Unable to load messages."));
     }
@@ -74,14 +78,25 @@ export function TeamChatPane({
     void loadChannels();
     void api.projectResources(projectId).then(setLibrary).catch(() => undefined);
   }, [loadChannels, projectId]);
-  useEffect(() => { void loadMessages(); }, [loadMessages]);
   useEffect(() => {
-    const stream = new EventSource("/api/v1/events");
-    stream.addEventListener("chat.message_created", () => void loadMessages());
+    setMessages([]);
+    setPendingResources([]);
+    void loadMessages();
+    return () => { messageRequest.current++; };
+  }, [loadMessages]);
+  useEffect(() => {
+    const stream = createWorkspaceEventStream();
+    let timer: number | undefined;
+    const refreshMessages = () => {
+      if (timer === undefined) timer = window.setTimeout(() => { timer = undefined; void loadMessages(); }, 100);
+    };
+    stream.addEventListener("chat.message_created", refreshMessages);
+    stream.addEventListener("reset", refreshMessages);
+    stream.addEventListener("workspace.synchronized", refreshMessages);
     stream.addEventListener("chat.channel_created", () => void loadChannels());
     stream.addEventListener("project.resource_available", () =>
-      void api.projectResources(projectId).then(setLibrary));
-    return () => stream.close();
+      void api.projectResources(projectId).then(setLibrary).catch(() => onError(t("Unable to load workspace contents."))));
+    return () => { window.clearTimeout(timer); stream.close(); };
   }, [loadChannels, loadMessages, projectId]);
 
   async function createChannel(event: FormEvent<HTMLFormElement>) {

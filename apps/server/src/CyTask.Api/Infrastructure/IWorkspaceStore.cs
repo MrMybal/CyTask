@@ -8,6 +8,8 @@ public interface IWorkspaceStore
 
     Task<bool> HasUsersAsync(CancellationToken cancellationToken);
 
+    Task<UserAccount?> FindLocalOwnerAsync(CancellationToken cancellationToken);
+
     Task<BootstrapResult?> BootstrapAsync(
         string email,
         string displayName,
@@ -89,6 +91,68 @@ public interface IWorkspaceStore
 
     Task<IReadOnlyList<OrganizationMember>> ListMembersAsync(
         Guid organizationId,
+        CancellationToken cancellationToken);
+
+    Task<CreatedAgentMember?> CreateAgentAsync(
+        Guid organizationId,
+        Guid createdBy,
+        string key,
+        string displayName,
+        string description,
+        IReadOnlyList<string> capabilities,
+        string passwordHash,
+        string apiToken,
+        byte[] apiTokenHash,
+        int maximumActiveTokens,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AgentMember>> ListAgentsAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken);
+
+    Task<AgentMember?> FindAgentAsync(
+        Guid organizationId,
+        Guid agentUserId,
+        CancellationToken cancellationToken);
+
+    Task<AgentMember?> UpdateAgentStatusAsync(
+        Guid organizationId,
+        Guid agentUserId,
+        Guid updatedBy,
+        string status,
+        CancellationToken cancellationToken);
+
+    Task<AgentContext?> GetAgentContextAsync(
+        Guid organizationId,
+        Guid agentUserId,
+        CancellationToken cancellationToken);
+
+    Task<ClaimAgentTaskResult> ClaimTaskForAgentAsync(
+        Guid organizationId,
+        Guid agentUserId,
+        Guid taskId,
+        CancellationToken cancellationToken);
+
+    Task<AgentNotification?> CreateAgentNotificationAsync(
+        Guid organizationId,
+        Guid agentUserId,
+        Guid createdBy,
+        string type,
+        string title,
+        string body,
+        Guid? taskId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AgentNotification>> ListAgentNotificationsAsync(
+        Guid organizationId,
+        Guid agentUserId,
+        bool includeAcknowledged,
+        CancellationToken cancellationToken);
+
+    Task<AgentNotification?> AcknowledgeAgentNotificationAsync(
+        Guid organizationId,
+        Guid agentUserId,
+        Guid notificationId,
         CancellationToken cancellationToken);
 
     Task<CreatedInvitation?> CreateInvitationAsync(

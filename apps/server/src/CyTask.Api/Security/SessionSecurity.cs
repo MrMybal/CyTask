@@ -25,11 +25,11 @@ public static partial class SessionSecurity
     public const string CookieScheme = "CyTaskSession";
     public const string BearerScheme = "CyTaskBearer";
 
-    public static string SessionCookie(IHostEnvironment environment) =>
-        environment.IsDevelopment() ? "CyTask.Session" : "__Host-CyTask.Session";
+    public static string SessionCookie(IHostEnvironment environment, bool localLoopback = false) =>
+        environment.IsDevelopment() || localLoopback ? "CyTask.Session" : "__Host-CyTask.Session";
 
-    public static string CsrfCookie(IHostEnvironment environment) =>
-        environment.IsDevelopment() ? "CyTask.Csrf" : "__Host-CyTask.Csrf";
+    public static string CsrfCookie(IHostEnvironment environment, bool localLoopback = false) =>
+        environment.IsDevelopment() || localLoopback ? "CyTask.Csrf" : "__Host-CyTask.Csrf";
 
     public static string CreateToken(int bytes = 32) =>
         WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(bytes));
@@ -92,10 +92,11 @@ public static partial class SessionSecurity
         IHostEnvironment environment,
         string sessionToken,
         string csrfToken,
-        DateTimeOffset expiresAt)
+        DateTimeOffset expiresAt,
+        bool localLoopback = false)
     {
-        var secure = !environment.IsDevelopment();
-        response.Cookies.Append(SessionCookie(environment), sessionToken, new CookieOptions
+        var secure = !environment.IsDevelopment() && !localLoopback;
+        response.Cookies.Append(SessionCookie(environment, localLoopback), sessionToken, new CookieOptions
         {
             HttpOnly = true,
             Secure = secure,
@@ -104,7 +105,7 @@ public static partial class SessionSecurity
             Expires = expiresAt,
             IsEssential = true
         });
-        response.Cookies.Append(CsrfCookie(environment), csrfToken, new CookieOptions
+        response.Cookies.Append(CsrfCookie(environment, localLoopback), csrfToken, new CookieOptions
         {
             HttpOnly = false,
             Secure = secure,
@@ -115,17 +116,17 @@ public static partial class SessionSecurity
         });
     }
 
-    public static void DeleteSessionCookies(HttpResponse response, IHostEnvironment environment)
+    public static void DeleteSessionCookies(HttpResponse response, IHostEnvironment environment, bool localLoopback = false)
     {
-        var secure = !environment.IsDevelopment();
-        response.Cookies.Delete(SessionCookie(environment), new CookieOptions
+        var secure = !environment.IsDevelopment() && !localLoopback;
+        response.Cookies.Delete(SessionCookie(environment, localLoopback), new CookieOptions
         {
             HttpOnly = true,
             Secure = secure,
             SameSite = SameSiteMode.Strict,
             Path = "/"
         });
-        response.Cookies.Delete(CsrfCookie(environment), new CookieOptions
+        response.Cookies.Delete(CsrfCookie(environment, localLoopback), new CookieOptions
         {
             HttpOnly = false,
             Secure = secure,
@@ -209,7 +210,8 @@ public sealed class SessionMiddleware(RequestDelegate next)
     public async Task InvokeAsync(
         HttpContext context,
         IWorkspaceStore store,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IOptions<CyTask.Api.Configuration.CyTaskOptions> options)
     {
         var authorization = context.Request.Headers.Authorization.ToString();
         if (!string.IsNullOrEmpty(authorization))
@@ -246,7 +248,7 @@ public sealed class SessionMiddleware(RequestDelegate next)
         }
 
         if (context.Request.Cookies.TryGetValue(
-                SessionSecurity.SessionCookie(environment), out var sessionToken) &&
+                SessionSecurity.SessionCookie(environment, options.Value.LocalMode), out var sessionToken) &&
             sessionToken.Length is >= 32 and <= 128)
         {
             var user = await store.FindSessionAsync(
@@ -286,7 +288,7 @@ public sealed class RequireSessionFilter : IEndpointFilter
     }
 }
 
-public sealed class CsrfFilter(IHostEnvironment environment) : IEndpointFilter
+public sealed class CsrfFilter(IHostEnvironment environment, IOptions<CyTask.Api.Configuration.CyTaskOptions> options) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
@@ -298,7 +300,7 @@ public sealed class CsrfFilter(IHostEnvironment environment) : IEndpointFilter
         var request = context.HttpContext.Request;
         var user = context.HttpContext.GetUser();
         var header = request.Headers[SessionSecurity.CsrfHeader].ToString();
-        var cookie = request.Cookies[SessionSecurity.CsrfCookie(environment)];
+        var cookie = request.Cookies[SessionSecurity.CsrfCookie(environment, options.Value.LocalMode)];
 
         if (user is null || string.IsNullOrWhiteSpace(header) || string.IsNullOrWhiteSpace(cookie) ||
             !string.Equals(header, cookie, StringComparison.Ordinal) ||

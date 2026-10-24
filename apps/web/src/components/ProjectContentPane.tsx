@@ -6,6 +6,7 @@ import {
   type TaskOption
 } from "../api";
 import { uploadProjectFile } from "../resourceUpload";
+import { createWorkspaceEventStream } from "../workspaceEvents";
 import { useI18n } from "../i18n";
 import { ResourceEditor } from "./ResourceEditor";
 import { ResourceLibraryTable } from "./ResourceLibraryTable";
@@ -60,12 +61,16 @@ export function ProjectContentPane({
   }, [load, selectedFolderId]);
 
   useEffect(() => {
-    const stream = new EventSource("/api/v1/events");
-    const refresh = () => void load();
+    const stream = createWorkspaceEventStream();
+    let timer: number | undefined;
+    const refresh = () => {
+      if (timer === undefined) timer = window.setTimeout(() => { timer = undefined; void load(); }, 100);
+    };
     stream.addEventListener("project.resource_created", refresh);
     stream.addEventListener("project.resource_updated", refresh);
     stream.addEventListener("project.resource_available", refresh);
-    return () => stream.close();
+    stream.addEventListener("workspace.synchronized", refresh);
+    return () => { window.clearTimeout(timer); stream.close(); };
   }, [load]);
 
   const visible = useMemo(() => resources.filter((resource) =>

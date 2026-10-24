@@ -276,6 +276,39 @@ export interface OrganizationMember {
   joinedAt: string;
 }
 
+export interface AgentMember {
+  userId: string;
+  organizationId: string;
+  key: string;
+  displayName: string;
+  description: string;
+  capabilities: string[];
+  status: "active" | "paused" | "disabled";
+  createdBy: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+  revision: number;
+}
+
+export interface CreatedAgentMember {
+  agent: AgentMember;
+  apiToken: string;
+}
+
+export interface AgentNotification {
+  id: string;
+  organizationId: string;
+  agentUserId: string;
+  createdBy: string;
+  type: string;
+  title: string;
+  body: string;
+  taskId: string | null;
+  revision: number;
+  createdAt: string;
+  acknowledgedAt: string | null;
+}
+
 export interface InvitationPreview {
   organizationName: string;
   email: string;
@@ -618,6 +651,27 @@ export const api = {
   search: (query: string, limit = 30) =>
     request<SearchHit[]>(`/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}`),
   members: () => request<OrganizationMember[]>("/api/v1/members"),
+  agents: () => request<AgentMember[]>("/api/v1/agents"),
+  createAgent: (body: {
+    key: string;
+    displayName: string;
+    description?: string;
+    capabilities?: string[];
+  }) => request<CreatedAgentMember>("/api/v1/agents", {
+    method: "POST", body: JSON.stringify(body)
+  }),
+  updateAgentStatus: (agentUserId: string, status: AgentMember["status"]) =>
+    request<AgentMember>(`/api/v1/agents/${agentUserId}/status`, {
+      method: "PATCH", body: JSON.stringify({ status })
+    }),
+  callAgent: (agentUserId: string, body: {
+    type?: string;
+    title: string;
+    body?: string;
+    taskId?: string | null;
+  }) => request<AgentNotification>(`/api/v1/agents/${agentUserId}/notifications`, {
+    method: "POST", body: JSON.stringify(body)
+  }),
   createInvitation: (body: { email: string; role: "admin" | "member" | "viewer" }) =>
     request<CreatedInvitation>("/api/v1/invitations", {
       method: "POST",

@@ -8,7 +8,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent
 } from "react";
-import type { TaskOption } from "../api";
+import { api, type TaskOption } from "../api";
+import { uploadProjectFile } from "../resourceUpload";
 import { useI18n } from "../i18n";
 
 type CanvasTool = "select" | "draw";
@@ -26,6 +27,7 @@ interface CanvasObject {
   taskId?: string;
   taskKey?: string;
   mediaId?: string;
+  resourceId?: string;
   fileName?: string;
 }
 
@@ -49,6 +51,7 @@ interface ProjectCanvasProps {
   storageId?: string;
   initialState?: string;
   onBoardChange?: (serialized: string) => void;
+  canEdit?: boolean;
 }
 
 interface DragState {
@@ -71,7 +74,8 @@ export function ProjectCanvas({
   onOpenTask,
   storageId,
   initialState,
-  onBoardChange
+  onBoardChange,
+  canEdit = true
 }: ProjectCanvasProps) {
   const { t } = useI18n();
   const storageKey = `cytask.canvas.v1.${storageId ?? projectId}`;
@@ -81,10 +85,12 @@ export function ProjectCanvas({
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [draftStroke, setDraftStroke] = useState<Array<{ x: number; y: number }>>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [mediaError, setMediaError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const drag = useRef<DragState | undefined>(undefined);
   const mediaFingerprint = board.objects
-    .map((object) => object.mediaId ?? "")
+    .map((object) => `${object.mediaId ?? ""}:${object.resourceId ?? ""}`)
     .join("|");
 
   useEffect(() => {
@@ -95,26 +101,47 @@ export function ProjectCanvas({
   }, [storageKey]);
 
   useEffect(() => {
-    window.localStorage.setItem(storageKey, JSON.stringify(board));
-    onBoardChange?.(JSON.stringify(board));
+    const serialized = JSON.stringify(board);
+    try { window.localStorage.setItem(storageKey, serialized); }
+    catch { /* Shared content remains saveable when the browser cache is full. */ }
+    onBoardChange?.(serialized);
   }, [board, onBoardChange, storageKey]);
 
   useEffect(() => {
     let active = true;
     const objectUrls: string[] = [];
-    const mediaObjects = board.objects.filter((object) => object.mediaId);
+    const mediaObjects = board.objects.filter((object) => object.mediaId && !object.resourceId);
     void Promise.all(mediaObjects.map(async (object) => {
       const blob = await readCanvasMedia(object.mediaId!);
       if (!blob || !active) return;
       const url = URL.createObjectURL(blob);
       objectUrls.push(url);
       setMediaUrls((current) => ({ ...current, [object.mediaId!]: url }));
-    }));
+    })).catch(() => { if (active) setMediaError(t("Unable to load canvas media.")); });
     return () => {
       active = false;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [mediaFingerprint]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    let active = true;
+    void (async () => {
+      const migrated = new Map<string, string>();
+      for (const object of board.objects.filter(item => item.mediaId && !item.resourceId)) {
+        const blob = await readCanvasMedia(object.mediaId!);
+        if (!blob || !active) continue;
+        const resource = await uploadProjectFile(projectId, null,
+          new File([blob], object.fileName ?? "canvas-media", { type: blob.type }));
+        migrated.set(object.id, resource.id);
+      }
+      if (active && migrated.size) setBoard(current => ({ ...current,
+        objects: current.objects.map(object => migrated.has(object.id)
+          ? { ...object, resourceId: migrated.get(object.id) } : object) }));
+    })().catch(() => { if (active) setMediaError(t("Unable to share canvas media.")); });
+    return () => { active = false; };
+  }, [mediaFingerprint, projectId, canEdit]);
 
   const taskById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
@@ -130,6 +157,7 @@ export function ProjectCanvas({
   }
 
   function addObject(kind: CanvasObjectKind, overrides: Partial<CanvasObject> = {}) {
+    if (!canEdit) return;
     setBoard((current) => {
       const index = current.objects.length;
       const object: CanvasObject = {
@@ -168,17 +196,18 @@ export function ProjectCanvas({
   }
 
   async function addMediaFiles(files: File[], point?: { x: number; y: number }) {
+    if (!canEdit || uploading) return;
     const accepted = files.filter((file) =>
       file.type.startsWith("image/") || file.type.startsWith("video/"));
     if (accepted.length === 0) return;
 
+    setUploading(true);
+    setMediaError("");
+    try {
     for (const [index, file] of accepted.entries()) {
-      const mediaId = crypto.randomUUID();
-      await writeCanvasMedia(mediaId, file);
-      const url = URL.createObjectURL(file);
-      setMediaUrls((current) => ({ ...current, [mediaId]: url }));
+      const resource = await uploadProjectFile(projectId, null, file);
       addObject(file.type.startsWith("video/") ? "video" : "image", {
-        mediaId,
+        resourceId: resource.id,
         fileName: file.name,
         x: (point?.x ?? 180) + index * 28,
         y: (point?.y ?? 160) + index * 28,
@@ -187,6 +216,8 @@ export function ProjectCanvas({
         color: "#8FB7FF"
       });
     }
+    } catch { setMediaError(t("Unable to share canvas media.")); }
+    finally { setUploading(false); }
   }
 
   function selectMedia(event: ChangeEvent<HTMLInputElement>) {
@@ -198,11 +229,13 @@ export function ProjectCanvas({
   function dropMedia(event: DragEvent<HTMLDivElement>) {
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
+    event.stopPropagation();
     const point = worldPoint(event.clientX, event.clientY, event.currentTarget);
     void addMediaFiles(Array.from(event.dataTransfer.files), point);
   }
 
   function removeObject(object: CanvasObject) {
+    if (!canEdit) return;
     setBoard((current) => ({
       ...current,
       objects: current.objects.filter((candidate) => candidate.id !== object.id)
@@ -220,6 +253,7 @@ export function ProjectCanvas({
   }
 
   function editText(object: CanvasObject) {
+    if (!canEdit) return;
     const value = window.prompt(t("Canvas text"), object.text ?? "");
     if (value === null) return;
     setBoard((current) => ({
@@ -230,6 +264,7 @@ export function ProjectCanvas({
   }
 
   function objectPointerDown(event: ReactPointerEvent<HTMLElement>, object: CanvasObject) {
+    if (!canEdit) return;
     if (tool === "draw" || (event.target as HTMLElement).closest("button, video")) return;
     event.preventDefault();
     event.stopPropagation();
@@ -341,11 +376,11 @@ export function ProjectCanvas({
       <header className="project-canvas-toolbar">
         <div className="canvas-tool-group" role="group" aria-label={t("Canvas tools")}>
           <button className={tool === "select" ? "active" : ""} type="button" onClick={() => setTool("select")}>{t("Move")}</button>
-          <button className={tool === "draw" ? "active" : ""} type="button" onClick={() => setTool("draw")}>{t("Draw")}</button>
-          <button type="button" onClick={addText}>{t("Text")}</button>
-          <button type="button" onClick={() => addObject("rectangle")}>{t("Rectangle")}</button>
-          <button type="button" onClick={() => addObject("ellipse")}>{t("Ellipse")}</button>
-          <button type="button" onClick={() => fileInput.current?.click()}>{t("Image / video")}</button>
+          <button disabled={!canEdit} className={tool === "draw" ? "active" : ""} type="button" onClick={() => setTool("draw")}>{t("Draw")}</button>
+          <button disabled={!canEdit} type="button" onClick={addText}>{t("Text")}</button>
+          <button disabled={!canEdit} type="button" onClick={() => addObject("rectangle")}>{t("Rectangle")}</button>
+          <button disabled={!canEdit} type="button" onClick={() => addObject("ellipse")}>{t("Ellipse")}</button>
+          <button disabled={!canEdit || uploading} type="button" onClick={() => fileInput.current?.click()}>{t(uploading ? "Uploading…" : "Image / video")}</button>
           <input
             ref={fileInput}
             className="sr-only"
@@ -360,10 +395,10 @@ export function ProjectCanvas({
             <option value="">{t("Add a task…")}</option>
             {tasks.map((task) => <option value={task.id} key={task.id}>{task.key} · {task.title}</option>)}
           </select>
-          <button type="button" disabled={!selectedTaskId} onClick={addTask}>{t("Add")}</button>
+          <button type="button" disabled={!canEdit || !selectedTaskId} onClick={addTask}>{t("Add")}</button>
         </div>
         <div className="canvas-zoom-actions">
-          {board.strokes.length > 0 && (
+          {canEdit && board.strokes.length > 0 && (
             <button type="button" onClick={() => setBoard((current) => ({ ...current, strokes: [] }))}>{t("Clear drawings")}</button>
           )}
           <button type="button" onClick={() => zoom(-0.12)} aria-label={t("Zoom out")}>−</button>
@@ -420,7 +455,8 @@ export function ProjectCanvas({
               "--canvas-color": object.color
             } as React.CSSProperties;
             if (object.kind === "image" || object.kind === "video") {
-              const url = object.mediaId ? mediaUrls[object.mediaId] : undefined;
+              const url = object.resourceId ? api.resourceContentUrl(object.resourceId)
+                : object.mediaId ? mediaUrls[object.mediaId] : undefined;
               return (
                 <article className="project-canvas-object canvas-media-object" key={object.id} style={style}>
                   <header onPointerDown={(event) => objectPointerDown(event, object)}>
@@ -479,6 +515,7 @@ export function ProjectCanvas({
         </div>
       </div>
       <footer className="project-canvas-status">
+        {mediaError && <span role="alert">{mediaError}</span>}
         <span>{t("{objects} objects · {drawings} drawings", { objects: board.objects.length, drawings: board.strokes.length })}</span>
         <span>{t("Drop images or videos directly into the workspace.")}</span>
         <span>{t(onBoardChange ? "Save to share the canvas with the team." : "Content is stored locally on this device.")}</span>
@@ -493,7 +530,12 @@ function readBoard(storageKey: string, initialState?: string): CanvasBoardState 
     const source = initialState?.trim() || window.localStorage.getItem(storageKey) || "null";
     const parsed = JSON.parse(source) as Partial<CanvasBoardState> | null;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.objects) || !Array.isArray(parsed.strokes)) return empty;
-    return { version: 1, objects: parsed.objects, strokes: parsed.strokes };
+    return { version: 1,
+      objects: parsed.objects.filter(object => object && typeof object.id === "string"
+        && ["text", "rectangle", "ellipse", "task", "image", "video"].includes(object.kind)
+        && [object.x, object.y, object.width, object.height].every(Number.isFinite)),
+      strokes: parsed.strokes.filter(stroke => stroke && Array.isArray(stroke.points)
+        && stroke.points.every(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) };
   } catch {
     return empty;
   }
@@ -506,7 +548,7 @@ function statusColor(status: TaskOption["status"]) {
     blocked: "#FF9FA4",
     done: "#7CF2C4",
     cancelled: "#A4AFBC"
-  }[status];
+  }[status] ?? "#8FB7FF";
 }
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -527,17 +569,6 @@ function openMediaDatabase() {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
-}
-
-async function writeCanvasMedia(id: string, blob: Blob) {
-  const database = await openMediaDatabase();
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(mediaStoreName, "readwrite");
-    transaction.objectStore(mediaStoreName).put(blob, id);
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-  database.close();
 }
 
 async function readCanvasMedia(id: string) {

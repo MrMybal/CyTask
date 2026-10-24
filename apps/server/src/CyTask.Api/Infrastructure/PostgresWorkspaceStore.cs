@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace CyTask.Api.Infrastructure;
 
-public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorkspaceStore
+public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorkspaceStore
 {
     private static readonly (string Key, string Name, string Color)[] DefaultStatuses =
     [
@@ -486,6 +486,12 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
               AND (t.expires_at IS NULL OR t.expires_at > now())
               AND u.id = t.user_id
               AND m.user_id = t.user_id AND m.organization_id = t.organization_id
+              AND NOT EXISTS (
+                  SELECT 1 FROM agent_members agent
+                  WHERE agent.organization_id = t.organization_id
+                    AND agent.user_id = t.user_id
+                    AND agent.status <> 'active'
+              )
             RETURNING u.id, t.organization_id, u.normalized_email, u.display_name,
                       m.role, COALESCE(t.expires_at, now() + interval '1 year'), t.scopes;
             """);
@@ -1005,9 +1011,11 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             }
         }
 
+        var exportedTasks = await PopulateTaskAssigneesAsync(
+            organizationId, tasks, cancellationToken, connection, transaction);
         await transaction.CommitAsync(cancellationToken);
         return new WorkspaceExport(
-            4, DateTimeOffset.UtcNow, organization, members, projects, tasks, comments, checklist, projectLabels, taskLabels, taskParents, activity, attachments);
+            4, DateTimeOffset.UtcNow, organization, members, projects, exportedTasks, comments, checklist, projectLabels, taskLabels, taskParents, activity, attachments);
     }
 
     public async Task<IReadOnlyList<Attachment>?> ListAttachmentsAsync(
@@ -1755,7 +1763,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
         }
 
         await using var command = dataSource.CreateCommand("""
-            SELECT organization_id, project_id, status_key, name, color, position, is_system
+            SELECT organization_id, project_id, status_key, name, color, position, is_system, revision
             FROM project_statuses
             WHERE organization_id = @organization_id AND project_id = @project_id
             ORDER BY position, lower(name), status_key;
@@ -1831,7 +1839,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                     AND NOT is_system
               ) < 20
             ON CONFLICT DO NOTHING
-            RETURNING organization_id, project_id, status_key, name, color, position, is_system;
+            RETURNING organization_id, project_id, status_key, name, color, position, is_system, revision;
             """);
         command.Parameters.AddWithValue("organization_id", organizationId);
         command.Parameters.AddWithValue("project_id", projectId);
@@ -1876,8 +1884,8 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
                   )
               )
             ON CONFLICT (project_id, status_key) DO UPDATE
-            SET name = EXCLUDED.name, color = EXCLUDED.color
-            RETURNING organization_id, project_id, status_key, name, color, position, is_system;
+            SET name = EXCLUDED.name, color = EXCLUDED.color, revision = project_statuses.revision + 1
+            RETURNING organization_id, project_id, status_key, name, color, position, is_system, revision;
             """);
         command.Parameters.AddWithValue("organization_id", organizationId);
         command.Parameters.AddWithValue("project_id", projectId);
@@ -2545,7 +2553,10 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             items.RemoveAt(items.Count - 1);
         }
 
-        return new TaskPageSlice(items, totalCount, hasMore);
+        await reader.DisposeAsync();
+        await pageCommand.DisposeAsync();
+        return new TaskPageSlice(
+            await PopulateTaskAssigneesAsync(organizationId, items, cancellationToken), totalCount, hasMore);
     }
 
     public async Task<IReadOnlyList<TaskOption>?> ListTaskOptionsAsync(
@@ -2790,12 +2801,14 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
             result.Add(ReadTask(reader));
         }
 
+        await reader.DisposeAsync();
+        await command.DisposeAsync();
         if (result.Count == 0 && !await ProjectExistsAsync(organizationId, projectId, cancellationToken))
         {
             return null;
         }
 
-        return result;
+        return await PopulateTaskAssigneesAsync(organizationId, result, cancellationToken);
     }
 
     public async Task<WorkItem?> CreateTaskAsync(
@@ -3804,7 +3817,7 @@ public sealed class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorks
 
     private static ProjectStatus ReadProjectStatus(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
-        reader.GetString(4), reader.GetInt32(5), reader.GetBoolean(6));
+        reader.GetString(4), reader.GetInt32(5), reader.GetBoolean(6), reader.GetInt64(7));
 
     private static ProjectLabel ReadProjectLabel(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),

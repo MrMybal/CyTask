@@ -26,6 +26,7 @@ public static class ApiEndpoints
         api.MapGet("/bootstrap/status", BootstrapStatusAsync);
         api.MapPost("/bootstrap", BootstrapAsync).RequireRateLimiting("authentication");
         api.MapPost("/sessions", LoginAsync).RequireRateLimiting("authentication");
+        api.MapPost("/local/session", CreateLocalSessionAsync).RequireRateLimiting("authentication");
         api.MapPost("/oauth/token", ExchangeNativeTokenAsync).RequireRateLimiting("authentication");
         api.MapPost("/invitations/preview", PreviewInvitationAsync).RequireRateLimiting("authentication");
         api.MapPost("/invitations/accept", AcceptInvitationAsync).RequireRateLimiting("authentication");
@@ -163,6 +164,8 @@ public static class ApiEndpoints
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
 
+        authenticated.MapAgentEndpoints();
+
         authenticated.MapMigrationEndpoints();
         authenticated.MapCollaborationEndpoints();
         authenticated.MapPluginEndpoints();
@@ -178,6 +181,81 @@ public static class ApiEndpoints
         IWorkspaceStore store,
         CancellationToken cancellationToken) =>
         Results.Ok(new { required = !await store.HasUsersAsync(cancellationToken) });
+
+    private static async Task<IResult> CreateLocalSessionAsync(
+        HttpContext context,
+        IWorkspaceStore store,
+        PasswordService passwords,
+        IHostEnvironment environment,
+        IOptions<CyTaskOptions> options,
+        CancellationToken cancellationToken)
+    {
+        var configuredKey = options.Value.LocalAccessKey;
+        var suppliedKey = context.Request.Headers["X-CyTask-Local-Key"].ToString();
+        var remoteAddress = context.Connection.RemoteIpAddress;
+        if (!options.Value.LocalMode
+            || configuredKey is null
+            || suppliedKey.Length is < 32 or > 128
+            || remoteAddress is not null && !System.Net.IPAddress.IsLoopback(remoteAddress)
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                SessionSecurity.HashToken(configuredKey), SessionSecurity.HashToken(suppliedKey)))
+        {
+            return Results.NotFound();
+        }
+
+        var sessionToken = SessionSecurity.CreateToken();
+        var csrfToken = SessionSecurity.CreateToken();
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(options.Value.SessionHours);
+        LoginResult? session;
+        var owner = await store.FindLocalOwnerAsync(cancellationToken);
+        if (owner is null)
+        {
+            var workspaceName = options.Value.LocalWorkspaceName.Trim();
+            var slug = SessionSecurity.CreateSlug(workspaceName);
+            if (slug.Length < 2) slug = "local-workspace";
+            var created = await store.BootstrapAsync(
+                $"owner-{Guid.NewGuid():N}@local.cytask.invalid",
+                "Local owner",
+                passwords.Hash(SessionSecurity.CreateToken(48)),
+                workspaceName,
+                slug,
+                sessionToken,
+                SessionSecurity.HashToken(sessionToken),
+                csrfToken,
+                SessionSecurity.HashToken(csrfToken),
+                expiresAt,
+                cancellationToken);
+            if (created is not null)
+            {
+                session = new LoginResult(created.User, created.SessionToken, created.CsrfToken);
+            }
+            else
+            {
+                owner = await store.FindLocalOwnerAsync(cancellationToken);
+                session = owner is null ? null : await store.CreateSessionAsync(
+                    owner.Id, sessionToken, SessionSecurity.HashToken(sessionToken),
+                    csrfToken, SessionSecurity.HashToken(csrfToken), expiresAt, cancellationToken);
+            }
+        }
+        else
+        {
+            session = await store.CreateSessionAsync(
+                owner.Id, sessionToken, SessionSecurity.HashToken(sessionToken),
+                csrfToken, SessionSecurity.HashToken(csrfToken), expiresAt, cancellationToken);
+        }
+
+        if (session is null)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Local workspace could not be opened");
+        }
+        SessionSecurity.SetSessionCookies(
+            context.Response, environment, session.SessionToken, session.CsrfToken,
+            expiresAt, localLoopback: true);
+        SetNoStore(context.Response);
+        return Results.Ok(ToSessionResponse(session.User, session.CsrfToken));
+    }
 
     private static async Task<IResult> BootstrapAsync(
         BootstrapRequest request,
@@ -230,7 +308,8 @@ public static class ApiEndpoints
         }
 
         SessionSecurity.SetSessionCookies(
-            context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt);
+            context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt,
+            localLoopback: options.Value.LocalMode);
         return Results.Ok(ToSessionResponse(result.User, result.CsrfToken));
     }
 
@@ -272,7 +351,8 @@ public static class ApiEndpoints
         }
 
         SessionSecurity.SetSessionCookies(
-            context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt);
+            context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt,
+            localLoopback: options.Value.LocalMode);
         return Results.Ok(ToSessionResponse(result.User, result.CsrfToken));
     }
 
@@ -468,7 +548,8 @@ public static class ApiEndpoints
         }
 
         SessionSecurity.SetSessionCookies(
-            context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt);
+            context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt,
+            localLoopback: options.Value.LocalMode);
         events.Publish(result.User.OrganizationId, "invitation.accepted", result.User.UserId);
         return Results.Ok(ToSessionResponse(result.User, result.CsrfToken));
     }
@@ -483,14 +564,15 @@ public static class ApiEndpoints
         HttpContext context,
         IWorkspaceStore store,
         IHostEnvironment environment,
+        IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
     {
-        if (context.Request.Cookies.TryGetValue(SessionSecurity.SessionCookie(environment), out var token))
+        if (context.Request.Cookies.TryGetValue(SessionSecurity.SessionCookie(environment, options.Value.LocalMode), out var token))
         {
             await store.DeleteSessionAsync(SessionSecurity.HashToken(token), cancellationToken);
         }
 
-        SessionSecurity.DeleteSessionCookies(context.Response, environment);
+        SessionSecurity.DeleteSessionCookies(context.Response, environment, options.Value.LocalMode);
         return Results.NoContent();
     }
 

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace CyTask.Api.Infrastructure;
 
-public sealed class InMemoryWorkspaceStore : IWorkspaceStore
+public sealed partial class InMemoryWorkspaceStore : IWorkspaceStore
 {
     private static readonly (string Key, string Name, string Color)[] DefaultStatuses =
     [
@@ -36,7 +36,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             "The local session registry could not be saved.");
     private readonly ILogger<InMemoryWorkspaceStore> _logger;
     private readonly string? _localSessionStoragePath;
-    private readonly Lock _gate = new();
+    private readonly object _gate;
+    private readonly LocalStateClock _localState;
     private readonly Dictionary<Guid, UserAccount> _users = [];
     private readonly Dictionary<Guid, Organization> _organizations = [];
     private readonly Dictionary<Guid, (Guid UserId, Guid OrganizationId, string Role)> _memberships = [];
@@ -63,8 +64,11 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
 
     public InMemoryWorkspaceStore(
         IOptions<CyTaskOptions> options,
-        ILogger<InMemoryWorkspaceStore> logger)
+        ILogger<InMemoryWorkspaceStore> logger,
+        LocalStateClock localState)
     {
+        _localState = localState;
+        _gate = localState.Gate;
         _logger = logger;
         var configuredPath = options.Value.LocalSessionStoragePath;
         if (!options.Value.LocalMode || string.IsNullOrWhiteSpace(configuredPath))
@@ -408,6 +412,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             var token = new ApiToken(Guid.CreateVersion7(), name, scopes, now, expiresAt, null, null);
             _apiTokens[Convert.ToHexString(tokenHash)] =
                 new ApiTokenEntry(token, organizationId, userId);
+            PersistLocalSessionsUnderLock();
             AddActivity(
                 organizationId, "api_token.created", "api-token", token.Id,
                 userId, _users[userId].DisplayName,
@@ -453,6 +458,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             {
                 Token = match.Value.Token with { RevokedAt = now }
             };
+            PersistLocalSessionsUnderLock();
             AddActivity(
                 organizationId, "api_token.revoked", "api-token", tokenId,
                 userId, _users[userId].DisplayName,
@@ -473,7 +479,8 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 (entry.Token.ExpiresAt is not null && entry.Token.ExpiresAt <= now) ||
                 !_users.TryGetValue(entry.UserId, out var user) ||
                 !_memberships.TryGetValue(entry.UserId, out var membership) ||
-                membership.OrganizationId != entry.OrganizationId)
+                membership.OrganizationId != entry.OrganizationId ||
+                (_agents.TryGetValue(entry.UserId, out var agent) && agent.Status != "active"))
             {
                 return Task.FromResult<ApiTokenPrincipal?>(null);
             }
@@ -481,6 +488,10 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             if (entry.Token.LastUsedAt is null || now - entry.Token.LastUsedAt > TimeSpan.FromMinutes(1))
             {
                 _apiTokens[key] = entry with { Token = entry.Token with { LastUsedAt = now } };
+            }
+            if (_agents.TryGetValue(entry.UserId, out var activeAgent))
+            {
+                _agents[entry.UserId] = activeAgent with { LastSeenAt = now };
             }
 
             var authenticated = new AuthenticatedUser(
@@ -957,6 +968,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
             {
                 var attachment = upload.Attachment with { Status = "rejected" };
                 _attachments[attachment.Id] = attachment;
+                _localState.Changed();
                 _attachmentUploads[uploadId] = upload with { Attachment = attachment, Status = "rejected" };
             }
 
@@ -1276,7 +1288,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
 
             var updated = existing is null
                 ? new ProjectStatus(organizationId, projectId, key, name, color, defaultIndex, true)
-                : existing with { Name = name, Color = color };
+                : existing with { Name = name, Color = color, Revision = existing.Revision + 1 };
             _projectStatuses[(projectId, key)] = updated;
             AddActivity(
                 organizationId, "project.status_updated", "project", projectId,
@@ -2248,7 +2260,9 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                         item.OrganizationId, item.TaskId, item.DependsOnTaskId,
                         item.CreatedBy, item.CreatedAt))
                     .ToArray(),
-                _checklistItems.Values.OrderBy(item => item.Id).ToArray());
+                _checklistItems.Values.OrderBy(item => item.Id).ToArray(),
+                _agents.Values.OrderBy(item => item.UserId).ToArray(),
+                _agentNotifications.Values.OrderBy(item => item.Id).ToArray());
         }
     }
 
@@ -2296,6 +2310,10 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                     item.CreatedBy, item.CreatedAt);
             _checklistItems.Clear();
             foreach (var item in state.Checklist) _checklistItems[item.Id] = item;
+            _agents.Clear();
+            foreach (var item in state.Agents ?? []) _agents[item.UserId] = item;
+            _agentNotifications.Clear();
+            foreach (var item in state.AgentNotifications ?? []) _agentNotifications[item.Id] = item;
             _attachmentReviewLeases.Clear();
         }
     }
@@ -2307,10 +2325,13 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         Guid? actorId,
         string actorName,
         string summary,
-        DateTimeOffset createdAt) =>
+        DateTimeOffset createdAt)
+    {
+        _localState.Changed();
         _activities.Add(new ActivityEntry(
             Guid.CreateVersion7(), organizationId, eventType, aggregateType,
             aggregateId, actorId, actorName, summary, createdAt));
+    }
 
     private bool DependencyPathExists(Guid organizationId, Guid startTaskId, Guid targetTaskId)
     {
@@ -2357,8 +2378,11 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 throw new InvalidDataException("The local session registry exceeds the allowed size.");
             }
 
-            var persisted = JsonSerializer.Deserialize<PersistedLocalSession?[]>(
-                File.ReadAllText(_localSessionStoragePath), LocalSessionJson) ?? [];
+            var json = File.ReadAllText(_localSessionStoragePath);
+            using var document = JsonDocument.Parse(json);
+            var persisted = document.RootElement.ValueKind == JsonValueKind.Array
+                ? JsonSerializer.Deserialize<PersistedLocalSession?[]>(json, LocalSessionJson) ?? []
+                : JsonSerializer.Deserialize<PersistedLocalRegistry>(json, LocalSessionJson)?.Sessions ?? [];
             var now = DateTimeOffset.UtcNow;
             foreach (var item in persisted.Take(MaxPersistedSessions))
             {
@@ -2385,6 +2409,25 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 _sessions[item.TokenHash.ToUpperInvariant()] = new SessionEntry(
                     item.UserId, csrfHash, item.ExpiresAt);
             }
+
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                var registry = JsonSerializer.Deserialize<PersistedLocalRegistry>(json, LocalSessionJson);
+                foreach (var item in (registry?.ApiTokens ?? []).Take(MaxPersistedSessions))
+                {
+                    if (!IsSha256Hex(item.TokenHash)
+                        || item.OrganizationId == Guid.Empty
+                        || item.UserId == Guid.Empty
+                        || item.Token.RevokedAt is not null
+                        || item.Token.ExpiresAt is not null && item.Token.ExpiresAt <= now
+                        || item.Token.Scopes is not ("read" or "read write"))
+                    {
+                        continue;
+                    }
+                    _apiTokens[item.TokenHash.ToUpperInvariant()] = new ApiTokenEntry(
+                        item.Token, item.OrganizationId, item.UserId);
+                }
+            }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException
                                       or JsonException or InvalidDataException)
@@ -2407,7 +2450,7 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                 ?? throw new InvalidOperationException("The local session registry has no parent directory.");
             Directory.CreateDirectory(directory);
             var now = DateTimeOffset.UtcNow;
-            var persisted = _sessions
+            var persistedSessions = _sessions
                 .Where(pair => pair.Value.ExpiresAt > now)
                 .OrderByDescending(pair => pair.Value.ExpiresAt)
                 .Take(MaxPersistedSessions)
@@ -2417,6 +2460,15 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
                     Convert.ToHexString(pair.Value.CsrfHash),
                     pair.Value.ExpiresAt))
                 .ToArray();
+            var persistedTokens = _apiTokens
+                .Where(pair => pair.Value.Token.RevokedAt is null
+                    && (pair.Value.Token.ExpiresAt is null || pair.Value.Token.ExpiresAt > now))
+                .OrderByDescending(pair => pair.Value.Token.CreatedAt)
+                .Take(MaxPersistedSessions)
+                .Select(pair => new PersistedLocalApiToken(
+                    pair.Key, pair.Value.Token, pair.Value.OrganizationId, pair.Value.UserId))
+                .ToArray();
+            var persisted = new PersistedLocalRegistry(2, persistedSessions, persistedTokens);
             temporaryPath = _localSessionStoragePath + "." + Environment.ProcessId + ".tmp";
             File.WriteAllText(temporaryPath, JsonSerializer.Serialize(persisted, LocalSessionJson));
             File.Move(temporaryPath, _localSessionStoragePath, true);
@@ -2462,6 +2514,17 @@ public sealed class InMemoryWorkspaceStore : IWorkspaceStore
         Guid UserId,
         string CsrfHash,
         DateTimeOffset ExpiresAt);
+
+    private sealed record PersistedLocalApiToken(
+        string TokenHash,
+        ApiToken Token,
+        Guid OrganizationId,
+        Guid UserId);
+
+    private sealed record PersistedLocalRegistry(
+        int FormatVersion,
+        IReadOnlyList<PersistedLocalSession?> Sessions,
+        IReadOnlyList<PersistedLocalApiToken> ApiTokens);
 
     private sealed record SessionEntry(Guid UserId, byte[] CsrfHash, DateTimeOffset ExpiresAt);
 

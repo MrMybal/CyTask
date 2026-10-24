@@ -51,6 +51,6 @@ These commands build the Web application, publish the self-contained .NET sideca
 - `servers.json` contains only names, URLs or folder paths, never passwords or tokens;
 - local mode keeps only session and CSRF hashes in the desktop profile (`local-sessions`), outside the Syncthing folder; raw tokens remain in the protected Chromium cookie store;
 - the device identity remains outside the synchronized folder;
-- shutdown allows the periodic snapshot to make the last mutation durable before stopping the sidecar.
+- shutdown waits for an acknowledged checkpoint before stopping the sidecar; a failed save keeps the engine running and displays an error.
 
 See also [Local mode and folder synchronization](../../docs/09-mode-local-sync.md).

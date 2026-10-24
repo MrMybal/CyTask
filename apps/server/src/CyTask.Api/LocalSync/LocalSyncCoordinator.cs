@@ -15,10 +15,13 @@ public sealed partial class LocalSyncCoordinator(
     InMemoryWorkspaceStore workspace,
     InMemoryCollaborationStore collaboration,
     InMemoryPluginStore plugins,
+    InMemoryCyAnnotaStore annotations,
+    LocalStateClock localState,
+    CyTask.Api.Realtime.WorkspaceEventHub events,
     ILogger<LocalSyncCoordinator> logger) : BackgroundService, ILocalSyncService
 {
     private const int FormatVersion = 1;
-    private const long MaxSnapshotBytes = 64 * 1024 * 1024;
+    private const long MaxSnapshotBytes = 1024L * 1024 * 1024;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
     private string? _root;
@@ -29,6 +32,11 @@ public sealed partial class LocalSyncCoordinator(
     private long _sequence;
     private string? _lastPayloadHash;
     private bool _initialized;
+    private long _lastObservedVersion = -1;
+    private string? _lastInputSignature;
+    private string? _inputSignature;
+    private string? _lastPeerSignature;
+    private readonly Dictionary<string, CachedSnapshot> _snapshotCache = new(StringComparer.Ordinal);
 
     public LocalSyncStatus Status { get; private set; } = new(
         options.Value.LocalMode, options.Value.LocalMode ? "local-sync" : "server",
@@ -136,30 +144,45 @@ public sealed partial class LocalSyncCoordinator(
     private async Task SynchronizeCoreAsync(bool force, CancellationToken cancellationToken)
     {
         var envelopes = await ReadLatestSnapshotsAsync(cancellationToken);
-        var current = CapturePayload();
+        if (!force && _lastObservedVersion == localState.Version && _lastInputSignature == _inputSignature)
+            return;
         var tombstones = MergeTombstones(envelopes.SelectMany(x => x.Tombstones ?? []));
         var conflicts = new List<LocalSyncConflict>();
         LocalSyncPayload merged;
-
-        if (_lastPayloadHash is null && envelopes.Count > 0)
+        long capturedVersion;
+        var restored = false;
+        var peerSignature = string.Join('|', envelopes.Where(x => x.DeviceId != _deviceId)
+            .OrderBy(x => x.DeviceId).Select(x => $"{x.DeviceId:N}:{x.Sequence}"));
+        lock (localState.Gate)
         {
-            // Au démarrage la mémoire est vide : elle ne représente pas des suppressions locales.
-            merged = ApplyTombstones(Merge(envelopes, conflicts), tombstones);
+            var current = CapturePayload();
+            if (_lastPayloadHash is null && envelopes.Count > 0)
+            {
+                merged = ApplyTombstones(Merge(envelopes, conflicts), tombstones);
+                restored = true;
+            }
+            else
+            {
+                var previousOwn = envelopes.FirstOrDefault(x => x.DeviceId == _deviceId);
+                if (previousOwn is not null)
+                    tombstones = MergeTombstones(tombstones.Concat(DetectDeletions(previousOwn.Payload, current)));
+                if (_lastPayloadHash is not null && peerSignature == _lastPeerSignature)
+                    merged = current;
+                else
+                {
+                    var currentEnvelope = new LocalSyncEnvelope(FormatVersion, _workspaceId, _deviceId,
+                        _sequence, DateTimeOffset.UtcNow, current, tombstones);
+                    merged = Merge(envelopes.Where(x => x.DeviceId != _deviceId).Append(currentEnvelope), conflicts);
+                }
+                merged = ApplyTombstones(merged, tombstones);
+                restored = HashJson(merged) != HashJson(current);
+            }
+            if (restored) RestorePayload(merged);
+            capturedVersion = localState.Version;
         }
-        else
-        {
-            var previousOwn = envelopes.FirstOrDefault(x => x.DeviceId == _deviceId);
-            if (previousOwn is not null)
-                tombstones = MergeTombstones(tombstones.Concat(DetectDeletions(previousOwn.Payload, current)));
-            var currentEnvelope = new LocalSyncEnvelope(FormatVersion, _workspaceId, _deviceId,
-                _sequence, DateTimeOffset.UtcNow, current, tombstones);
-            merged = ApplyTombstones(Merge(envelopes.Append(currentEnvelope), conflicts), tombstones);
-        }
-
-        if (HashJson(merged) != HashJson(current)) RestorePayload(merged);
         var stateHash = HashJson(new SnapshotState(merged, tombstones));
         var lastSnapshotAt = Status.LastSnapshotAt;
-        if (force || stateHash != _lastPayloadHash)
+        if (stateHash != _lastPayloadHash)
         {
             _sequence = Math.Max(_sequence, envelopes.Where(x => x.DeviceId == _deviceId)
                 .Select(x => x.Sequence).DefaultIfEmpty(0).Max()) + 1;
@@ -169,6 +192,12 @@ public sealed partial class LocalSyncCoordinator(
             _lastPayloadHash = stateHash;
             lastSnapshotAt = envelope.CapturedAt;
         }
+        _lastObservedVersion = capturedVersion;
+        _lastInputSignature = _inputSignature;
+        _lastPeerSignature = peerSignature;
+        if (restored)
+            foreach (var organization in merged.Workspace.Organizations)
+                events.Publish(organization.Id, "workspace.synchronized", _workspaceId);
         foreach (var conflict in conflicts.GroupBy(x => x.Id).Select(x => x.First()))
             await WriteConflictAsync(conflict, cancellationToken);
 
@@ -183,13 +212,15 @@ public sealed partial class LocalSyncCoordinator(
     }
 
     private LocalSyncPayload CapturePayload() => new(
-        workspace.CaptureLocalState(), collaboration.CaptureLocalState(), plugins.CaptureLocalState());
+        workspace.CaptureLocalState(), collaboration.CaptureLocalState(), plugins.CaptureLocalState(),
+        annotations.CaptureLocalState());
 
     private void RestorePayload(LocalSyncPayload value)
     {
         workspace.RestoreLocalState(value.Workspace);
         collaboration.RestoreLocalState(value.Collaboration);
         plugins.RestoreLocalState(value.Plugins);
+        annotations.RestoreLocalState(value.Annotations ?? []);
     }
 
     private LocalSyncPayload Merge(IEnumerable<LocalSyncEnvelope> values, List<LocalSyncConflict> conflicts)
@@ -201,26 +232,29 @@ public sealed partial class LocalSyncCoordinator(
             Stable(sources, x => x.Payload.Workspace.Organizations, x => x.Id.ToString("N"), "organization", conflicts),
             Stable(sources, x => x.Payload.Workspace.Memberships, x => $"{x.OrganizationId:N}:{x.UserId:N}", "membership", conflicts),
             MergeProjects(sources, conflicts),
-            Stable(sources, x => x.Payload.Workspace.ProjectStatuses, x => $"{x.ProjectId:N}:{x.Key}", "project-status", conflicts),
+            Versioned(sources, x => x.Payload.Workspace.ProjectStatuses, x => $"{x.ProjectId:N}:{x.Key}", x => x.Revision, "project-status", conflicts),
             Stable(sources, x => x.Payload.Workspace.ProjectLabels, x => x.Id.ToString("N"), "project-label", conflicts),
-            Stable(sources, x => x.Payload.Workspace.TaskLabels, x => $"{x.TaskId:N}:{x.LabelId:N}", "task-label", conflicts),
+            Versioned(sources, x => x.Payload.Workspace.TaskLabels, x => $"{x.TaskId:N}:{x.LabelId:N}", x => x.AssignedAt.UtcDateTime.Ticks, "task-label", conflicts),
             MergeTasks(sources, conflicts),
-            Stable(sources, x => x.Payload.Workspace.TaskParents, x => x.TaskId.ToString("N"), "task-parent", conflicts),
+            Versioned(sources, x => x.Payload.Workspace.TaskParents, x => x.TaskId.ToString("N"), x => x.LinkedAt.UtcDateTime.Ticks, "task-parent", conflicts),
             Stable(sources, x => x.Payload.Workspace.Comments, x => x.Id.ToString("N"), "comment", conflicts),
             Stable(sources, x => x.Payload.Workspace.Activity, x => x.Id.ToString("N"), "activity", conflicts),
-            Stable(sources, x => x.Payload.Workspace.Attachments, x => x.Id.ToString("N"), "attachment", conflicts),
+            Versioned(sources, x => x.Payload.Workspace.Attachments, x => x.Id.ToString("N"), x => (x.ReviewedAt ?? x.CreatedAt).UtcDateTime.Ticks, "attachment", conflicts),
             Stable(sources, x => x.Payload.Workspace.ExternalReferences, x => x.Id.ToString("N"), "external-reference", conflicts),
             Stable(sources, x => x.Payload.Workspace.TaskDependencies, x => $"{x.TaskId:N}:{x.DependsOnTaskId:N}", "task-dependency", conflicts),
-            Versioned(sources, x => x.Payload.Workspace.Checklist, x => x.Id.ToString("N"), x => x.Revision, "checklist", conflicts));
+            Versioned(sources, x => x.Payload.Workspace.Checklist, x => x.Id.ToString("N"), x => x.Revision, "checklist", conflicts),
+            Versioned(sources, x => x.Payload.Workspace.Agents ?? [], x => x.UserId.ToString("N"), x => x.Revision, "agent", conflicts),
+            Versioned(sources, x => x.Payload.Workspace.AgentNotifications ?? [], x => x.Id.ToString("N"), x => x.Revision, "agent-notification", conflicts));
         var c = new CollaborationLocalState(
             Versioned(sources, x => x.Payload.Collaboration.Resources, x => x.Id.ToString("N"), x => x.Revision, "resource", conflicts),
             Stable(sources, x => x.Payload.Collaboration.Channels, x => x.Id.ToString("N"), "chat-channel", conflicts),
             Stable(sources, x => x.Payload.Collaboration.Messages, x => x.Id.ToString("N"), "chat-message", conflicts));
         var p = new PluginLocalState(
-            Stable(sources, x => x.Payload.Plugins.ProjectPlugins, x => $"{x.ProjectId:N}:{x.PluginId}", "project-plugin", conflicts),
+            Versioned(sources, x => x.Payload.Plugins.ProjectPlugins, x => $"{x.ProjectId:N}:{x.PluginId}", x => x.EnabledAt.UtcDateTime.Ticks, "project-plugin", conflicts),
             Versioned(sources, x => x.Payload.Plugins.TaskData, x => $"{x.TaskId:N}:{x.PluginId}", x => x.Revision, "task-plugin-data", conflicts),
             Stable(sources, x => x.Payload.Plugins.TaskDataHistory, x => $"{x.TaskId:N}:{x.PluginId}:{x.Revision}", "task-plugin-history", conflicts));
-        return new(w, c, p);
+        return new(w, c, p, Versioned(sources, x => x.Payload.Annotations ?? [],
+            x => x.AttachmentId.ToString("N"), x => x.Revision, "annotation", conflicts));
     }
 
     private List<LocalSyncTombstone> DetectDeletions(LocalSyncPayload previous, LocalSyncPayload current)
@@ -374,6 +408,8 @@ public sealed partial class LocalSyncCoordinator(
     private async Task<IReadOnlyList<LocalSyncEnvelope>> ReadLatestSnapshotsAsync(CancellationToken cancellationToken)
     {
         var result = new List<LocalSyncEnvelope>();
+        var signature = new StringBuilder();
+        var usedPaths = new HashSet<string>(StringComparer.Ordinal);
         foreach (var directory in Directory.EnumerateDirectories(_snapshotsPath!))
         {
             foreach (var path in Directory.EnumerateFiles(directory, "*.json").OrderByDescending(Path.GetFileName, StringComparer.Ordinal))
@@ -381,13 +417,26 @@ public sealed partial class LocalSyncCoordinator(
                 try
                 {
                     var info = new FileInfo(path);
-                    if (info.Length <= 0 || info.Length > MaxSnapshotBytes) continue;
-                    var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
+                    if (info.Length <= 0) continue;
+                    if (info.Length > MaxSnapshotBytes)
+                        throw new InvalidDataException("The latest CyTask snapshot exceeds the supported size. Opening an older state has been stopped to preserve project data.");
+                    signature.Append(path).Append(':').Append(info.Length).Append(':').Append(info.LastWriteTimeUtc.Ticks).Append('|');
+                    usedPaths.Add(path);
+                    if (_snapshotCache.TryGetValue(path, out var cached)
+                        && cached.Length == info.Length && cached.LastWrite == info.LastWriteTimeUtc)
+                    {
+                        result.Add(cached.Envelope);
+                        break;
+                    }
+                    await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                        FileShare.Read | FileShare.Delete, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
                     var expected = Path.GetFileNameWithoutExtension(path).Split('-').LastOrDefault();
-                    var actual = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+                    var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
                     if (expected != actual) continue;
-                    var item = JsonSerializer.Deserialize<LocalSyncEnvelope>(bytes, _json);
+                    stream.Position = 0;
+                    var item = await JsonSerializer.DeserializeAsync<LocalSyncEnvelope>(stream, _json, cancellationToken);
                     if (item is null || item.FormatVersion != FormatVersion || item.WorkspaceId != _workspaceId) continue;
+                    _snapshotCache[path] = new(info.Length, info.LastWriteTimeUtc, item);
                     result.Add(item);
                     break;
                 }
@@ -395,19 +444,46 @@ public sealed partial class LocalSyncCoordinator(
                 { LogIgnoredSnapshot(logger, path, exception); }
             }
         }
+        foreach (var obsolete in _snapshotCache.Keys.Where(path => !usedPaths.Contains(path)).ToArray())
+            _snapshotCache.Remove(obsolete);
+        _inputSignature = signature.ToString();
         return result;
     }
 
     private async Task WriteSnapshotAsync(LocalSyncEnvelope envelope, CancellationToken cancellationToken)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, _json);
-        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         var directory = Path.Combine(_snapshotsPath!, _deviceId.ToString("N"));
         Directory.CreateDirectory(directory);
-        await WriteBytesAsync(Path.Combine(directory, $"{envelope.Sequence:D20}-{hash}.json"), bytes, cancellationToken);
-        foreach (var obsolete in Directory.EnumerateFiles(directory, "*.json")
-                     .OrderByDescending(Path.GetFileName, StringComparer.Ordinal).Skip(50))
-            File.Delete(obsolete);
+        var temporary = Path.Combine(directory, $"{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await using (var target = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
+                             FileShare.None, 65536, FileOptions.Asynchronous))
+            {
+                await JsonSerializer.SerializeAsync(target, envelope, _json, cancellationToken);
+                if (target.Length > MaxSnapshotBytes)
+                    throw new InvalidDataException("The CyTask workspace exceeds the snapshot size limit. The previous checkpoint has been preserved.");
+                await target.FlushAsync(cancellationToken);
+            }
+            string hash;
+            await using (var source = File.OpenRead(temporary))
+                hash = Convert.ToHexString(await SHA256.HashDataAsync(source, cancellationToken)).ToLowerInvariant();
+            var path = Path.Combine(directory, $"{envelope.Sequence:D20}-{hash}.json");
+            File.Move(temporary, path);
+            var info = new FileInfo(path);
+            _snapshotCache[path] = new(info.Length, info.LastWriteTimeUtc, envelope);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        long retainedBytes = 0;
+        var index = 0;
+        foreach (var file in Directory.EnumerateFiles(directory, "*.json")
+                     .OrderByDescending(Path.GetFileName, StringComparer.Ordinal))
+        {
+            retainedBytes += new FileInfo(file).Length;
+            if (index >= 50 || index >= 2 && retainedBytes > 256L * 1024 * 1024)
+                File.Delete(file);
+            index++;
+        }
     }
 
     private async Task WriteConflictAsync(LocalSyncConflict conflict, CancellationToken cancellationToken)
@@ -459,8 +535,14 @@ public sealed partial class LocalSyncCoordinator(
         File.WriteAllText(path, existing + rules, new UTF8Encoding(false));
     }
 
-    private string HashJson<T>(T value) => Convert.ToHexString(
-        SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, _json))).ToLowerInvariant();
+    private string HashJson<T>(T value)
+    {
+        using var hash = SHA256.Create();
+        using var sink = new CryptoStream(Stream.Null, hash, CryptoStreamMode.Write);
+        JsonSerializer.Serialize(sink, value, _json);
+        sink.FlushFinalBlock();
+        return Convert.ToHexString(hash.Hash!).ToLowerInvariant();
+    }
     private static int CompareDevice(Guid left, Guid right) =>
         string.CompareOrdinal(left.ToString("N"), right.ToString("N"));
     [LoggerMessage(1001, LogLevel.Error, "Impossible d’initialiser le mode local CyTask.")]
@@ -474,4 +556,5 @@ public sealed partial class LocalSyncCoordinator(
 
     private sealed record SnapshotState(LocalSyncPayload Payload, IReadOnlyList<LocalSyncTombstone> Tombstones);
     private sealed record Owned<T>(T Value, Guid DeviceId, string Hash);
+    private sealed record CachedSnapshot(long Length, DateTime LastWrite, LocalSyncEnvelope Envelope);
 }
