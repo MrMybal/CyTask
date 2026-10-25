@@ -2,6 +2,27 @@
 
 All notable changes to CyTask are documented in this file.
 
+## [0.2.2] - 2026-10-25
+
+### Added
+
+- Solo local workspaces open directly without an interactive account screen.
+- Agent members support durable work calls, notifications and atomic task claiming.
+- A dependency-free JavaScript SDK and an MCP stdio bridge expose project and task orchestration to other applications.
+
+### Fixed
+
+- Local shutdown waits for a confirmed checkpoint, and large workspaces and annotations survive restarts.
+- Synchronization preserves updated statuses, task assignments and concurrent changes.
+- Canvas media are stored in the project library and shared between sessions.
+- PostgreSQL collaboration reads use batched queries, and background workers recover from database outages.
+- Collaboration refreshes are grouped to reduce redundant requests.
+
+### Distribution
+
+- Rebuilt Windows x64 portable client with the updated Web interface, local server and Electron runtime.
+- The executable is not Authenticode-signed; Windows SmartScreen may display a warning.
+
 ## [0.2.1] - 2026-09-13
 
 ### Changed
@@ -64,6 +85,7 @@ First public Windows client release.
 
 The Windows binaries are not yet Authenticode-signed. Verify the published SHA-256 checksums before launching them.
 
+[0.2.2]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.2
 [0.2.1]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.1
 [0.2.0]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.0
 [0.1.0]: https://github.com/MrMybal/CyTask/releases/tag/v0.1.0
