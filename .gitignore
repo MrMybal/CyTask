@@ -11,8 +11,10 @@ Thumbs.db
 *.pfx
 *.pem
 *.key
+*.cytask-key
 
 # JavaScript
+/apps/web/public/plugins/cymd/
 node_modules/
 dist/
 coverage/

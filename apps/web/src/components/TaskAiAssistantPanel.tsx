@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, type AiAssistantRunResult, type AiProviderConnection, type TaskPlugin } from "../api";
 import { useI18n } from "../i18n";
+import { MarkdownComposer } from "./Markdown";
 
 interface TaskAiAssistantPanelProps {
   taskId: string;
@@ -179,26 +180,24 @@ export function TaskAiAssistantPanel({
 
         <label className="plugin-field plugin-field-wide">
           <span>{t("Goal")}</span>
-          <textarea
+          <MarkdownComposer
             value={goal}
             disabled={!canEdit || saving || running}
             required
-            rows={5}
             maxLength={12000}
             placeholder={t("Analyze the task and suggest concrete next steps…")}
-            onChange={(event) => setGoal(event.currentTarget.value)}
+            onChange={setGoal}
           />
         </label>
 
         <label className="plugin-field plugin-field-wide">
           <span>{t("Team instructions")}</span>
-          <textarea
+          <MarkdownComposer
             value={instructions}
             disabled={!canEdit || saving || running}
-            rows={4}
             maxLength={12000}
             placeholder={t("Technical constraints, response format, project rules…")}
-            onChange={(event) => setInstructions(event.currentTarget.value)}
+            onChange={setInstructions}
           />
         </label>
 

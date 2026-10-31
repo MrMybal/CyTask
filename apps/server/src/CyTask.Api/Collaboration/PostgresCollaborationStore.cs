@@ -1,10 +1,11 @@
 using System.Text.Json;
+using CyTask.Api.Security;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace CyTask.Api.Collaboration;
 
-public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSource) : ICollaborationStore
+public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSource, DataEncryption encryption) : ICollaborationStore
 {
     private const string ResourceColumns = """
         r.id, r.organization_id, r.project_id, r.folder_label_id, r.resource_type, r.name,
@@ -13,10 +14,10 @@ public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSour
         r.created_at, r.updated_at
         """;
 
-    private static ProjectResource ReadResource(NpgsqlDataReader reader, int offset = 0) => new(
+    private ProjectResource ReadResource(NpgsqlDataReader reader, int offset = 0) => new(
         reader.GetGuid(offset), reader.GetGuid(offset + 1), reader.GetGuid(offset + 2),
         reader.IsDBNull(offset + 3) ? null : reader.GetGuid(offset + 3),
-        reader.GetString(offset + 4), reader.GetString(offset + 5), reader.GetString(offset + 6),
+        reader.GetString(offset + 4), encryption.ReadString(reader, offset + 5), encryption.ReadString(reader, offset + 6),
         reader.IsDBNull(offset + 7) ? null : reader.GetString(offset + 7),
         reader.IsDBNull(offset + 8) ? null : reader.GetString(offset + 8),
         reader.GetInt64(offset + 9), reader.IsDBNull(offset + 10) ? null : reader.GetString(offset + 10),
@@ -25,13 +26,13 @@ public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSour
         reader.GetFieldValue<DateTimeOffset>(offset + 16),
         reader.GetFieldValue<DateTimeOffset>(offset + 17));
 
-    private static ChatChannel ReadChannel(NpgsqlDataReader reader) => new(
+    private ChatChannel ReadChannel(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
-        reader.GetString(4), reader.GetString(5), reader.GetString(6),
+        reader.GetString(4), encryption.ReadString(reader, 5), reader.GetString(6),
         reader.GetFieldValue<Guid[]>(7), reader.GetGuid(8),
         reader.GetFieldValue<DateTimeOffset>(9));
 
-    private static async Task<IReadOnlyList<ProjectResource>> ReadResourcesAsync(
+    private async Task<IReadOnlyList<ProjectResource>> ReadResourcesAsync(
         NpgsqlCommand command, CancellationToken cancellationToken)
     {
         var result = new List<ProjectResource>();
@@ -83,7 +84,7 @@ public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSour
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
-    private static Task<int> InsertOutboxAsync<T>(
+    private Task<int> InsertOutboxAsync<T>(
         NpgsqlConnection connection, NpgsqlTransaction transaction,
         Guid organizationId, string eventType, Guid aggregateId, T payload,
         CancellationToken cancellationToken)
@@ -97,7 +98,7 @@ public sealed partial class PostgresCollaborationStore(NpgsqlDataSource dataSour
         command.Parameters.AddWithValue("organization", organizationId);
         command.Parameters.AddWithValue("type", eventType);
         command.Parameters.AddWithValue("aggregate", aggregateId);
-        command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload));
+        command.Parameters.AddWithValue("payload", encryption.Encode(JsonSerializer.Serialize(payload), true));
         command.Parameters.AddWithValue("created_at", DateTimeOffset.UtcNow);
         return command.ExecuteNonQueryAsync(cancellationToken);
     }

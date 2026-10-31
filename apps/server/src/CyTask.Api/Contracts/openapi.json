@@ -22,6 +22,41 @@
     { "name": "plugins", "description": "Extensions déclaratives activées projet par projet" }
   ],
   "paths": {
+    "/api/v1/account/mfa": {
+      "get": {
+        "tags": ["authentification"], "summary": "Lire la configuration MFA du compte courant",
+        "security": [{ "cookieAuth": [] }],
+        "responses": { "200": { "description": "Politique serveur, méthodes autorisées/configurées et nombre de codes de secours restants", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      },
+      "post": {
+        "tags": ["authentification"], "summary": "Commencer une modification MFA après confirmation du mot de passe",
+        "security": [{ "cookieAuth": [] }], "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["password", "action"], "properties": { "password": { "type": "string", "writeOnly": true, "maxLength": 200 }, "action": { "type": "string", "enum": ["enable-totp", "enable-email", "disable-totp", "disable-email", "recovery"] } } } } } },
+        "responses": { "200": { "description": "Vérification d’un facteur existant ou enrôlement", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MfaChallenge" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" }, "409": { "$ref": "#/components/responses/Conflict" }, "429": { "description": "Limite de tentatives atteinte" } }
+      }
+    },
+    "/api/v1/auth/mfa/pending": {
+      "get": {
+        "tags": ["authentification"], "summary": "Reprendre le défi lié au cookie MFA du navigateur", "security": [],
+        "responses": { "200": { "description": "Défi en attente ou null ; réponse no-store", "content": { "application/json": { "schema": { "type": "object", "properties": { "challenge": { "oneOf": [{ "$ref": "#/components/schemas/MfaChallenge" }, { "type": "null" }] } } } } } } }
+      }
+    },
+    "/api/v1/auth/mfa/advance": {
+      "post": {
+        "tags": ["authentification"], "summary": "Choisir, envoyer ou vérifier un second facteur",
+        "description": "Le token doit correspondre au cookie HttpOnly/Strict MFA. method choisit totp/email pendant l’enrôlement ; email envoie un code ; verify valide totp/email/recovery. Un défi n’autorise pas l’accès à l’espace.",
+        "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["token", "operation"], "properties": { "token": { "type": "string", "minLength": 76, "maxLength": 76 }, "operation": { "type": "string", "enum": ["method", "email", "verify"] }, "method": { "type": "string", "enum": ["totp", "email", "recovery"] }, "code": { "type": "string", "maxLength": 80, "writeOnly": true } } } } } },
+        "responses": { "200": { "description": "Défi suivant ou nouvelle session avec codes de secours affichés une seule fois", "content": { "application/json": { "schema": { "oneOf": [{ "type": "object", "required": ["kind", "challenge"], "properties": { "kind": { "const": "challenge" }, "challenge": { "$ref": "#/components/schemas/MfaChallenge" } } }, { "type": "object", "required": ["kind", "session", "recoveryCodes"], "properties": { "kind": { "const": "complete" }, "session": { "$ref": "#/components/schemas/Session" }, "recoveryCodes": { "type": "array", "items": { "type": "string" }, "maxItems": 10 } } }] } } } }, "400": { "description": "Code invalide, expiré ou déjà utilisé, ou défi non lié au navigateur" }, "409": { "$ref": "#/components/responses/Conflict" }, "429": { "description": "Limite de tentatives ou d’envoi atteinte" }, "503": { "description": "Envoi SMTP ou facteur indisponible" } }
+      }
+    },
+    "/api/v1/auth/mfa/cancel": {
+      "post": {
+        "tags": ["authentification"], "summary": "Annuler un défi MFA lié au navigateur", "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["token"], "properties": { "token": { "type": "string", "minLength": 76, "maxLength": 76 } } } } } },
+        "responses": { "204": { "description": "Défi annulé" }, "400": { "description": "Défi invalide ou non lié au navigateur" } }
+      }
+    },
     "/api/v1/migrations/capabilities": {
       "get": {
         "tags": ["migration"],
@@ -162,7 +197,7 @@
       "post": {
         "tags": ["authentification"],
         "summary": "Créer le premier compte et l'organisation",
-        "description": "Refusé (409) dès qu'un compte existe. Pose les cookies de session.",
+        "description": "Refusé (409) dès qu'un compte existe. Une politique MFA obligatoire retourne un défi d’enrôlement avant d’ouvrir une session.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -182,7 +217,7 @@
           }
         },
         "responses": {
-          "200": { "description": "Compte créé, session ouverte", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "200": { "description": "Compte créé : session ou défi MFA", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthenticationResult" } } } },
           "409": { "$ref": "#/components/responses/Conflict" },
           "422": { "$ref": "#/components/responses/Validation" }
         }
@@ -209,7 +244,7 @@
           }
         },
         "responses": {
-          "200": { "description": "Session ouverte, cookies posés", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "200": { "description": "Session ouverte ou défi MFA temporaire ; le défi ne donne aucun accès au projet", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthenticationResult" } } } },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "429": { "description": "Trop de tentatives" }
         }
@@ -384,6 +419,16 @@
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/v1/storage/security": {
+      "get": {
+        "tags": ["authentification"],
+        "summary": "Read storage encryption status",
+        "responses": {
+          "200": { "description": "Content encryption status", "content": { "application/json": { "schema": { "type": "object", "required": ["encryptionAtRest", "algorithm", "endToEnd"], "properties": { "encryptionAtRest": { "type": "boolean" }, "algorithm": { "type": ["string", "null"] }, "endToEnd": { "type": "boolean", "const": false } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
         }
       }
     },
@@ -1596,6 +1641,7 @@
       },
       "Session": {
         "type": "object",
+        "required": ["userId", "organizationId", "email", "displayName", "role", "csrfToken"],
         "properties": {
           "userId": { "type": "string", "format": "uuid" },
           "organizationId": { "type": "string", "format": "uuid" },
@@ -1603,6 +1649,23 @@
           "displayName": { "type": "string" },
           "role": { "type": "string", "enum": ["owner", "admin", "member", "viewer"] },
           "csrfToken": { "type": "string", "description": "Vide hors création de session" }
+        }
+      },
+      "AuthenticationResult": {
+        "oneOf": [{ "$ref": "#/components/schemas/Session" }, { "type": "object", "required": ["mfaRequired", "challenge"], "properties": { "mfaRequired": { "const": true }, "challenge": { "$ref": "#/components/schemas/MfaChallenge" } } }]
+      },
+      "MfaChallenge": {
+        "type": "object", "required": ["token", "stage", "action", "methods", "expiresAt"],
+        "properties": {
+          "token": { "type": "string", "minLength": 76, "maxLength": 76, "description": "Token temporaire lié au cookie MFA, à conserver en mémoire de page et jamais dans l’URL" },
+          "stage": { "type": "string", "enum": ["verify", "choose", "totp", "email"] },
+          "action": { "type": "string" },
+          "methods": { "type": "array", "items": { "type": "string", "enum": ["totp", "email", "recovery"] } },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "secret": { "type": ["string", "null"], "readOnly": true, "description": "Clé Base32 affichée uniquement pendant l’enrôlement TOTP" },
+          "provisioningUri": { "type": ["string", "null"], "readOnly": true, "description": "URI otpauth pour le QR code généré localement" },
+          "destination": { "type": ["string", "null"], "description": "Adresse e-mail masquée" },
+          "resendAt": { "type": ["string", "null"], "format": "date-time" }
         }
       },
       "ApiToken": {

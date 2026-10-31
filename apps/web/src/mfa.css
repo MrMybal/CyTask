@@ -1,0 +1,12 @@
+.mfa-flow { display:grid;gap:12px;min-width:0;text-align:left;color:var(--text); }
+.mfa-flow h3 { margin:0;font-size:18px; }.mfa-flow p,.account-security p { margin:0;color:var(--muted);font-size:12px;line-height:1.6; }
+.mfa-methods,.mfa-actions { display:flex;flex-wrap:wrap;gap:7px; }.mfa-flow button:not(.primary-button):not(.text-button),.account-security .mfa-actions button:not(.primary-button) { border:1px solid var(--line-strong);background:var(--surface);color:var(--text);border-radius:5px;padding:7px 10px;cursor:pointer;font-size:12px; }
+.mfa-methods button[aria-pressed=true] { border-color:var(--accent);background:var(--surface-hover); }.mfa-flow button:disabled,.account-security button:disabled { opacity:.55;cursor:not-allowed; }
+.mfa-qr { display:block;max-width:100%;height:auto;justify-self:center;background:#fff;border:8px solid #fff;border-radius:5px; }
+.mfa-secret { display:block;overflow-wrap:anywhere;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:5px;user-select:all; }
+.mfa-code-form,.mfa-manage-form { display:grid;gap:12px; }.mfa-code-form label,.mfa-manage-form label { display:grid;gap:5px;color:var(--text);font-size:12px; }
+.mfa-flow input:not([type=checkbox]),.mfa-manage-form input { width:100%;background:var(--surface);border:1px solid var(--line-strong);border-radius:5px;padding:10px;color:var(--text);font-size:14px; }.mfa-code-form input { font-variant-numeric:tabular-nums;letter-spacing:.12em; }
+.mfa-email { display:grid;gap:8px; }.mfa-recovery-codes { display:grid;grid-template-columns:1fr;gap:5px;max-height:270px;overflow:auto;background:var(--surface);border:1px solid var(--line-strong);border-radius:5px;padding:10px; }.mfa-recovery-codes code { font-size:11px;overflow-wrap:anywhere;user-select:all; }
+.mfa-flow .mfa-saved { display:flex;align-items:center;gap:8px;font-size:12px; }.mfa-saved input { flex:0 0 auto; }
+.account-security { display:block!important; }.account-security > summary { font-weight:600;font-size:13px;cursor:pointer; }.account-security[open] > summary { margin-bottom:14px; }.account-security > p { margin-bottom:12px; }.account-security .mfa-flow { margin-top:12px; }
+.mfa-status { margin:10px 0;display:grid;gap:6px;font-size:12px; }.mfa-status div { display:flex;justify-content:space-between;gap:15px; }.mfa-status dd { margin:0;color:var(--muted); }.mfa-manage-form { margin-top:14px; }.auth-card:has(.mfa-flow) { max-height:94dvh;overflow:auto; }

@@ -46,7 +46,7 @@ export function PluginManagerPane({
         onNotice(t("{name} disabled for this project.", { name: plugin.manifest.name }));
       } else {
         await api.enableProjectPlugin(projectId, plugin.manifest.id);
-        onNotice(t("{name} enabled: its tabs are now available in tasks.", { name: plugin.manifest.name }));
+        onNotice(t("{name} enabled for this project.", { name: plugin.manifest.name }));
       }
       await load();
       onChanged();
@@ -84,6 +84,7 @@ export function PluginManagerPane({
                 {plugin.manifest.contributes.taskTabs.map((tab) => (
                   <span key={tab.id}>{tab.title} · {t(tab.fields.length === 1 ? "{count} field" : "{count} fields", { count: tab.fields.length })}</span>
                 ))}
+                {(plugin.manifest.contributes.contentActions??[]).map(action=><span key={action.id}>{t(action.title)} · {action.surfaces.map(surface=>t(surface)).join(", ")}</span>)}
               </div>
               <small>{plugin.manifest.id} · API {plugin.manifest.apiVersion}</small>
             </div>

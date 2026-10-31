@@ -137,6 +137,8 @@ function normalizeStoredProfile(value) {
       return {
         id: String(value.id), type: "local",
         name: safeName(value.name, path.basename(folderPath)), folderPath, syncMode: "folder",
+        encrypted: value.encrypted === true,
+        encryptionKeyFile: typeof value.encryptionKeyFile === "string" ? value.encryptionKeyFile : "",
         createdAt: typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
         lastUsedAt: typeof value.lastUsedAt === "string" ? value.lastUsedAt : null
       };
@@ -269,6 +271,7 @@ async function startLocalServer(profile) {
   }
   const folderPath = normalizeLocalPath(profile.folderPath);
   await fs.mkdir(folderPath, { recursive: true });
+  const dataEncryptionKey = await readLocalEncryptionKey(profile, folderPath);
   const port = await findAvailablePort();
   const url = `http://127.0.0.1:${port}`;
   const deviceId = await getOrCreateDeviceId();
@@ -283,6 +286,8 @@ async function startLocalServer(profile) {
       ASPNETCORE_URLS: url,
       CyTask__UseInMemoryStore: "true",
       CyTask__LocalMode: "true",
+      CyTask__DataEncryptionEnabled: profile.encrypted ? "true" : "false",
+      CyTask__DataEncryptionKey: dataEncryptionKey,
       CyTask__LocalWorkspacePath: folderPath,
       CyTask__LocalDeviceId: deviceId,
       CyTask__LocalAccessKey: localAccessKey,
@@ -318,6 +323,33 @@ async function startLocalServer(profile) {
   const detail = localServerError.split(/\r?\n/).filter(Boolean).at(-1);
   throw new Error(detail ? nativeText(`The local engine did not start: ${detail}`, `Le moteur local n’a pas démarré : ${detail}`) : nativeText("The CyTask local engine did not start.", "Le moteur local CyTask n’a pas démarré."));
 }
+async function externalKeyPath(folderPath, keyFile, exists = true) {
+  const folder = await fs.realpath(normalizeLocalPath(folderPath));
+  const resolved = exists ? await fs.realpath(keyFile) : path.join(await fs.realpath(path.dirname(keyFile)), path.basename(keyFile));
+  const relative = path.relative(folder, resolved);
+  if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative)))
+    throw new Error(nativeText("Keep the encryption key outside the project and its synchronized folder.", "Gardez la clé hors du projet et de son dossier synchronisé."));
+  return resolved;
+}
+
+async function readLocalEncryptionKey(profile, folderPath) {
+  const encryptedFolder = fsSync.existsSync(path.join(folderPath, ".cytask", "encryption.state"));
+  if (!profile.encrypted) {
+    if (encryptedFolder) throw new Error(nativeText("This workspace is encrypted. Enable encryption and select its original key file.", "Cet espace est chiffré. Activez le chiffrement et choisissez son fichier de clé d’origine."));
+    return "";
+  }
+  if (!profile.encryptionKeyFile) throw new Error(nativeText("Choose the encryption key file first. Keep a separate backup: a lost key cannot be recovered.", "Choisissez le fichier de clé. Sauvegardez-le séparément : une clé perdue ne peut pas être récupérée."));
+  const keyFile = await externalKeyPath(folderPath, profile.encryptionKeyFile);
+  const info = await fs.stat(keyFile);
+  if (!info.isFile() || info.size > 4096) throw new Error(nativeText("Invalid encryption key file.", "Fichier de clé invalide."));
+  let value;
+  try { value = JSON.parse(await fs.readFile(keyFile, "utf8")); }
+  catch { throw new Error(nativeText("Invalid encryption key file.", "Fichier de clé invalide.")); }
+  if (!value || value.format !== "cytask-key-v1" || typeof value.key !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(value.key)
+    || Buffer.from(value.key, "base64").length !== 32) throw new Error(nativeText("Invalid encryption key file.", "Fichier de clé invalide."));
+  return value.key;
+}
+
 function assertSelectorSender(event) {
   if (!selectorWindow || event.sender.id !== selectorWindow.webContents.id) {
     throw new Error(nativeText("Desktop request denied.", "Requête desktop refusée."));
@@ -368,12 +400,31 @@ function requestOrigin(details, fallback = "") {
 }
 
 function configureTrustedSession(targetSession, trustedOrigin) {
+  const mediaGrants = new Set();
   targetSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     const origin = requestOrigin(details, requestingOrigin || webContents?.getURL());
+    if (permission === "media") return origin === trustedOrigin && mediaGrants.has(details.mediaType);
     return origin === trustedOrigin && ALLOWED_PERMISSIONS.has(permission);
   });
   targetSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = requestOrigin(details, webContents.getURL());
+    if (permission === "media") {
+      if (origin !== trustedOrigin || !Array.isArray(details.mediaTypes) || !details.mediaTypes.length) { callback(false); return; }
+      const requested = details.mediaTypes.filter(type => type === "audio" || type === "video");
+      if (requested.length !== details.mediaTypes.length) { callback(false); return; }
+      if (requested.every(type => mediaGrants.has(type))) { callback(true); return; }
+      const device = requested.length === 2 ? nativeText("microphone and camera", "microphone et caméra")
+        : requested.includes("video") ? nativeText("camera", "caméra") : nativeText("microphone", "microphone");
+      void dialog.showMessageBox(workspaceWindow, { type: "question", title: "CyTask",
+        message: nativeText(`Allow access to your ${device}?`, `Autoriser l’accès à votre ${device} ?`),
+        detail: trustedOrigin, buttons: [nativeText("Allow", "Autoriser"), nativeText("Deny", "Refuser")],
+        defaultId: 1, cancelId: 1, noLink: true
+      }).then(result => {
+        const allowed = result.response === 0 && !webContents.isDestroyed() && requestOrigin({}, webContents.getURL()) === trustedOrigin;
+        if (allowed) requested.forEach(type => mediaGrants.add(type)); callback(allowed);
+      }).catch(() => callback(false));
+      return;
+    }
     callback(origin === trustedOrigin && ALLOWED_PERMISSIONS.has(permission));
   });
   targetSession.setDisplayMediaRequestHandler(async (request, callback) => {
@@ -383,17 +434,30 @@ function configureTrustedSession(targetSession, trustedOrigin) {
     }
 
     try {
-      const sourceId = workspaceWindow?.getMediaSourceId();
       const sources = await desktopCapturer.getSources({
-        types: ["window"],
+        types: ["screen", "window"],
         thumbnailSize: { width: 0, height: 0 }
       });
-      const source = sources.find((candidate) => candidate.id === sourceId);
-      if (!source) {
-        callback({});
-        return;
+      let page = 0;
+      while (sources.length && workspaceWindow && !workspaceWindow.isDestroyed()) {
+        const visible = sources.slice(page * 8, page * 8 + 8);
+        const buttons = visible.map(source => source.name.replace(/&/g, "&&").slice(0, 120));
+        const previous = page > 0 ? buttons.push(nativeText("Previous", "Précédent")) - 1 : -1;
+        const next = (page + 1) * 8 < sources.length ? buttons.push(nativeText("Next", "Suivant")) - 1 : -1;
+        const cancel = buttons.push(nativeText("Cancel", "Annuler")) - 1;
+        const selected = await dialog.showMessageBox(workspaceWindow, { type: "question", title: "CyTask",
+          message: nativeText("Choose a screen or window to share", "Choisir un écran ou une fenêtre à partager"),
+          detail: `${trustedOrigin} · ${page + 1}/${Math.ceil(sources.length / 8)}`, buttons,
+          defaultId: cancel, cancelId: cancel, noLink: true });
+        if (selected.response === previous) { page--; continue; }
+        if (selected.response === next) { page++; continue; }
+        if (selected.response >= 0 && selected.response < visible.length && requestOrigin(request, request.frame?.url) === trustedOrigin
+          && requestOrigin({}, request.frame?.url) === trustedOrigin) {
+          callback({ video: visible[selected.response] }); return;
+        }
+        break;
       }
-      callback({ video: source });
+      callback({});
     } catch {
       callback({});
     }
@@ -627,6 +691,27 @@ function registerIpc() {
     const folderPath = normalizeLocalPath(result.filePaths[0]);
     return { canceled: false, folderPath, suggestedName: path.basename(folderPath) };
   });
+  ipcMain.handle("cytask:choose-encryption-key", async (event, payload) => {
+    assertSelectorSender(event);
+    if (!payload || typeof payload !== "object") throw new Error(nativeText("Invalid key request.", "Demande de clé invalide."));
+    const folderPath = normalizeLocalPath(payload.folderPath);
+    const filters = [{ name: "CyTask key", extensions: ["cytask-key"] }];
+    if (payload.create === true) {
+      const result = await dialog.showSaveDialog(selectorWindow, {
+        title: nativeText("Save and back up this key outside the synchronized folder", "Sauvegarder cette clé hors du dossier synchronisé"),
+        defaultPath: path.join(app.getPath("documents"), "CyTask.cytask-key"), filters
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      const keyFile = await externalKeyPath(folderPath, result.filePath, false);
+      await fs.writeFile(keyFile, JSON.stringify({ format: "cytask-key-v1", key: randomBytes(32).toString("base64") }) + "\n", { flag: "wx", mode: 0o600 });
+      return { canceled: false, keyFile };
+    }
+    const result = await dialog.showOpenDialog(selectorWindow, { title: nativeText("Choose the original encryption key", "Choisir la clé de chiffrement d’origine"), filters, properties: ["openFile"] });
+    if (result.canceled || result.filePaths.length !== 1) return { canceled: true };
+    const keyFile = await externalKeyPath(folderPath, result.filePaths[0]);
+    await readLocalEncryptionKey({ encrypted: true, encryptionKeyFile: keyFile }, folderPath);
+    return { canceled: false, keyFile };
+  });
   ipcMain.handle("cytask:open-local", async (event, payload) => {
     assertSelectorSender(event);
     if (!payload || typeof payload !== "object") throw new Error(nativeText("Invalid local configuration.", "Configuration locale invalide."));
@@ -640,6 +725,8 @@ function registerIpc() {
       id: existing?.id ?? randomUUID(), type: "local",
       name: safeName(payload.name, existing?.name ?? path.basename(folderPath)),
       folderPath, syncMode: "folder",
+      encrypted: payload.encrypted === undefined ? existing?.encrypted === true : payload.encrypted === true,
+      encryptionKeyFile: typeof payload.encryptionKeyFile === "string" ? payload.encryptionKeyFile : existing?.encryptionKeyFile ?? "",
       createdAt: existing?.createdAt ?? now, lastUsedAt: now
     };
     const runtime = await startLocalServer(profile);

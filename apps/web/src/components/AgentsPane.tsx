@@ -6,6 +6,7 @@ import {
   type TaskOption
 } from "../api";
 import { useI18n } from "../i18n";
+import { MarkdownComposer } from "./Markdown";
 
 interface AgentsPaneProps {
   canAdminister: boolean;
@@ -177,7 +178,7 @@ export function AgentsPane({
                 ))}
               </select>
               <input name="title" maxLength={160} required placeholder={t("Work request title")} />
-              <textarea name="body" maxLength={10000} placeholder={t("Instructions for the agent")} />
+              <MarkdownComposer name="body" maxLength={10000} placeholder={t("Instructions for the agent")} />
               <select name="taskId" defaultValue="">
                 <option value="">{t("No linked task")}</option>
                 {tasks.map((task) => <option value={task.id} key={task.id}>{task.key} · {task.title}</option>)}
@@ -195,7 +196,7 @@ export function AgentsPane({
                 <input name="displayName" maxLength={80} required placeholder={t("Display name")} />
                 <input name="key" pattern="[a-z][a-z0-9-]{1,39}" maxLength={40} required placeholder="build-agent" />
               </div>
-              <textarea name="description" maxLength={2000} placeholder={t("Agent responsibility")} />
+              <MarkdownComposer name="description" maxLength={2000} placeholder={t("Agent responsibility")} />
               <input name="capabilities" placeholder={t("Capabilities separated by commas")} />
               <button className="primary-button small" type="submit" disabled={busy}>{t("Create agent")}</button>
             </form>

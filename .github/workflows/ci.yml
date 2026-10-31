@@ -40,6 +40,7 @@ jobs:
           cache-dependency-path: |
             apps/web/package-lock.json
             plugins/cyannota/web/package-lock.json
+            plugins/cymd/web/package-lock.json
             apps/client/package-lock.json
             apps/server/tests/postgres-smoke/package-lock.json
 
@@ -53,6 +54,20 @@ jobs:
         env:
           CYTASK_TEST_CONFIGURATION: Release
         run: npm test
+
+      - name: Check encrypted PostgreSQL content
+        working-directory: apps/server/tests/postgres-smoke
+        env:
+          CYTASK_TEST_CONFIGURATION: Release
+          CYTASK_TEST_ENCRYPTION: "1"
+        run: node run.mjs
+
+      - name: Check offline storage conversion
+        working-directory: apps/server/tests/postgres-smoke
+        run: node encryption-migration.mjs
+
+      - name: Check desktop encryption key handling
+        run: node --test apps/client/tests/encryption.test.cjs
 
       - name: Check MCP server
         run: node --test integrations/mcp/test/*.test.mjs
@@ -68,6 +83,30 @@ jobs:
       - name: Audit production Web dependencies
         working-directory: apps/web
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Install call test browser
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Test live calls with synthetic devices
+        working-directory: apps/web
+        run: npm run test:calls
+
+      - name: Test theme readability
+        working-directory: apps/web
+        run: npm run test:appearance
+
+      - name: Test two-factor sign-in
+        working-directory: apps/web
+        run: npm run test:mfa
+
+      - name: Test encrypted workspace selector
+        working-directory: apps/web
+        run: node tests/encryption-selector.mjs
+
+      - name: Audit Markdown editor dependencies
+        working-directory: plugins/cymd/web
+        run: npm audit --audit-level=high
 
       - name: Install CyAnnota plugin dependencies
         working-directory: plugins/cyannota/web

@@ -3,6 +3,7 @@ import { api, type PluginFieldDefinition, type PluginTaskTabDefinition, type Tas
 import { TaskAiAssistantPanel } from "./TaskAiAssistantPanel";
 import { TaskCyAnnotaPanel } from "./TaskCyAnnotaPanel";
 import { useI18n } from "../i18n";
+import { MarkdownComposer } from "./Markdown";
 
 interface TaskPluginPanelProps {
   taskId: string;
@@ -113,7 +114,7 @@ function GenericTaskPluginPanel({
   );
 }
 
-function PluginField({
+export function PluginField({
   field,
   value,
   disabled,
@@ -168,12 +169,15 @@ function PluginField({
   return (
     <label className={multiline ? "plugin-field plugin-field-wide" : "plugin-field"}>
       <span>{field.label}</span>
-      {multiline ? (
+      {field.type === "textarea" ? (
+        <MarkdownComposer value={text} required={field.required} disabled={disabled} maxLength={field.maxLength??undefined}
+          placeholder={field.placeholder??field.label} onChange={onChange}/>
+      ) : multiline ? (
         <textarea
           value={text}
           required={field.required}
           disabled={disabled}
-          rows={field.type === "textarea" ? 6 : 4}
+          rows={4}
           maxLength={field.type === "string-list" ? undefined : field.maxLength ?? undefined}
           placeholder={field.placeholder ?? undefined}
           onChange={(event) => onChange(event.currentTarget.value)}
@@ -194,7 +198,7 @@ function PluginField({
   );
 }
 
-function normalizeValue(field: PluginFieldDefinition, value: unknown): unknown {
+export function normalizeValue(field: PluginFieldDefinition, value: unknown): unknown {
   if (field.type === "string-list") {
     const source = Array.isArray(value) ? value.join("\n") : String(value ?? "");
     return source.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);

@@ -1,4 +1,5 @@
 using Npgsql;
+using CyTask.Api.Security;
 
 namespace CyTask.Api.Collaboration;
 
@@ -47,7 +48,7 @@ public sealed partial class PostgresCollaborationStore
             messageCommand.Parameters.AddWithValue("organization", organizationId);
             messageCommand.Parameters.AddWithValue("channel", channelId);
             messageCommand.Parameters.AddWithValue("author", authorId);
-            messageCommand.Parameters.AddWithValue("body", body);
+            messageCommand.Parameters.AddWithValue("body", encryption.Encode(body, false));
             messageCommand.Parameters.AddWithValue("now", now);
             await messageCommand.ExecuteNonQueryAsync(cancellationToken);
         }

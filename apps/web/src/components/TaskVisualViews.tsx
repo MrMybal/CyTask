@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent
 } from "react";
@@ -583,9 +584,8 @@ export function CompactTaskTable({
                     disabled={!canEdit || pending}
                     aria-label={t("Edit status for {key}", { key: task.key })}
                     style={{
-                      color: statusColors[task.status] ?? "#94A3B8",
-                      borderColor: statusColors[task.status] ?? "#94A3B8"
-                    }}
+                      "--status-color": statusColors[task.status] ?? "#94A3B8"
+                    } as CSSProperties}
                     onChange={(event) => onChangeStatus(task, event.currentTarget.value)}
                   >
                     {statusOrder.map((status) => (

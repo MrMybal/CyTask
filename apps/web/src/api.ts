@@ -6,6 +6,10 @@ export interface Session {
   role: string;
   csrfToken: string;
 }
+export interface MfaChallenge { token:string;stage:"verify"|"choose"|"totp"|"email";action:string;methods:string[];expiresAt:string;secret?:string;provisioningUri?:string;destination?:string;resendAt?:string }
+export interface MfaStatus { available:boolean;policy:string;authenticatorAllowed:boolean;emailAllowed:boolean;authenticatorConfigured:boolean;emailConfigured:boolean;recoveryCodesRemaining:number }
+export type AuthenticationResult=Session|{mfaRequired:true;challenge:MfaChallenge};
+export type MfaResult={kind:"challenge";challenge:MfaChallenge}|{kind:"complete";session:Session;recoveryCodes:string[]};
 
 export interface LocalSyncStatus {
   enabled: boolean;
@@ -36,6 +40,21 @@ export interface ProjectStatus {
   position: number;
   isSystem: boolean;
 }
+
+export type ProjectRoomKind = "tasks" | "chat" | "voice" | "video" | "document" | "canvas" | "files" | "news" | "graph";
+export interface ProjectRoom {
+  id: string; name: string; kind: ProjectRoomKind; categoryId: string | null;
+  targetId: string | null; folderLabelId: string | null; topic: string; position: number;
+}
+export interface RoomCategory { id: string; name: string; position: number }
+export interface ProjectSpaceMember { userId: string; role: "admin" | "member" | "viewer" }
+export interface ProjectSpace {
+  organizationId: string; projectId: string; ownerId: string; visibility: "organization" | "private";
+  members: ProjectSpaceMember[]; rooms: ProjectRoom[]; categories: RoomCategory[];
+  revision: number; updatedAt: string;
+}
+export interface ProjectSpaceView { space: ProjectSpace; accessRole: string }
+export interface RoomActivity { channelId: string; latestMessageAt: string | null; messageCount: number }
 
 export interface TaskAssignee {
   userId: string;
@@ -184,8 +203,38 @@ export interface PluginManifest {
   apiVersion: string;
   runtime: "sandbox" | "service-connector" | "ui-extension";
   permissions: string[];
-  contributes: { taskTabs: PluginTaskTabDefinition[] };
+  contributes: { taskTabs: PluginTaskTabDefinition[]; contentActions?: PluginContentAction[] | null };
   homepage: string | null;
+}
+
+export interface PluginContentAction {
+  id: string;
+  title: string;
+  renderer: "fields" | "cyannota" | "cymd";
+  surfaces: ("editor" | "message" | "text" | "media")[];
+  fields: PluginFieldDefinition[];
+}
+
+export interface CallConfiguration {
+  iceServers: {urls:string[];username?:string|null;credential?:string|null}[];
+  iceTransportPolicy: "all"|"relay";
+  relayConfigured: boolean;
+  credentialsExpireAt: string|null;
+  maxParticipants: number;
+}
+export interface ContentPluginView {
+  action: PluginContentAction;
+  data: Record<string, unknown> | null;
+  revision: number;
+  updatedAt: string | null;
+  mediaKind: "image" | "video" | null;
+  applicationUrl: string | null;
+  maximumDocumentBytes: number;
+}
+export interface PluginContentTarget {
+  kind: "resource" | "message" | "task";
+  id: string;
+  resource?: ProjectResource;
 }
 
 export interface ProjectPlugin {
@@ -625,16 +674,22 @@ export const api = {
     displayName: string;
     password: string;
     organizationName: string;
-  }) => request<Session>("/api/v1/bootstrap", { method: "POST", body: JSON.stringify(body) }),
+  }) => request<AuthenticationResult>("/api/v1/bootstrap", { method: "POST", body: JSON.stringify(body) }),
   login: (body: { email: string; password: string }) =>
-    request<Session>("/api/v1/sessions", { method: "POST", body: JSON.stringify(body) }),
+    request<AuthenticationResult>("/api/v1/sessions", { method: "POST", body: JSON.stringify(body) }),
+  mfaPending:()=>request<{challenge:MfaChallenge|null}>("/api/v1/auth/mfa/pending"),
+  mfaStatus:()=>request<MfaStatus>("/api/v1/account/mfa"),
+  storageSecurity:()=>request<{encryptionAtRest:boolean;algorithm:string|null;endToEnd:boolean}>("/api/v1/storage/security"),
+  mfaManage:(body:{password:string;action:string})=>request<MfaChallenge>("/api/v1/account/mfa",{method:"POST",body:JSON.stringify(body)}),
+  mfaAdvance:(body:{token:string;operation:string;method?:string;code?:string})=>request<MfaResult>("/api/v1/auth/mfa/advance",{method:"POST",body:JSON.stringify(body)}),
+  mfaCancel:(token:string)=>request<void>("/api/v1/auth/mfa/cancel",{method:"POST",body:JSON.stringify({token})}),
   invitationPreview: (token: string) =>
     request<InvitationPreview>("/api/v1/invitations/preview", {
       method: "POST",
       body: JSON.stringify({ token })
     }),
   acceptInvitation: (body: { token: string; displayName: string; password: string }) =>
-    request<Session>("/api/v1/invitations/accept", {
+    request<AuthenticationResult>("/api/v1/invitations/accept", {
       method: "POST",
       body: JSON.stringify(body)
     }),
@@ -702,6 +757,15 @@ export const api = {
     `/api/v1/migrations/${previewId}/import`,
     { method: "POST", body: JSON.stringify(body) }
   ),
+  projectSpace: (projectId: string) => request<ProjectSpaceView>(`/api/v1/projects/${projectId}/space`),
+  saveProjectSpace: (space: ProjectSpace) => request<ProjectSpace>(`/api/v1/projects/${space.projectId}/space`, {
+    method: "PUT", body: JSON.stringify({ ...space, expectedRevision: space.revision })
+  }),
+  createProjectRoom: (projectId: string, body: {name: string; kind: ProjectRoomKind; topic: string;
+    categoryId: string | null; folderLabelId: string | null; expectedRevision: number}) =>
+    request<ProjectSpace>(`/api/v1/projects/${projectId}/rooms`, { method: "POST", body: JSON.stringify(body) }),
+  roomActivity: (projectId: string) => request<RoomActivity[]>(`/api/v1/projects/${projectId}/rooms/activity`),
+  callConfiguration: (channelId:string) => request<CallConfiguration>(`/api/v1/chat/channels/${channelId}/call`),
   projects: () => request<Project[]>("/api/v1/projects"),
   createProject: (body: { name: string; key: string }) =>
     request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),
@@ -714,6 +778,12 @@ export const api = {
   updateProjectStatus: (projectId: string, statusKey: string, body: { name: string; color: string }) =>
     request<ProjectStatus>(`/api/v1/projects/${projectId}/statuses/${statusKey}`, {
       method: "PATCH", body: JSON.stringify(body)
+    }),
+  contentPlugin: (projectId: string, target: PluginContentTarget, pluginId: string, actionId: string) =>
+    request<ContentPluginView>(`/api/v1/projects/${projectId}/content/${target.kind}/${target.id}/plugins/${encodeURIComponent(pluginId)}/${encodeURIComponent(actionId)}`),
+  saveContentPlugin: (projectId: string, target: PluginContentTarget, pluginId: string, actionId: string, data: Record<string, unknown>, expectedRevision: number) =>
+    request<{data: Record<string, unknown>; revision: number; updatedAt: string}>(`/api/v1/projects/${projectId}/content/${target.kind}/${target.id}/plugins/${encodeURIComponent(pluginId)}/${encodeURIComponent(actionId)}`, {
+      method: "PUT", body: JSON.stringify({data, expectedRevision})
     }),
   plugins: () => request<PluginManifest[]>("/api/v1/plugins/catalog"),
   projectPlugins: (projectId: string) =>

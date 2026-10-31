@@ -45,7 +45,13 @@ public static partial class CollaborationEndpoints
             .AddEndpointFilter<CsrfFilter>()
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapGet("/chat/channels/{channelId:guid}/signal", SignalAsync)
-            .AddEndpointFilter<RequireCookieSessionFilter>();
+            .RequireRateLimiting("calls")
+            .AddEndpointFilter<RequireCookieSessionFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
+        authenticated.MapGet("/chat/channels/{channelId:guid}/call", CallConfigurationAsync)
+            .AddEndpointFilter<RequireCookieSessionFilter>()
+            .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"))
+            .RequireRateLimiting("calls");
         return authenticated;
     }
 

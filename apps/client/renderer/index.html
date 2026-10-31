@@ -51,6 +51,8 @@
           <input id="local-id" type="hidden" />
           <label><span data-i18n="projectName">Project name</span><input id="local-name" maxlength="80" data-i18n-placeholder="projectPlaceholder" placeholder="My project" /></label>
           <label><span data-i18n="dataFolder">Data folder</span><div class="folder-field"><input id="local-path" readonly required data-i18n-placeholder="chooseFolderPlaceholder" placeholder="Choose a folder…" /><button id="choose-folder" type="button" data-i18n="browse">Browse</button></div></label>
+          <label class="encryption-toggle"><input id="local-encrypted" type="checkbox" /><span data-i18n="encryptionAtRest">Encrypt project data at rest (optional)</span></label>
+          <fieldset id="encryption-options" hidden><legend data-i18n="encryptionKey">Encryption key</legend><div class="folder-field"><input id="encryption-key-file" readonly aria-label="Encryption key file" /><button id="choose-encryption-key" type="button" data-i18n="chooseKey">Choose key</button><button id="create-encryption-key" type="button" data-i18n="createKey">New key</button></div><p data-i18n="keyWarning">Keep the key outside your synchronized folder and back it up separately. A lost key cannot be recovered. Existing data needs an offline migration.</p></fieldset>
           <div class="sync-note"><strong data-i18n="readyToSync">Ready to sync</strong><span data-i18n="syncNote">CyTask creates verified snapshots in .cytask. Simply add this folder to Syncthing; the active database and sessions are never synchronized.</span></div>
           <button id="open-local-button" class="connect-button" type="submit"><span data-i18n="openLocally">Open locally</span><span aria-hidden="true">→</span></button>
         </form>

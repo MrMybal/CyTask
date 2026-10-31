@@ -9,6 +9,7 @@ import {
   useRef,
   useState
 } from "react";
+import {AccountSecurity,StorageSecurity} from "./AccountSecurity";
 import {
   ApiError,
   api,
@@ -19,6 +20,8 @@ import {
   type LocalSyncStatus,
   type OrganizationMember,
   type Project,
+  type ProjectRoom,
+  type ProjectSpaceView,
   type ProjectStatus,
   type ProjectLabel,
   type ProjectLabelOverview,
@@ -43,6 +46,10 @@ import { TaskLabelChips, TaskLabelsSection } from "./TaskLabels";
 import { TaskHierarchyMeta, TaskHierarchySection } from "./TaskHierarchy";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { ProjectFolderTree } from "./ProjectFolderTree";
+import { ProjectRooms, RoomIcon, RoomResourcePage, projectRoomHash, roomLocation } from "./ProjectRooms";
+import { MarkdownComposer, MarkdownProvider, MarkdownView } from "./Markdown";
+import { ContentPluginProvider } from "./ContentPlugins";
+import "../rooms.css";
 import { SharedProjectCanvas } from "./SharedProjectCanvas";
 import { CompactTaskTable, TaskCanvas } from "./TaskVisualViews";
 import { ProjectContentPane } from "./ProjectContentPane";
@@ -127,7 +134,7 @@ type DetailTab =
   | `plugin:${string}:${string}`;
 type TaskSort = TaskFilterSnapshot["sort"];
 type SidebarSection = "project" | "inbox" | "mine" | "today" | "later" | "completed";
-type WorkspaceArea = "tasks" | "contents" | "chat" | "plugins" | "migration";
+type WorkspaceArea = "tasks" | "contents" | "chat" | "plugins" | "migration" | "room";
 type DetailBundle = [
   TaskDetails,
   Attachment[],
@@ -149,6 +156,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const [localSyncFlushing, setLocalSyncFlushing] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
+  const [selectedRoom, setSelectedRoom] = useState<ProjectRoom>();
+  const [spaceView, setSpaceView] = useState<ProjectSpaceView>();
+  const [showServerSettings, setShowServerSettings] = useState(false);
   const [tasks, setTasks] = useState<WorkItem[]>([]);
   const [taskOptions, setTaskOptions] = useState<TaskOption[]>([]);
   const [taskTotalCount, setTaskTotalCount] = useState(0);
@@ -252,8 +262,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     catch { setError(t("Unable to save the local folder.")); }
     finally { setLocalSyncFlushing(false); }
   }
-  const canAdminister = session.role === "owner" || session.role === "admin";
-  const canContribute = session.role !== "viewer";
+  const canAdministerOrganization = session.role === "owner" || session.role === "admin";
+  const projectRole = spaceView && spaceView.space.projectId === selectedProjectId ? spaceView.accessRole : undefined;
+  const canAdminister = projectRole === "owner" || projectRole === "admin";
+  const canContribute = projectRole !== undefined && projectRole !== "viewer";
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId),
@@ -270,7 +282,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   ) as Record<string, string>, [locale, projectStatuses]);
   function taskStatusStyle(status: string): CSSProperties {
     const color = statusColors[status] ?? "#7C8B9A";
-    return { color, borderColor: color, "--status-color": color } as CSSProperties;
+    return { "--status-color": color } as CSSProperties;
   }
 
   const labelCounts = useMemo(() => {
@@ -437,8 +449,43 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
   const loadProjects = useCallback(async () => {
     const nextProjects = await api.projects();
     setProjects(nextProjects);
-    setSelectedProjectId((current) => current ?? nextProjects[0]?.id);
+    setSelectedProjectId((current) => nextProjects.some(project => project.id === current) ? current
+      : nextProjects.find(project => project.id === roomLocation()?.projectId)?.id ?? nextProjects[0]?.id);
   }, []);
+
+  useEffect(() => {
+    setSelectedRoom(undefined);
+    setSpaceView(undefined);
+    setShowServerSettings(false);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!spaceView || spaceView.space.projectId !== selectedProjectId || sidebarSection !== "project") return;
+    const location = roomLocation();
+    const rooms = spaceView.space.rooms;
+    const active = rooms.find(room => room.id === selectedRoom?.id);
+    if (active) { setSelectedRoom(active); return; }
+    const initial = rooms.find(room => location?.projectId === selectedProjectId && room.id === location.roomId)
+      ?? rooms.find(room => room.kind === "tasks") ?? rooms[0];
+    if (initial) selectRoom(initial, false);
+  }, [spaceView, selectedProjectId]);
+
+  function selectRoom(room: ProjectRoom, updateHistory = true) {
+    if(updateHistory || !taskIdFromHash(window.location.hash))closeTask(updateHistory);
+    setShowTeam(false); setShowActivity(false); setShowTokens(false); setShowAgents(false);
+    setSearchHits(undefined); setShowTaskForm(false); setSidebarSection("project"); setSelectedRoom(room);
+    setTaskLabelFilter(room.folderLabelId ?? "all");
+    if(window.matchMedia("(max-width: 640px)").matches)setSidebarCollapsed(true);
+    if (room.kind === "tasks" || room.kind === "graph" || room.kind === "canvas" && !room.targetId) {
+      setWorkspaceArea("tasks");
+      if (room.kind === "graph") setTaskView("graph");
+      else if (room.kind === "canvas") setTaskView("canvas");
+      else if (taskView === "canvas" || taskView === "graph") setTaskView("list");
+    } else if (["chat", "voice", "video", "news"].includes(room.kind)) setWorkspaceArea("chat");
+    else if (room.kind === "files") setWorkspaceArea("contents");
+    else setWorkspaceArea("room");
+    if (updateHistory && selectedProjectId) window.history.pushState(null, "", projectRoomHash(selectedProjectId, room.id));
+  }
 
   const loadTaskPage = useCallback(async (
     projectId: string,
@@ -709,6 +756,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   useEffect(() => {
     const restoreLocation = () => {
+      const location = roomLocation();
+      if (location) {
+        if (location.projectId !== selectedProjectId) { setSelectedProjectId(location.projectId); return; }
+        const room = spaceView?.space.rooms.find(item => item.id === location.roomId);
+        if (room) selectRoom(room, false);
+      }
       const taskId = taskIdFromHash(window.location.hash);
       detailRequestSequence.current += 1;
       setDetailsLoading(false);
@@ -723,8 +776,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       void loadDetails(taskId);
     };
     window.addEventListener("popstate", restoreLocation);
-    return () => window.removeEventListener("popstate", restoreLocation);
-  }, [loadDetails]);
+    window.addEventListener("hashchange", restoreLocation);
+    return () => { window.removeEventListener("popstate", restoreLocation); window.removeEventListener("hashchange", restoreLocation); };
+  }, [loadDetails, selectedProjectId, spaceView]);
 
   useEffect(() => {
     const stream = createWorkspaceEventStream();
@@ -782,6 +836,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     };
     stream.addEventListener("reset", resynchronize);
     stream.addEventListener("workspace.synchronized", resynchronize);
+    stream.addEventListener("project.space_updated", resynchronize);
     stream.addEventListener("project.created", refreshActivity);
     stream.addEventListener("task.created", refreshActivity);
     stream.addEventListener("task.updated", refreshActivity);
@@ -843,6 +898,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
   function selectSidebarSection(section: SidebarSection, labelId?: string) {
     closeTask();
+    if(window.matchMedia("(max-width: 640px)").matches)setSidebarCollapsed(true);
     setShowTeam(false);
     setShowActivity(false);
     setShowTokens(false);
@@ -2004,20 +2060,21 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     setTaskLinkLabel("Copy link");
     setError("");
     if (selectedTaskId !== taskId) setDetails(undefined);
-    const taskHash = `#/tasks/${taskId}`;
+    const taskHash = selectedProjectId && selectedRoom
+      ? `${projectRoomHash(selectedProjectId, selectedRoom.id)}/tasks/${taskId}` : `#/tasks/${taskId}`;
     if (window.location.hash !== taskHash) window.history.pushState(null, "", taskHash);
     void loadDetails(taskId);
   }
 
-  function closeTask() {
+  function closeTask(updateHistory = true) {
     detailRequestSequence.current += 1;
     setDetailsLoading(false);
     setDetails(undefined);
     setTaskPlugins([]);
     setIsEditing(false);
     setTaskLinkLabel("Copy link");
-    if (taskIdFromHash(window.location.hash)) {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    if (updateHistory && taskIdFromHash(window.location.hash)) {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${selectedRoom && selectedProjectId ? projectRoomHash(selectedProjectId, selectedRoom.id) : ""}`);
     }
   }
 
@@ -2107,7 +2164,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         run: () => setSidebarCollapsed((value) => !value)
       }
     );
-    if (canAdminister) {
+    if (canAdministerOrganization) {
       actions.push({
         id: "new-project",
         label: t("Create project"),
@@ -2117,19 +2174,33 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
     return actions;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canAdminister, canContribute, selectedProjectId, sidebarCollapsed, taskView]);
+  }, [canAdministerOrganization, canContribute, selectedProjectId, sidebarCollapsed, taskView]);
 
   return (
-    <div className={`workspace-shell theme-${themeTone} theme-${themeMode}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+    <ContentPluginProvider projectId={selectedProjectId} canEdit={canContribute} onError={setError} onNotice={message=>notify("success",message)}>
+    <MarkdownProvider projectId={selectedProjectId} members={members} tasks={taskOptions} rooms={spaceView?.space.rooms} onError={setError}>
+    <div className={`workspace-shell server-workspace theme-${themeTone} theme-${themeMode}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+      <nav className="server-rail" aria-label={t("Projects")}>
+        <button className={`server-rail-home${sidebarSection !== "project" ? " active" : ""}`} type="button" title={t("Home")} aria-label={t("Home")}
+          onClick={() => { setSelectedRoom(undefined); selectSidebarSection("inbox"); }}><img src="/icons/cytask.png" alt="CyTask"/></button>
+        <span className="server-rail-separator"/>
+        <div className="server-rail-projects">{projects.map((project, index) => <button type="button" key={project.id}
+          className={`server-rail-project${selectedProjectId === project.id && sidebarSection === "project" ? " active" : ""}`}
+          style={{ "--server-hue": `${[218, 151, 34, 276, 184, 346][index % 6]}` } as CSSProperties}
+          title={project.name} aria-label={project.name} aria-current={selectedProjectId === project.id && sidebarSection === "project" ? "page" : undefined}
+          onClick={() => { if (selectedProjectId !== project.id) {setSelectedProjectId(project.id);setSelectedRoom(undefined);selectSidebarSection("project");}
+            else {const room=spaceView?.space.rooms.find(room=>room.kind==="tasks");if(room)selectRoom(room);else selectSidebarSection("project");}
+            if(window.matchMedia("(max-width: 640px)").matches)setSidebarCollapsed(false); }}>
+          {project.key.slice(0, 3)}<span className="server-tooltip">{project.name}</span></button>)}</div>
+        {canAdministerOrganization && <button className="server-rail-add" type="button" aria-label={t("Create project")} title={t("Create project")} onClick={() => setShowProjectForm(true)}>+</button>}
+        <button className="server-rail-settings" type="button" title={t("Settings and tools")} aria-label={t("Settings and tools")} onClick={() => setShowWorkspaceSettings(true)}><RoomIcon kind="settings"/></button>
+      </nav>
       <aside className="sidebar">
         <div className="sidebar-top">
-          <a className="brand compact" href="/" aria-label={t("CyTask home")}>
-            <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
-            <span>CyTask</span>
-          </a>
-          {canAdminister && (
-            <button className="icon-button" title={t("Create project")} onClick={() => setShowProjectForm((value) => !value)}>+</button>
-          )}
+          <button className="server-heading" type="button" disabled={!selectedProject} title={t("Project settings")} onClick={() => setShowServerSettings(true)}>
+            <span>{selectedProject?.name ?? "CyTask"}</span><span aria-hidden="true">⌄</span>
+          </button>
+          <button className="server-sidebar-close" type="button" aria-label={t("Close navigation")} onClick={()=>setSidebarCollapsed(true)}>×</button>
         </div>
 
         {showProjectForm && (
@@ -2142,7 +2213,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
         <div className="sidebar-scroll">
           <nav className="sidebar-home" aria-label={t("Home")}>
-            <p className="nav-label">{t("Home")}</p>
+            <p className="nav-label">{t("YOUR WORK")}</p>
             <button
               className={sidebarSection === "inbox" ? "sidebar-nav-link active" : "sidebar-nav-link"}
               type="button"
@@ -2192,38 +2263,27 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             </button>
           </nav>
 
-          <nav className="project-list" aria-label={`${t("Spaces")} · ${t("Folders")}`}>
-            <p className="nav-label">{t("Spaces")}</p>
-            {projects.map((project) => (
-              <div className="project-tree" key={project.id}>
-                <button
-                  className={project.id === selectedProjectId && sidebarSection === "project" && !selectedFolder && workspaceArea === "tasks"
-                    ? "project-link active"
-                    : "project-link"}
-                  title={project.name}
-                  onClick={() => {
-                    setSelectedProjectId(project.id);
-                    selectSidebarSection("project");
-                  }}
-                >
-                  <span className="project-avatar">{project.key.slice(0, 2)}</span>
-                  <span>{project.name}</span>
-                </button>
-                {project.id === selectedProjectId && (
-                  <>
+          <nav className="project-list" aria-label={t("Project rooms")}>
+            {selectedProject && <>
+                    <ProjectRooms key={selectedProject.id} project={selectedProject} currentUserId={session.userId} members={members}
+                      labels={projectLabels.labels} activeRoomId={sidebarSection === "project" ? selectedRoom?.id : undefined}
+                      settingsOpen={showServerSettings} onCloseSettings={() => setShowServerSettings(false)}
+                      onSelect={selectRoom} onSpace={setSpaceView} onError={setError}/>
+                    <details className="room-task-folders"><summary>{t("Task folders")}</summary>
                     <ProjectFolderTree
                       labels={projectLabels.labels}
                       counts={labelCounts}
                       selectedLabelId={selectedFolder?.id}
                       editorParentId={folderEditorParentId}
                       canCreate={canContribute}
-                      onSelect={(labelId) => selectSidebarSection("project", labelId)}
+                      onSelect={(labelId) => { setSelectedRoom(spaceView?.space.rooms.find(room => room.kind === "tasks")); selectSidebarSection("project", labelId); }}
                       onStartCreate={setFolderEditorParentId}
                       onCancelCreate={() => setFolderEditorParentId(undefined)}
                       onCreate={(event) => void createProjectFolder(event)}
                     />
+                    </details>
                     <div className="space-resource-links">
-                      <button className={workspaceArea === "contents" ? "active" : ""} type="button"
+                      <button className="legacy-content-link" type="button"
                         onClick={() => {
                           closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
                           setShowAgents(false);
@@ -2231,7 +2291,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         }}>
                         <span>◇</span><span>{t("Contents")} &amp; {t("Files").toLocaleLowerCase(locale)}</span>
                       </button>
-                      <button className={workspaceArea === "chat" ? "active" : ""} type="button"
+                      <button className="legacy-chat-link" type="button"
                         onClick={() => {
                           closeTask(); setShowTeam(false); setShowActivity(false); setShowTokens(false);
                           setShowAgents(false);
@@ -2258,10 +2318,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                         </button>
                       )}
                     </div>
-                  </>
-                )}
-              </div>
-            ))}
+                  </>}
             {projects.length === 0 && <p className="empty-note">{t("Create your first project.")}</p>}
           </nav>
         </div>
@@ -2332,6 +2389,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               </button>
             </div>
 
+            <AccountSecurity/>
+            <StorageSecurity/>
             <section className="workspace-settings-section theme-setting">
               <div className="theme-setting-copy"><h3>{t("Appearance")}</h3><small>{t("Choose the interface theme.")}</small></div>
               <div className="theme-picker" role="radiogroup" aria-label={t("Color theme")}>
@@ -2368,14 +2427,18 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         <header className="pane-header">
           <div>
             <p className="eyebrow">{selectedProject?.key ?? t("WORKSPACE")}</p>
-            <h1>{workspaceAreaTitle ?? workspaceTitle ?? t("Welcome to CyTask")}</h1>
+            <h1>{selectedRoom && sidebarSection === "project" && <RoomIcon kind={selectedRoom.kind}/>}<span>{selectedRoom && sidebarSection === "project" ? selectedRoom.name : workspaceAreaTitle ?? workspaceTitle ?? t("Welcome to CyTask")}</span></h1>
             {selectedProject && workspaceArea === "tasks" && (
               <p className="project-summary">
-                {t("{shown} shown out of {total} tasks · {progress} in progress", { shown: taskTotalCount, total: taskOptions.length, progress: taskCounts.in_progress ?? 0 })}
+                {t("{shown} shown out of {total} tasks · {progress} in progress", { shown: tasks.length, total: taskTotalCount, progress: taskCounts.in_progress ?? 0 })}
               </p>
             )}
           </div>
           <div className="pane-actions">
+            {selectedRoom && selectedProjectId && <button className="text-button room-copy-link" type="button" title={t("Copy room link")} onClick={() => {
+              void navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}${window.location.search}${projectRoomHash(selectedProjectId, selectedRoom.id)}`)
+                .then(() => notify("success", t("Room link copied."))).catch(() => setError(t("Unable to copy this link.")));
+            }}>{t("Copy room link")}</button>}
             <button
               className="icon-button sidebar-toggle"
               type="button"
@@ -2409,7 +2472,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
         {showTaskForm && selectedProject && workspaceArea === "tasks" && (
           <form className="task-form" onSubmit={createTask}>
             <input name="title" placeholder={t("What needs to be done?")} maxLength={240} required autoFocus />
-            <textarea name="description" placeholder={t("Optional description")} maxLength={20000} rows={3} />
+            <MarkdownComposer name="description" placeholder={t("Optional description")} maxLength={20000}/>
             <div className="task-planning-fields">
               <label>
                 {t("Priority")}
@@ -2440,7 +2503,10 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           </form>
         )}
 
-        {workspaceArea === "migration" && selectedProject ? (
+        {workspaceArea === "room" && selectedRoom && selectedProject ? (
+          <RoomResourcePage key={selectedRoom.id} room={selectedRoom} labels={projectLabels.labels} tasks={taskOptions}
+            canContribute={canContribute} onOpenTask={openTask} onError={setError} onNotice={(message) => notify("success", message)}/>
+        ) : workspaceArea === "migration" && selectedProject ? (
           <MigrationPane
             projectId={selectedProject.id}
             statuses={projectStatuses}
@@ -2470,10 +2536,15 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           />
         ) : workspaceArea === "chat" && selectedProject ? (
           <TeamChatPane
+            canCall={canContribute}
+            key={selectedRoom?.id ?? selectedProject.id}
+            embedded={Boolean(selectedRoom)}
+            channelId={selectedRoom?.targetId ?? undefined}
+            roomKind={selectedRoom?.kind}
             projectId={selectedProject.id}
             currentUserId={session.userId}
             members={members}
-            canContribute={canContribute}
+            canContribute={canContribute && (selectedRoom?.kind !== "news" || canAdminister)}
             onError={setError}
             tasks={taskOptions}
             onOpenTask={openTask}
@@ -2502,7 +2573,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             <span className="empty-symbol">↗</span>
             <h2>{t("Start with a project")}</h2>
             <p>{t("A project brings together tasks, media and Git references.")}</p>
-            {canAdminister && (
+            {canAdministerOrganization && (
               <button className="primary-button" onClick={() => setShowProjectForm(true)}>{t("Create project")}</button>
             )}
           </section>
@@ -2528,7 +2599,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                     && !taskQuery}
                   onClick={resetTaskFilters}
                 >
-                  <strong>{tasks.length}</strong><span>{t("Total")}</span>
+                  <strong>{taskOptions.length}</strong><span>{t("Total")}</span>
                 </button>
                 <button
                   className={taskStatusFilter === "in_progress" ? "task-metric active" : "task-metric"}
@@ -2992,7 +3063,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               ))}
             </section>
 
-            {canAdminister && (
+            {canAdministerOrganization && (
               <section className="invite-section">
                 <a className="export-link" href="/api/v1/export" download>
                   <span>{t("Export workspace")}</span>
@@ -3033,7 +3104,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
 
       {showAgents && !showTeam && !showActivity && !showTokens && (
         <AgentsPane
-          canAdminister={canAdminister}
+          canAdminister={canAdministerOrganization}
           tasks={taskOptions}
           onClose={() => setShowAgents(false)}
           onError={setError}
@@ -3082,7 +3153,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   {t(isEditing ? "Cancel" : "Edit")}
                 </button>
               )}
-              <button className="icon-button quiet" aria-label={t("Close")} onClick={closeTask}>×</button>
+              <button className="icon-button quiet" aria-label={t("Close")} onClick={()=>closeTask()}>×</button>
             </div>
           </header>
           <div className="detail-content">
@@ -3186,7 +3257,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                 </label>
                 <label className="edit-field-description">
                   {t("Description")}
-                  <textarea name="description" defaultValue={details.task.description} maxLength={20000} rows={6} />
+                  <MarkdownComposer name="description" defaultValue={details.task.description} maxLength={20000} minHeight={150}/>
                 </label>
                 <button className="primary-button small" type="submit">{t("Save")}</button>
               </form>
@@ -3227,7 +3298,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                             <option
                               value={projectStatus.key}
                               key={projectStatus.key}
-                              style={{ color: projectStatus.color }}
+                              style={taskStatusStyle(projectStatus.key)}
                             >● {statusLabels[projectStatus.key] ?? projectStatus.name}</option>
                           ))}
                         </select>
@@ -3287,18 +3358,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   onCreate={createProjectLabel}
                   onDelete={deleteProjectLabel}
                 />
-                {canContribute ? (
-                  <button
-                    className={details.task.description ? "description editable-description" : "description editable-description muted"}
-                    type="button"
-                    title={t("Click to edit description")}
-                    onClick={() => setIsEditing(true)}
-                  >{details.task.description || t("Add a description…")}</button>
-                ) : (
-                  <p className={details.task.description ? "description" : "description muted"}>
-                    {details.task.description || t("No description.")}
-                  </p>
-                )}
+                <section className="task-description">
+                  <header><h3>{t("Description")}</h3>{canContribute&&<button className="text-button" type="button" onClick={()=>setIsEditing(true)}>{t("Edit")}</button>}</header>
+                  <MarkdownView className={details.task.description ? "description" : "description muted"}
+                    text={details.task.description || t("No description.")} onOpenTask={openTask} target={{kind:"task",id:details.task.id}}/>
+                </section>
                 {attachments.length > 0 && (
                   <section className="task-overview-media" aria-label={t("Recent media and files")}>
                     <header>
@@ -3730,13 +3794,11 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
               <h3>{t("Activity")} <span>{details.comments.length}</span></h3>
               {canContribute ? (
                 <form className="comment-form comment-form-top" onSubmit={createComment}>
-                  <textarea
+                  <MarkdownComposer
                     name="body"
                     placeholder={t("Add a comment…")}
                     maxLength={10000}
-                    rows={3}
                     required
-                    onKeyDown={submitOnModEnter}
                   />
                   <div className="comment-form-actions">
                     <small className="comment-shortcut">{t("Ctrl/⌘ + Enter to send")}</small>
@@ -3751,7 +3813,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
                   <span className="profile-avatar small-avatar">{initials(comment.authorName)}</span>
                   <div>
                     <p><strong>{comment.authorName}</strong> <time dateTime={comment.createdAt} title={fullDate(comment.createdAt)}>{relativeDate(comment.createdAt)}</time></p>
-                    <p>{comment.body}</p>
+                    <MarkdownView text={comment.body} onOpenTask={openTask}/>
                   </div>
                 </article>
               ))}
@@ -3780,6 +3842,8 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       />
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
+    </MarkdownProvider>
+    </ContentPluginProvider>
   );
 }
 
@@ -3804,7 +3868,7 @@ function initials(name: string): string {
 }
 
 function taskIdFromHash(hash: string): string | undefined {
-  return /^#\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(hash)?.[1];
+  return /(?:^#|\/rooms\/[\da-f-]{36})\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(hash)?.[1];
 }
 
 function submitOnModEnter(event: ReactKeyboardEvent<HTMLTextAreaElement>) {

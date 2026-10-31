@@ -169,7 +169,7 @@ public static class CyAnnotaEndpoints
             : new(null, taskAccess.ProjectId, mediaKind);
     }
 
-    private static ValidationResult ValidateDocument(
+    internal static ValidationResult ValidateDocument(
         JsonElement document, string mediaKind, Guid attachmentId)
     {
         if (document.ValueKind != JsonValueKind.Object)
@@ -240,5 +240,5 @@ public static class CyAnnotaEndpoints
         Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });
 
     private sealed record AccessResult(IResult? Error, Guid? ProjectId, string? MediaKind);
-    private sealed record ValidationResult(IResult? Error, int AnnotationCount);
+    internal sealed record ValidationResult(IResult? Error, int AnnotationCount);
 }

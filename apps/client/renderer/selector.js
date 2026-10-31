@@ -26,6 +26,8 @@ const translations = {
     browse: "Browse",
     readyToSync: "Ready to sync",
     syncNote: "CyTask creates verified snapshots in .cytask. Simply add this folder to Syncthing; the active database and sessions are never synchronized.",
+    encryptionAtRest: "Encrypt project data at rest (optional)", encryptionKey: "Encryption key", chooseKey: "Choose key", createKey: "New key",
+    keyWarning: "Keep the key outside your synchronized folder and back it up separately. A lost key cannot be recovered. Existing data needs an offline migration.",
     openLocally: "Open locally",
     serverName: "Server name",
     serverPlaceholder: "Main studio",
@@ -79,6 +81,8 @@ const translations = {
     browse: "Parcourir",
     readyToSync: "Prêt pour la synchronisation",
     syncNote: "CyTask crée des snapshots vérifiés dans .cytask. Ajoute simplement ce dossier à Syncthing ; la base active et les sessions ne sont jamais synchronisées.",
+    encryptionAtRest: "Chiffrer les données du projet au repos (optionnel)", encryptionKey: "Clé de chiffrement", chooseKey: "Choisir la clé", createKey: "Nouvelle clé",
+    keyWarning: "Gardez la clé hors du dossier synchronisé et sauvegardez-la séparément. Une clé perdue est irrécupérable. Les données existantes nécessitent une migration hors ligne.",
     openLocally: "Ouvrir en local",
     serverName: "Nom du serveur",
     serverPlaceholder: "Studio principal",
@@ -118,6 +122,9 @@ const serverTab = document.getElementById("server-tab");
 const localIdInput = document.getElementById("local-id");
 const localNameInput = document.getElementById("local-name");
 const localPathInput = document.getElementById("local-path");
+const encryptedInput = document.getElementById("local-encrypted");
+const encryptionOptions = document.getElementById("encryption-options");
+const keyFileInput = document.getElementById("encryption-key-file");
 const chooseFolderButton = document.getElementById("choose-folder");
 const openLocalButton = document.getElementById("open-local-button");
 const idInput = document.getElementById("server-id");
@@ -248,6 +255,9 @@ function renderProfiles() {
         localIdInput.value = profile.id;
         localNameInput.value = profile.name;
         localPathInput.value = profile.folderPath;
+        encryptedInput.checked = profile.encrypted === true;
+        encryptionOptions.hidden = !encryptedInput.checked;
+        keyFileInput.value = profile.encryptionKeyFile || "";
         localNameInput.focus();
       } else {
         setMode("server");
@@ -312,10 +322,18 @@ chooseFolderButton.addEventListener("click", async () => {
     showError("");
   } catch (error) { showError(error instanceof Error ? error.message : tr("folderUnavailable")); }
 });
+encryptedInput.addEventListener("change", () => { encryptionOptions.hidden = !encryptedInput.checked; });
+for (const [id, create] of [["choose-encryption-key", false], ["create-encryption-key", true]]) {
+  document.getElementById(id).addEventListener("click", async () => {
+    if (!localPathInput.value) { showError(tr("chooseDataFolder")); return; }
+    try { const result = await api.chooseEncryptionKey(localPathInput.value, create); if (!result.canceled) keyFileInput.value = result.keyFile; }
+    catch (error) { showError(error instanceof Error ? error.message : tr("localOpenFailed")); }
+  });
+}
 localForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!localPathInput.value) { showError(tr("chooseDataFolder")); return; }
-  void openLocal({ id: localIdInput.value || undefined, name: localNameInput.value.trim(), folderPath: localPathInput.value });
+  void openLocal({ id: localIdInput.value || undefined, name: localNameInput.value.trim(), folderPath: localPathInput.value, encrypted: encryptedInput.checked, encryptionKeyFile: keyFileInput.value });
 });
 serverForm.addEventListener("submit", (event) => {
   event.preventDefault();

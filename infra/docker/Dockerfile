@@ -3,6 +3,8 @@ WORKDIR /source/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci --no-fund --no-audit
 COPY apps/web/ ./
+COPY scripts/build-cymd.mjs /source/scripts/build-cymd.mjs
+COPY plugins/cymd/ /source/plugins/cymd/
 RUN npm run build
 
 FROM node:22.17.1-alpine AS cyannota-build

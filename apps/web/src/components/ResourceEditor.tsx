@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type ProjectLabel, type ProjectResource, type TaskOption } from "../api";
 import { ProjectCanvas } from "./ProjectCanvas";
 import { useI18n } from "../i18n";
+import { MarkdownComposer, MarkdownView } from "./Markdown";
+import { ContentPluginActions } from "./ContentPlugins";
 
 interface Props {
   resource: ProjectResource;
@@ -82,6 +84,8 @@ export function ResourceEditor({
         {resource.status === "available" && (
           <a className="primary-button" href={contentUrl} download={resource.name}>{t("Download")}</a>
         )}
+        {resource.status === "available" && (type.startsWith("image/")||type.startsWith("video/")) &&
+          <ContentPluginActions surface="media" target={{kind:"resource",id:resource.id,resource}}/>}
       </aside>
     );
   }
@@ -108,11 +112,13 @@ export function ResourceEditor({
             {labels.map((label) => <option value={label.id} key={label.id}>{label.name}</option>)}
           </select>
         </label>
-        {resource.resourceType === "document" ? (
-          <textarea
+        {resource.resourceType === "document" && <ContentPluginActions surface="text" target={{kind:"resource",id:resource.id,resource}}/>}
+        {resource.resourceType === "document" && !canContribute ? <MarkdownView text={resource.body} className="resource-document-editor" onOpenTask={onOpenTask}/> : resource.resourceType === "document" ? (
+          <MarkdownComposer
             className="resource-document-editor"
             value={draftBody}
-            onChange={(event) => setDraftBody(event.currentTarget.value)}
+            onChange={setDraftBody}
+            maxLength={2_000_000}
             readOnly={!canContribute}
             placeholder={t("Start writing… Markdown is supported.")}
           />

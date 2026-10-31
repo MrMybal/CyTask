@@ -10,7 +10,7 @@
   --line-soft: #202a34;
   --text: #e7edf3;
   --text-soft: #b8c2cc;
-  --muted: #8996a3;
+  --muted: #aab6c1;
   --accent: #64cdaa;
   --accent-dark: #123127;
   --danger: #e8848a;
@@ -32,7 +32,7 @@
   --line-soft: #d2d5d6;
   --text: #17212b;
   --text-soft: #354451;
-  --muted: #67737d;
+  --muted: #4e5d69;
   --accent: #247a63;
   --accent-dark: #d3e5de;
   --danger: #a83f49;
@@ -131,7 +131,12 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
 .compact-group-header { min-height: 34px; padding: 5px 10px; }
 .compact-group-header strong { font-size: 11px; }
 .compact-task-row { min-height: 36px; padding: 3px 10px; }
-.compact-task-name strong { font-size: 10px; }
+.compact-task-name strong { font-size: 12px; }
+.compact-task-name small { font-size: 10px; }
+.compact-columns { font-size: 10px; }
+.compact-status-select, .compact-priority-select, .compact-due-input { font-size: 11px; font-weight: 600; }
+.compact-folder-value { font-size: 11px; }
+.assignee-picker.compact summary { font-size: 11px; }
 .compact-task-name-cell, .compact-task-name { gap: 6px; }
 
 .task-board { grid-auto-columns: minmax(242px, 1fr); gap: 9px; padding: 9px 18px 36px; }
@@ -291,7 +296,7 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
   --line-soft: #26313a;
   --text: #ecf0f3;
   --text-soft: #c2cad1;
-  --muted: #8e9aa5;
+  --muted: #aab6c1;
   --accent: #70baa3;
   --accent-dark: #233a33;
   --danger: #e47f88;
@@ -318,7 +323,7 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
   --line-soft: #223447;
   --text: #edf3f8;
   --text-soft: #c4d0dc;
-  --muted: #91a4b6;
+  --muted: #afbfce;
   --accent: #82add8;
   --accent-dark: #20354a;
   --danger: #ee858e;
@@ -345,7 +350,7 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
   --line-soft: #29352b;
   --text: #eef2ed;
   --text-soft: #c9d1c7;
-  --muted: #97a594;
+  --muted: #b1bfad;
   --accent: #8eb786;
   --accent-dark: #2a3d2b;
   --danger: #e18286;
@@ -372,7 +377,7 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
   --line-soft: #cbd2d7;
   --text: #18232d;
   --text-soft: #364754;
-  --muted: #5d6b77;
+  --muted: #4e5d69;
   --accent: #2d755f;
   --accent-dark: #cfe1da;
   --danger: #a63f49;
@@ -399,7 +404,7 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
   --line-soft: #d7cfc3;
   --text: #28231d;
   --text-soft: #4c443b;
-  --muted: #72685d;
+  --muted: #5f554a;
   --accent: #765b3f;
   --accent-dark: #ddd0bd;
   --danger: #a94747;
@@ -426,7 +431,7 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
   --line-soft: #2c3742;
   --text: #ffffff;
   --text-soft: #d4dbe1;
-  --muted: #b3bec8;
+  --muted: #c3ced8;
   --accent: #f2c75c;
   --accent-dark: #3a3119;
   --danger: #ff818c;
@@ -442,8 +447,16 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
   --scrollbar-thumb-active: #f2c75c;
 }
 
-.workspace-shell { color: var(--text); background: var(--bg); color-scheme: dark; }
-.workspace-shell.theme-light { color-scheme: light; }
+.workspace-shell {
+  --status-ink-base: #ffffff;
+  --control-line: color-mix(in srgb, var(--muted) 70%, var(--control));
+  color: var(--text); background: var(--bg); color-scheme: dark;
+}
+.workspace-shell.theme-light {
+  --status-ink-base: #000000;
+  --control-line: color-mix(in srgb, var(--muted) 80%, var(--control));
+  color-scheme: light;
+}
 .workspace-shell .sidebar { color: var(--text); background: var(--sidebar); }
 .workspace-shell .task-pane,
 .workspace-shell .detail-pane.task-detail-pane,
@@ -454,8 +467,14 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
 .workspace-shell .detail-header,
 .workspace-shell .chat-room-header,
 .workspace-shell .pane-header { border-color: var(--line); background: var(--panel); backdrop-filter: none; }
-.workspace-shell :is(input, textarea, select) { border-color: var(--line); color: var(--text); background: var(--control); }
-.workspace-shell :is(input, textarea)::placeholder { color: var(--muted); opacity: .9; }
+.workspace-shell :is(input, textarea, select) { border-color: var(--control-line); color: var(--text); background: var(--control); }
+.workspace-shell :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+.workspace-shell :is(input, textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.workspace-shell :is(.sidebar-nav-link, .folder-link, .project-link, .team-link, .space-resource-links button) { color: var(--text-soft); }
+.workspace-shell :is(.space-tree-label, .folder-link small, .folder-expander, .saved-view-state, .list-header, .task-main small, .task-row time, .board-card-footer time, .board-empty, .empty-note, .empty-list, .task-facts dt, .hierarchy-children small, .comment time, .comment-shortcut, .security-note) { color: var(--muted); }
+.workspace-shell .due-date { color: var(--muted) !important; }
+.workspace-shell .task-label-chip { color: var(--text-soft); border-color: var(--line-strong); background: var(--surface); }
+.workspace-shell :is(.assignee-picker-avatars i, .assignee-picker-menu label > i, .compact-bulk-assignee-menu label > i, .assignee-picker-actions button.primary) { color: var(--on-accent); background: var(--accent); }
 .workspace-shell :is(.task-command, .task-form, .task-context-create, .compact-table, .board-column, .relation-canvas, .project-canvas, .workspace-settings, .workspace-settings-option, .task-facts div, .task-labels-section, .task-hierarchy-section, .task-checklist, .description, .checklist-item, .attachment-row, .attachment-form, .reference-form, .dependency-row, .task-overview-media, .resource-library, .resource-create-form, .content-type-tabs, .content-pane-actions > button, .resource-preview, .resource-document-editor, .chat-composer, .chat-media-card, .chat-task-preview, .chat-channels > form, .plugin-card, .plugin-field-checkbox, .ai-connection-manager, .ai-connection-card, .ai-connection-form, .ai-result, .migration-source-form, .migration-mapping-card, .migration-preview-table, .migration-import-bar, .migration-result) {
   border-color: var(--line);
   color: var(--text);
@@ -484,6 +503,24 @@ input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px color-mix(in s
 .workspace-shell .nav-count { color: var(--on-accent); background: var(--accent); }
 .workspace-shell .language-switcher { border-color: var(--line); background: var(--surface); }
 .workspace-shell .language-switcher button.active { color: var(--on-accent); background: var(--accent); box-shadow: none; }
+/* Configurable colors remain markers; label ink is adapted to the theme.
+   Keep these surfaces opaque so contrast does not depend on the row below. */
+.workspace-shell :is(.status, select, option)[style*="--status-color"] {
+  color: color-mix(in srgb, var(--status-color) 35%, var(--status-ink-base));
+  border-color: var(--control-line);
+  background: var(--control);
+}
+.workspace-shell :is(.status, select)[style*="--status-color"] { box-shadow: inset 3px 0 0 var(--status-color); }
+.workspace-shell :is(.priority, .compact-priority, .compact-priority-select) {
+  --priority-color: var(--muted);
+  border-color: var(--control-line);
+  color: color-mix(in srgb, var(--priority-color) 35%, var(--status-ink-base));
+  background: var(--control);
+}
+.workspace-shell :is(.priority-high) { --priority-color: var(--warning); }
+.workspace-shell :is(.priority-urgent) { --priority-color: var(--danger); }
+.workspace-shell .compact-priority-select { box-shadow: inset 3px 0 0 var(--priority-color); }
+.workspace-shell select option { color: var(--text); background: var(--control); }
 .workspace-shell .project-canvas-viewport,
 .workspace-shell .canvas-viewport {
   background-color: var(--canvas);

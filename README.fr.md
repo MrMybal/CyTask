@@ -27,6 +27,15 @@ cœur qui reste utilisable seul.
 
 ## État du dépôt
 
+La navigation organise désormais les projets comme des serveurs, avec catégories
+et salons de tâches, discussions, annonces, documents, canvas et fichiers partagés.
+Les droits d’un projet peuvent être hérités ou limités à une liste de membres.
+Les éditeurs Markdown proposent mise en forme, aperçu et suggestions de mentions
+et de tâches. Les plugins activés peuvent ajouter des actions aux messages, textes
+et médias : édition CyMD et annotations CyAnnota sur les images du chat, notamment.
+Le [contrat des extensions de contenu](docs/content-plugins.md) décrit également
+la sauvegarde locale et les limites actuelles.
+
 La première tranche verticale est implémentée : amorçage sécurisé du premier
 compte, sessions, invitations à usage unique, rôles, organisation, projets,
 tâches éditables avec contrôle de révision, sous-tâches, labels, checklists, commentaires et événements temps réel.
@@ -55,6 +64,17 @@ et validés par le serveur sont rendus. Le connecteur compagnon CyRevision reche
 ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de fin après fusion.
 Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
 du moteur complète.
+Les serveurs d’équipe disposent d’une double authentification désactivable,
+facultative ou obligatoire : application TOTP compatible Google Authenticator,
+codes e-mail via SMTP TLS et codes de secours à usage unique. La gestion se trouve
+dans **Paramètres et outils → Sécurité du compte**. Voir la
+[configuration de la double authentification](docs/two-factor-authentication.md) ;
+le mode local solo conserve son ouverture sans compte interactif.
+
+Le chiffrement au repos des contenus, médias et données locales/Sync est optionnel,
+désactivé par défaut. Les données existantes nécessitent une conversion explicite
+hors ligne. Voir [le chiffrement et la gestion des clés](docs/data-encryption.md).
+
 Le client Web responsive et installable consomme la même API que CyTask Desktop
 Electron et le plugin Unreal. Le client desktop mémorise plusieurs IP ou domaines, isole les sessions par origine et
 charge le site distant sans accès Node. Il peut aussi ouvrir un **dossier local** : un sidecar
@@ -73,10 +93,12 @@ peuvent être rangés dans les mêmes dossiers que les tâches, filtrés, regrou
 par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même passage en
 quarantaine que les pièces jointes de tâches.
 La discussion d’équipe fournit des salons par projet, messages, mentions, images, vidéos
-et fichiers issus de cette bibliothèque. Le vocal et le partage d’écran reposent sur WebRTC avec une signalisation
-WebSocket authentifiée. Le mode actuel est pair-à-pair direct ; un relais TURN privé
-sera nécessaire pour les déploiements dont les membres sont séparés par des NAT ou
-pare-feu stricts. Des groupes privés limitent côté serveur la liste des salons, les
+et fichiers issus de cette bibliothèque. Les salons vocaux et vidéo proposent la caméra en direct,
+le partage d’écran indépendant, la coupure du micro/son et le choix des périphériques, via WebRTC
+et une signalisation WebSocket authentifiée. Les services STUN/TURN sont configurables ;
+un relais TURN privé est nécessaire pour les réseaux qui bloquent les connexions directes.
+Voir la [configuration des appels](docs/live-calls.md) pour les limites et le déploiement.
+Des groupes privés limitent côté serveur la liste des salons, les
 messages et la signalisation aux seuls membres invités. Les liens de tâches génèrent
 une carte ouvrable ; images et vidéos disposent d’un aperçu, d’une visionneuse
 agrandie, d’un lecteur intégré et d’un téléchargement direct.

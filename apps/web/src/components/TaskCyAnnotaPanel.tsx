@@ -23,8 +23,12 @@ type BridgeMessage = {
   document?: unknown;
 };
 
-interface EmbeddedEditorProps extends TaskCyAnnotaPanelProps {
-  attachment: Attachment;
+interface EmbeddedEditorProps extends Omit<TaskCyAnnotaPanelProps,"taskId"> {
+  taskId?: string;
+  attachment: Pick<Attachment,"id"|"fileName"|"detectedContentType"|"declaredContentType"|"reviewedAt"|"createdAt">;
+  contentUrl?: string;
+  loadDocument?: () => Promise<CyAnnotaDocument>;
+  saveDocument?: (data: Record<string,unknown>, revision: number) => Promise<CyAnnotaDocument>;
   workspace: CyAnnotaWorkspace;
   initialRevision: number;
   onClose: () => void;
@@ -172,7 +176,7 @@ export function TaskCyAnnotaPanel({
   );
 }
 
-function EmbeddedCyAnnotaEditor({
+export function EmbeddedCyAnnotaEditor({
   taskId,
   attachment,
   workspace,
@@ -181,7 +185,10 @@ function EmbeddedCyAnnotaEditor({
   onClose,
   onSaved,
   onError,
-  onNotice
+  onNotice,
+  contentUrl,
+  loadDocument,
+  saveDocument
 }: EmbeddedEditorProps) {
   const { t } = useI18n();
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -189,6 +196,8 @@ function EmbeddedCyAnnotaEditor({
   const revisionRef = useRef(initialRevision);
   const session = useMemo(() => crypto.randomUUID(), [attachment.id]);
   const [status, setStatus] = useState(t("Loading plugin…"));
+  const callbacks = useRef({onError,onNotice,onSaved,loadDocument,saveDocument});
+  callbacks.current={onError,onNotice,onSaved,loadDocument,saveDocument};
 
   const launch = useMemo(() => {
     try {
@@ -216,6 +225,7 @@ function EmbeddedCyAnnotaEditor({
     let ready = false;
     let stopped = false;
     let initialPayload: Record<string, unknown> | undefined;
+    let saving = false;
 
     const post = (message: Record<string, unknown>) => {
       frameRef.current?.contentWindow?.postMessage(message, launch.origin);
@@ -241,7 +251,7 @@ function EmbeddedCyAnnotaEditor({
         return;
       }
 
-      if (message.type !== "save-annotations" || message.attachmentId !== attachment.id
+      if (saving || stopped || message.type !== "save-annotations" || message.attachmentId !== attachment.id
         || !isRecord(message.document)) return;
 
       if (!canEdit) {
@@ -256,12 +266,17 @@ function EmbeddedCyAnnotaEditor({
       }
 
       setStatus(t("Saving…"));
-      void api.updateCyAnnotaDocument(taskId, attachment.id, {
+      saving = true;
+      const persist = callbacks.current.saveDocument
+        ? callbacks.current.saveDocument(message.document, revisionRef.current)
+        : api.updateCyAnnotaDocument(taskId!, attachment.id, {
         document: message.document,
         expectedRevision: revisionRef.current
-      }).then((updated) => {
+      });
+      void persist.then((updated) => {
+        if(stopped)return;
         revisionRef.current = updated.revision;
-        onSaved(updated);
+        callbacks.current.onSaved(updated);
         post({
           source: "cytask",
           type: "save-result",
@@ -271,13 +286,14 @@ function EmbeddedCyAnnotaEditor({
           updatedAt: updated.updatedAt
         });
         setStatus(`${t("Saved")} · ${t("rev.")} ${updated.revision}`);
-        onNotice(t("Annotations for “{name}” saved.", { name: attachment.fileName }));
+        callbacks.current.onNotice(t("Annotations for “{name}” saved.", { name: attachment.fileName }));
       }).catch((reason) => {
+        if(stopped)return;
         const error = messageFor(reason, t("CyAnnota integration failed."));
         post({ source: "cytask", type: "save-result", session, ok: false, error });
         setStatus(t("Save failed"));
-        onError(error);
-      });
+        callbacks.current.onError(error);
+      }).finally(()=>{saving=false;});
     };
 
     window.addEventListener("message", receive);
@@ -289,11 +305,11 @@ function EmbeddedCyAnnotaEditor({
     }, 20_000);
 
     void Promise.all([
-      fetch(api.attachmentContentUrl(attachment.id), {
+      fetch(contentUrl ?? api.attachmentContentUrl(attachment.id), {
         credentials: "same-origin",
         headers: { Accept: attachment.detectedContentType ?? attachment.declaredContentType }
       }),
-      api.cyAnnotaDocument(taskId, attachment.id)
+      callbacks.current.loadDocument?.() ?? api.cyAnnotaDocument(taskId!, attachment.id)
     ]).then(async ([contentResponse, stored]) => {
       if (!contentResponse.ok) throw new Error(t("The CyTask media is no longer available."));
       const contentType = attachment.detectedContentType
@@ -304,6 +320,7 @@ function EmbeddedCyAnnotaEditor({
         type: contentType,
         lastModified: Date.parse(attachment.reviewedAt ?? attachment.createdAt)
       });
+      if(stopped)return;
       revisionRef.current = stored.revision;
       initialPayload = {
         source: "cytask",
@@ -330,7 +347,7 @@ function EmbeddedCyAnnotaEditor({
       window.clearTimeout(timeout);
       window.removeEventListener("message", receive);
     };
-  }, [attachment, canEdit, launch, onError, onNotice, onSaved, session, taskId, workspace.maximumDocumentBytes, t]);
+  }, [attachment.id, attachment.fileName, contentUrl, canEdit, launch, session, taskId, workspace.maximumDocumentBytes, t]);
 
   return (
     <section ref={shellRef} className="cyannota-embedded-shell detail-section">

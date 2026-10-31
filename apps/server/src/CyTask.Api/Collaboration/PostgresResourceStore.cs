@@ -1,4 +1,5 @@
 using Npgsql;
+using CyTask.Api.Security;
 
 namespace CyTask.Api.Collaboration;
 
@@ -16,7 +17,9 @@ public sealed partial class PostgresCollaborationStore
             "ORDER BY r.updated_at DESC,lower(r.name),r.id;", connection);
         command.Parameters.AddWithValue("organization", organizationId);
         command.Parameters.AddWithValue("project", projectId);
-        return await ReadResourcesAsync(command, cancellationToken);
+        var resources = await ReadResourcesAsync(command, cancellationToken);
+        return encryption.Enabled ? resources.OrderByDescending(resource => resource.UpdatedAt)
+            .ThenBy(resource => resource.Name, StringComparer.OrdinalIgnoreCase).ThenBy(resource => resource.Id).ToArray() : resources;
     }
 
     public async Task<ProjectResource?> GetResourceAsync(
@@ -52,8 +55,8 @@ public sealed partial class PostgresCollaborationStore
         command.Parameters.AddWithValue("project", projectId);
         AddNullableUuid(command, "folder", folderLabelId);
         command.Parameters.AddWithValue("type", resourceType);
-        command.Parameters.AddWithValue("name", name);
-        command.Parameters.AddWithValue("body", body);
+        command.Parameters.AddWithValue("name", encryption.Encode(name, false));
+        command.Parameters.AddWithValue("body", encryption.Encode(body, false));
         command.Parameters.AddWithValue("creator", createdBy);
         command.Parameters.AddWithValue("now", now);
         if (await command.ExecuteNonQueryAsync(cancellationToken) != 1) return null;
@@ -83,8 +86,8 @@ public sealed partial class PostgresCollaborationStore
             WHERE id=@id AND organization_id=@organization AND revision=@revision;
             """, connection, transaction);
         AddNullableUuid(command, "folder", folderLabelId);
-        command.Parameters.AddWithValue("name", name);
-        command.Parameters.AddWithValue("body", body);
+        command.Parameters.AddWithValue("name", encryption.Encode(name, false));
+        command.Parameters.AddWithValue("body", encryption.Encode(body, false));
         command.Parameters.AddWithValue("now", DateTimeOffset.UtcNow);
         command.Parameters.AddWithValue("id", resourceId);
         command.Parameters.AddWithValue("organization", organizationId);
@@ -103,7 +106,7 @@ public sealed partial class PostgresCollaborationStore
             await GetResourceCoreAsync(connection, null, organizationId, resourceId, cancellationToken));
     }
 
-    private static async Task<ProjectResource?> GetResourceCoreAsync(
+    private async Task<ProjectResource?> GetResourceCoreAsync(
         NpgsqlConnection connection, NpgsqlTransaction? transaction,
         Guid organizationId, Guid resourceId, CancellationToken cancellationToken)
     {

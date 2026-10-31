@@ -46,7 +46,9 @@ public sealed record LocalSyncPayload(
     WorkspaceLocalState Workspace,
     CollaborationLocalState Collaboration,
     PluginLocalState Plugins,
-    IReadOnlyList<CyAnnotaDocument>? Annotations = null);
+    IReadOnlyList<CyAnnotaDocument>? Annotations = null,
+    IReadOnlyList<CyTask.Api.Spaces.ProjectSpaceState>? Spaces = null,
+    IReadOnlyList<ContentPluginData>? ContentPlugins = null);
 
 public sealed record LocalSyncTombstone(
     string EntityType,

@@ -2193,7 +2193,7 @@ public sealed partial class InMemoryWorkspaceStore : IWorkspaceStore
             _ => false
         };
 
-    private static IOrderedEnumerable<WorkItem> OrderTaskPage(
+    internal static IOrderedEnumerable<WorkItem> OrderTaskPage(
         IEnumerable<WorkItem> tasks,
         string sort) => sort switch
         {
@@ -2204,7 +2204,7 @@ public sealed partial class InMemoryWorkspaceStore : IWorkspaceStore
             _ => tasks.OrderByDescending(task => task.UpdatedAt).ThenBy(task => task.Id)
         };
 
-    private static bool IsAfterTaskCursor(WorkItem task, TaskPageRequest request)
+    internal static bool IsAfterTaskCursor(WorkItem task, TaskPageRequest request)
     {
         var cursor = request.Cursor!;
         var idIsAfter = task.Id.CompareTo(cursor.TaskId) > 0;

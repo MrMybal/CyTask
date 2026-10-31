@@ -6,16 +6,21 @@ using CyTask.Api.Configuration;
 using CyTask.Api.Domain;
 using CyTask.Api.Infrastructure;
 using CyTask.Api.Plugins;
+using CyTask.Api.Security;
 using Microsoft.Extensions.Options;
 
 namespace CyTask.Api.LocalSync;
 
 public sealed partial class LocalSyncCoordinator(
     IOptions<CyTaskOptions> options,
+    DataEncryption encryption,
+    DirectoryEncryption directoryEncryption,
     InMemoryWorkspaceStore workspace,
     InMemoryCollaborationStore collaboration,
     InMemoryPluginStore plugins,
     InMemoryCyAnnotaStore annotations,
+    CyTask.Api.Spaces.InMemoryProjectSpaceStore spaces,
+    InMemoryContentPluginStore contentPlugins,
     LocalStateClock localState,
     CyTask.Api.Realtime.WorkspaceEventHub events,
     ILogger<LocalSyncCoordinator> logger) : BackgroundService, ILocalSyncService
@@ -55,6 +60,9 @@ public sealed partial class LocalSyncCoordinator(
                 ? id : throw new InvalidOperationException("CyTask:LocalDeviceId doit être un GUID non vide.");
 
             var metadata = Path.Combine(_root, ".cytask");
+            await directoryEncryption.InitializeAsync(metadata, "workspace",
+                path => (Path.GetExtension(path) is ".json" or ".tmp") && !path.Contains(Path.DirectorySeparatorChar + "media" + Path.DirectorySeparatorChar, StringComparison.Ordinal),
+                true, cancellationToken);
             _snapshotsPath = Path.Combine(metadata, "exchange", "snapshots");
             _conflictsPath = Path.Combine(metadata, "exchange", "conflicts");
             Directory.CreateDirectory(_snapshotsPath);
@@ -213,7 +221,7 @@ public sealed partial class LocalSyncCoordinator(
 
     private LocalSyncPayload CapturePayload() => new(
         workspace.CaptureLocalState(), collaboration.CaptureLocalState(), plugins.CaptureLocalState(),
-        annotations.CaptureLocalState());
+        annotations.CaptureLocalState(), spaces.CaptureLocalState(), contentPlugins.CaptureLocalState());
 
     private void RestorePayload(LocalSyncPayload value)
     {
@@ -221,6 +229,8 @@ public sealed partial class LocalSyncCoordinator(
         collaboration.RestoreLocalState(value.Collaboration);
         plugins.RestoreLocalState(value.Plugins);
         annotations.RestoreLocalState(value.Annotations ?? []);
+        spaces.RestoreLocalState(value.Spaces ?? []);
+        contentPlugins.RestoreLocalState(value.ContentPlugins ?? []);
     }
 
     private LocalSyncPayload Merge(IEnumerable<LocalSyncEnvelope> values, List<LocalSyncConflict> conflicts)
@@ -254,7 +264,10 @@ public sealed partial class LocalSyncCoordinator(
             Versioned(sources, x => x.Payload.Plugins.TaskData, x => $"{x.TaskId:N}:{x.PluginId}", x => x.Revision, "task-plugin-data", conflicts),
             Stable(sources, x => x.Payload.Plugins.TaskDataHistory, x => $"{x.TaskId:N}:{x.PluginId}:{x.Revision}", "task-plugin-history", conflicts));
         return new(w, c, p, Versioned(sources, x => x.Payload.Annotations ?? [],
-            x => x.AttachmentId.ToString("N"), x => x.Revision, "annotation", conflicts));
+            x => x.AttachmentId.ToString("N"), x => x.Revision, "annotation", conflicts),
+            Versioned(sources, x => x.Payload.Spaces ?? [], x => x.ProjectId.ToString("N"),
+                x => x.Revision, "project-space", conflicts),
+            Versioned(sources, x => x.Payload.ContentPlugins ?? [], x => x.Key, x => x.Revision, "content-plugin", conflicts));
     }
 
     private List<LocalSyncTombstone> DetectDeletions(LocalSyncPayload previous, LocalSyncPayload current)
@@ -418,7 +431,7 @@ public sealed partial class LocalSyncCoordinator(
                 {
                     var info = new FileInfo(path);
                     if (info.Length <= 0) continue;
-                    if (info.Length > MaxSnapshotBytes)
+                    if (info.Length > MaxSnapshotBytes + MaxSnapshotBytes / 4096 + 65536)
                         throw new InvalidDataException("The latest CyTask snapshot exceeds the supported size. Opening an older state has been stopped to preserve project data.");
                     signature.Append(path).Append(':').Append(info.Length).Append(':').Append(info.LastWriteTimeUtc.Ticks).Append('|');
                     usedPaths.Add(path);
@@ -432,9 +445,15 @@ public sealed partial class LocalSyncCoordinator(
                         FileShare.Read | FileShare.Delete, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
                     var expected = Path.GetFileNameWithoutExtension(path).Split('-').LastOrDefault();
                     var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
-                    if (expected != actual) continue;
+                    if (expected != actual)
+                    {
+                        if (encryption.Enabled) throw new CryptographicException("An encrypted snapshot fingerprint is invalid. Opening an older state has been stopped.");
+                        continue;
+                    }
                     stream.Position = 0;
-                    var item = await JsonSerializer.DeserializeAsync<LocalSyncEnvelope>(stream, _json, cancellationToken);
+                    await using var decoded = encryption.OpenFile(path, "workspace");
+                    if (decoded.Length > MaxSnapshotBytes) throw new CryptographicException("The snapshot exceeds the supported size.");
+                    var item = await JsonSerializer.DeserializeAsync<LocalSyncEnvelope>(decoded, _json, cancellationToken);
                     if (item is null || item.FormatVersion != FormatVersion || item.WorkspaceId != _workspaceId) continue;
                     _snapshotCache[path] = new(info.Length, info.LastWriteTimeUtc, item);
                     result.Add(item);
@@ -457,8 +476,7 @@ public sealed partial class LocalSyncCoordinator(
         var temporary = Path.Combine(directory, $"{Guid.NewGuid():N}.tmp");
         try
         {
-            await using (var target = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
-                             FileShare.None, 65536, FileOptions.Asynchronous))
+            await using (var target = encryption.CreateFile(temporary, "workspace"))
             {
                 await JsonSerializer.SerializeAsync(target, envelope, _json, cancellationToken);
                 if (target.Length > MaxSnapshotBytes)
@@ -494,20 +512,25 @@ public sealed partial class LocalSyncCoordinator(
 
     private async Task<T?> ReadJsonAsync<T>(string path, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        await using var stream = encryption.OpenFile(path, "workspace");
         return await JsonSerializer.DeserializeAsync<T>(stream, _json, cancellationToken);
     }
 
     private Task WriteJsonAsync<T>(string path, T value, CancellationToken cancellationToken) =>
         WriteBytesAsync(path, JsonSerializer.SerializeToUtf8Bytes(value, _json), cancellationToken);
 
-    private static async Task WriteBytesAsync(string path, byte[] bytes, CancellationToken cancellationToken)
+    private async Task WriteBytesAsync(string path, byte[] bytes, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporary = $"{path}.{Guid.NewGuid():N}.tmp";
-        await File.WriteAllBytesAsync(temporary, bytes, cancellationToken);
-        try { File.Move(temporary, path, false); }
-        catch (IOException) when (File.Exists(path)) { File.Delete(temporary); }
+        try
+        {
+            await using (var target = encryption.CreateFile(temporary, "workspace"))
+                await target.WriteAsync(bytes, cancellationToken);
+            try { File.Move(temporary, path, false); }
+            catch (IOException) when (File.Exists(path)) { File.Delete(temporary); }
+        }
+        finally { CryptographicOperations.ZeroMemory(bytes); File.Delete(temporary); }
     }
 
     private static string ValidateWorkspacePath(string? configured)

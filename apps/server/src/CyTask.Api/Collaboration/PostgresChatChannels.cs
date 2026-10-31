@@ -1,4 +1,5 @@
 using Npgsql;
+using CyTask.Api.Security;
 
 namespace CyTask.Api.Collaboration;
 
@@ -76,7 +77,7 @@ public sealed partial class PostgresCollaborationStore
         command.Parameters.AddWithValue("name", name);
         command.Parameters.AddWithValue("type", channelType);
         command.Parameters.AddWithValue("slug", slug);
-        command.Parameters.AddWithValue("topic", topic);
+        command.Parameters.AddWithValue("topic", encryption.Encode(topic, false));
         command.Parameters.AddWithValue("creator", createdBy);
         command.Parameters.AddWithValue("now", now);
         if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
@@ -123,7 +124,7 @@ public sealed partial class PostgresCollaborationStore
             validMembers, createdBy, now);
     }
 
-    private static async Task<ChatChannel?> GetChannelCoreAsync(
+    private async Task<ChatChannel?> GetChannelCoreAsync(
         NpgsqlConnection connection, NpgsqlTransaction? transaction,
         Guid organizationId, Guid channelId, Guid userId, CancellationToken cancellationToken)
     {

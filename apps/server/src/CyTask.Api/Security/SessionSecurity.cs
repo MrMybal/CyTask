@@ -41,8 +41,8 @@ public static partial class SessionSecurity
 
     public static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
 
-    public static bool IsValidEmail(string email) =>
-        email.Length <= 254 && new EmailAddressAttribute().IsValid(email);
+    public static bool IsValidEmail(string? email) =>
+        email is { Length: <= 254 } && new EmailAddressAttribute().IsValid(email);
 
     public static string NormalizeProjectKey(string key) => key.Trim().ToUpperInvariant();
 
@@ -278,15 +278,20 @@ public sealed class SessionMiddleware(RequestDelegate next)
     }
 }
 
-public sealed class RequireSessionFilter : IEndpointFilter
+public sealed class RequireSessionFilter(MfaService mfa) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
-        return context.HttpContext.GetUser() is null
+        var cleanup=context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<AllowUnverifiedCleanup>() is not null;
+        return context.HttpContext.GetUser() is null||!cleanup&&!await mfa.ContextAllowedAsync(context.HttpContext,context.HttpContext.RequestAborted)
             ? Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Authentication required")
             : await next(context);
     }
 }
+
+// Only logout/revocation may clean up a still-authenticated credential after its
+// MFA proof has been invalidated. This never permits access to workspace data.
+public sealed record AllowUnverifiedCleanup;
 
 public sealed class CsrfFilter(IHostEnvironment environment, IOptions<CyTask.Api.Configuration.CyTaskOptions> options) : IEndpointFilter
 {
@@ -360,7 +365,9 @@ public sealed class RequireRoleFilter(params string[] roles) : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var user = context.HttpContext.GetUser();
-        return user is null || !_roles.Contains(user.Role)
+        var role = context.HttpContext.Items.TryGetValue(CyTask.Api.Spaces.ProjectAccessService.RoleItem, out var projectRole)
+            ? projectRole as string : user?.Role;
+        return user is null || role is null || !_roles.Contains(role)
             ? Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Insufficient permissions")
             : await next(context);
     }

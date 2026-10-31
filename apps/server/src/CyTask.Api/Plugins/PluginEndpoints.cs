@@ -27,6 +27,7 @@ public static class PluginEndpoints
             .AddEndpointFilter(new RequireRoleFilter("owner", "admin", "member"));
         authenticated.MapAiAssistantEndpoints();
         authenticated.MapCyAnnotaEndpoints();
+        authenticated.MapContentPluginEndpoints();
         return authenticated;
     }
 
@@ -262,9 +263,18 @@ public static class PluginEndpoints
             return errors;
         }
 
-        var fields = manifest.Contributes.TaskTabs
-            .SelectMany(tab => tab.Fields)
-            .ToDictionary(field => field.Key, StringComparer.Ordinal);
+        return ValidateFields(manifest.Contributes.TaskTabs.SelectMany(tab => tab.Fields).ToArray(), data);
+    }
+
+    internal static Dictionary<string, string[]> ValidateFields(IReadOnlyList<PluginFieldDefinition> definitions, JsonElement data)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        if (data.ValueKind != JsonValueKind.Object || JsonSerializer.SerializeToUtf8Bytes(data).Length > MaximumDataBytes)
+        {
+            errors["data"] = ["Plugin data must be a JSON object no larger than 64 KiB."];
+            return errors;
+        }
+        var fields = definitions.ToDictionary(field => field.Key, StringComparer.Ordinal);
         foreach (var property in data.EnumerateObject())
         {
             if (!fields.ContainsKey(property.Name))

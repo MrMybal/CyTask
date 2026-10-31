@@ -19,7 +19,16 @@ public sealed record PluginTaskTabDefinition(
     IReadOnlyList<PluginFieldDefinition> Fields);
 
 public sealed record PluginContributions(
-    IReadOnlyList<PluginTaskTabDefinition> TaskTabs);
+    IReadOnlyList<PluginTaskTabDefinition> TaskTabs,
+    IReadOnlyList<PluginContentAction>? ContentActions = null);
+
+// Hosts implement these declarative renderers. Manifests never supply executable HTML or scripts.
+public sealed record PluginContentAction(
+    string Id,
+    string Title,
+    string Renderer,
+    IReadOnlyList<string> Surfaces,
+    IReadOnlyList<PluginFieldDefinition> Fields);
 
 public sealed record PluginManifest(
     int SchemaVersion,

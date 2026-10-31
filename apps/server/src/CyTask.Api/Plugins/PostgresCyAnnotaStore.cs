@@ -1,9 +1,10 @@
 using System.Text.Json;
+using CyTask.Api.Security;
 using Npgsql;
 
 namespace CyTask.Api.Plugins;
 
-public sealed class PostgresCyAnnotaStore(NpgsqlDataSource dataSource) : ICyAnnotaStore
+public sealed class PostgresCyAnnotaStore(NpgsqlDataSource dataSource, DataEncryption encryption) : ICyAnnotaStore
 {
     public async Task<IReadOnlyList<CyAnnotaDocument>> ListTaskDocumentsAsync(
         Guid organizationId, Guid taskId, CancellationToken cancellationToken)
@@ -68,12 +69,20 @@ public sealed class PostgresCyAnnotaStore(NpgsqlDataSource dataSource) : ICyAnno
             RETURNING organization_id, project_id, task_id, attachment_id, media_kind,
                       document::text, annotation_count, revision, updated_by, updated_at;
             """);
+        if (expectedRevision > 0) command.CommandText = """
+            UPDATE cyannota_documents SET media_kind=@media_kind,document=@document::jsonb,
+                annotation_count=@annotation_count,revision=revision+1,updated_by=@updated_by,updated_at=now()
+            WHERE organization_id=@organization_id AND project_id=@project_id
+              AND task_id=@task_id AND attachment_id=@attachment_id AND revision=@expected_revision
+            RETURNING organization_id,project_id,task_id,attachment_id,media_kind,
+                document::text,annotation_count,revision,updated_by,updated_at;
+            """;
         command.Parameters.AddWithValue("organization_id", organizationId);
         command.Parameters.AddWithValue("project_id", projectId);
         command.Parameters.AddWithValue("task_id", taskId);
         command.Parameters.AddWithValue("attachment_id", attachmentId);
         command.Parameters.AddWithValue("media_kind", mediaKind);
-        command.Parameters.AddWithValue("document", document.GetRawText());
+        command.Parameters.AddWithValue("document", encryption.Encode(document.GetRawText(), true));
         command.Parameters.AddWithValue("annotation_count", annotationCount);
         command.Parameters.AddWithValue("expected_revision", expectedRevision);
         command.Parameters.AddWithValue("updated_by", userId);
@@ -81,9 +90,9 @@ public sealed class PostgresCyAnnotaStore(NpgsqlDataSource dataSource) : ICyAnno
         return await reader.ReadAsync(cancellationToken) ? Read(reader) : null;
     }
 
-    private static CyAnnotaDocument Read(NpgsqlDataReader reader)
+    private CyAnnotaDocument Read(NpgsqlDataReader reader)
     {
-        using var json = JsonDocument.Parse(reader.GetString(5));
+        using var json = JsonDocument.Parse(encryption.ReadString(reader, 5));
         return new(
             reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3),
             reader.GetString(4), json.RootElement.Clone(), reader.GetInt32(6),

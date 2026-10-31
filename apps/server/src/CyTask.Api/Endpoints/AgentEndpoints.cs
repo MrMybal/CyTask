@@ -117,6 +117,7 @@ public static partial class AgentEndpoints
         HttpContext context,
         IWorkspaceStore store,
         WorkspaceEventHub events,
+        CyTask.Api.Spaces.ProjectAccessService access,
         CancellationToken cancellationToken)
     {
         var type = (request.Type ?? "work.requested").Trim().ToLowerInvariant();
@@ -132,6 +133,8 @@ public static partial class AgentEndpoints
         if (errors.Count > 0) return Results.ValidationProblem(errors);
 
         var user = context.GetUser()!;
+        if (request.TaskId is { } targetTask && !await access.CanReadEntityAsync(user, "task", targetTask, cancellationToken))
+            return Results.NotFound();
         var notification = await store.CreateAgentNotificationAsync(
             user.OrganizationId, agentUserId, user.UserId, type, title, body,
             request.TaskId, cancellationToken);
@@ -143,36 +146,52 @@ public static partial class AgentEndpoints
     private static async Task<IResult> GetAgentContextAsync(
         HttpContext context,
         IWorkspaceStore store,
+        CyTask.Api.Spaces.ProjectAccessService access,
         CancellationToken cancellationToken)
     {
         var user = context.GetUser()!;
         var result = await store.GetAgentContextAsync(
             user.OrganizationId, user.UserId, cancellationToken);
-        return result is null
-            ? Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Agent access required")
-            : Results.Ok(result);
+        if (result is null) return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Agent access required");
+        var projects = new List<Project>();
+        foreach (var project in result.Projects)
+            if (await access.RoleAsync(user, project.Id, cancellationToken) is not null) projects.Add(project);
+        var visible = projects.Select(x => x.Id).ToHashSet();
+        var notifications = new List<AgentNotification>();
+        foreach (var notification in result.Notifications)
+            if (notification.TaskId is null || await access.CanReadEntityAsync(user, "task", notification.TaskId.Value, cancellationToken)) notifications.Add(notification);
+        return Results.Ok(result with { Projects = projects, AssignedTasks = result.AssignedTasks.Where(x => visible.Contains(x.ProjectId)).ToArray(), Notifications = notifications });
     }
 
     private static async Task<IResult> ListNotificationsAsync(
         bool includeAcknowledged,
         HttpContext context,
         IWorkspaceStore store,
+        CyTask.Api.Spaces.ProjectAccessService access,
         CancellationToken cancellationToken)
     {
         var user = context.GetUser()!;
         if (await store.FindAgentAsync(user.OrganizationId, user.UserId, cancellationToken) is null)
             return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Agent access required");
-        return Results.Ok(await store.ListAgentNotificationsAsync(
-            user.OrganizationId, user.UserId, includeAcknowledged, cancellationToken));
+        var notifications = await store.ListAgentNotificationsAsync(user.OrganizationId, user.UserId, includeAcknowledged, cancellationToken);
+        var visible = new List<AgentNotification>();
+        foreach (var notification in notifications)
+            if (notification.TaskId is null || await access.CanReadEntityAsync(user, "task", notification.TaskId.Value, cancellationToken)) visible.Add(notification);
+        return Results.Ok(visible);
     }
 
     private static async Task<IResult> AcknowledgeAsync(
         Guid notificationId,
         HttpContext context,
         IWorkspaceStore store,
+        CyTask.Api.Spaces.ProjectAccessService access,
         CancellationToken cancellationToken)
     {
         var user = context.GetUser()!;
+        var visible = (await store.ListAgentNotificationsAsync(user.OrganizationId, user.UserId, true, cancellationToken))
+            .FirstOrDefault(x => x.Id == notificationId);
+        if (visible is null || visible.TaskId is { } taskId && !await access.CanReadEntityAsync(user, "task", taskId, cancellationToken))
+            return Results.NotFound();
         var result = await store.AcknowledgeAgentNotificationAsync(
             user.OrganizationId, user.UserId, notificationId, cancellationToken);
         return result is null ? Results.NotFound() : Results.Ok(result);

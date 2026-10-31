@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { ApiError, api, type InvitationPreview, type Session } from "../api";
+import { ApiError, api, type InvitationPreview, type Session, type MfaChallenge } from "../api";
+import {MfaFlow} from "./MfaFlow";
 import { LanguageSwitcher, useI18n } from "../i18n";
 
 interface InvitationScreenProps {
@@ -14,12 +15,16 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [challenge,setChallenge]=useState<MfaChallenge>();
 
   useEffect(() => {
     let active = true;
-    api.invitationPreview(token)
+    api.mfaPending().then(result=>{
+      if(result.challenge){if(active)setChallenge(result.challenge);return undefined;}
+      return api.invitationPreview(token);
+    })
       .then((invitation) => {
-        if (active) setPreview(invitation);
+        if (active&&invitation) setPreview(invitation);
       })
       .catch(() => {
         if (active) setError(t("This invitation is invalid, expired or has already been used."));
@@ -41,7 +46,7 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
         displayName: String(data.get("displayName")),
         password: String(data.get("password"))
       });
-      onAccepted(session);
+      if("mfaRequired" in session)setChallenge(session.challenge);else onAccepted(session);
     } catch (reason) {
       setError(reason instanceof ApiError
         ? t("This invitation is no longer available. Ask for a new link.")
@@ -71,7 +76,7 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
       </section>
 
       <section className="auth-panel">
-        <form className="auth-card" onSubmit={submit}>
+        {challenge?<div className="auth-card"><MfaFlow initial={challenge} onComplete={onAccepted} onCancel={onCancel}/></div>:<form className="auth-card" onSubmit={submit}>
           <div className="auth-language"><LanguageSwitcher /></div>
           <div>
             <p className="eyebrow">{t("New access")}</p>
@@ -106,7 +111,7 @@ export function InvitationScreen({ token, onAccepted, onCancel }: InvitationScre
             </button>
           )}
           {!loading && !preview && <button className="text-button" type="button" onClick={onCancel}>{t("Back to sign in")}</button>}
-        </form>
+        </form>}
       </section>
     </main>
   );

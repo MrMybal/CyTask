@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => ({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:5080",
+      "/api": { target: "http://127.0.0.1:5080", ws: true, changeOrigin: false },
       "/health": "http://127.0.0.1:5080",
       "/plugins/cyannota": {
         target: "http://127.0.0.1:5174",

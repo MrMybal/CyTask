@@ -1,5 +1,6 @@
-import { type FormEvent, useState } from "react";
-import { ApiError, api, type Session } from "../api";
+import { type FormEvent, useEffect, useState } from "react";
+import { ApiError, api, type Session, type MfaChallenge } from "../api";
+import {MfaFlow} from "./MfaFlow";
 import { LanguageSwitcher, useI18n } from "../i18n";
 
 interface AuthScreenProps {
@@ -11,6 +12,8 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
   const { t } = useI18n();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [challenge,setChallenge]=useState<MfaChallenge>();
+  useEffect(()=>{let active=true;void api.mfaPending().then(result=>{if(active&&result.challenge)setChallenge(current=>current??result.challenge!);}).catch(()=>undefined);return()=>{active=false;};},[]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,9 +40,9 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
             email: String(data.get("email")),
             password
           });
-      onAuthenticated(session);
+      if("mfaRequired" in session){setChallenge(session.challenge);event.currentTarget?.reset();}else onAuthenticated(session);
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : t("Unable to sign in."));
+      setError(reason instanceof ApiError ? t(reason.message) : t("Unable to sign in."));
     } finally {
       setPending(false);
     }
@@ -61,7 +64,7 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
       </section>
 
       <section className="auth-panel">
-        <form className="auth-card" onSubmit={submit}>
+        {challenge?<div className="auth-card"><div className="auth-language"><LanguageSwitcher/></div><MfaFlow initial={challenge} onComplete={onAuthenticated} onCancel={()=>{setChallenge(undefined);window.location.reload();}}/></div>:<form className="auth-card" onSubmit={submit}>
           <div className="auth-language"><LanguageSwitcher /></div>
           <div>
             <p className="eyebrow">{t(bootstrapRequired ? "First launch" : "Welcome back")}</p>
@@ -94,6 +97,7 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
             {t("Password")}
             <input
               name="password"
+              aria-label={t("Password")}
               type="password"
               autoComplete={bootstrapRequired ? "new-password" : "current-password"}
               minLength={bootstrapRequired ? 12 : 1}
@@ -121,7 +125,7 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
           <button className="primary-button" disabled={pending} type="submit">
             {pending ? t("Just a moment…") : t(bootstrapRequired ? "Initialize CyTask" : "Continue")}
           </button>
-        </form>
+        </form>}
       </section>
     </main>
   );

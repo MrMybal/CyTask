@@ -7,19 +7,38 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "test:appearance": "node tests/appearance-smoke.mjs",
+    "test:mfa": "node tests/mfa-smoke.mjs",
+    "test:calls": "node tests/calls-smoke.mjs",
+    "prebuild": "node ../../scripts/build-cymd.mjs",
+    "prebuild:release": "node ../../scripts/build-cymd.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build",
     "build:release": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --mode release",
     "typecheck": "tsc --noEmit -p tsconfig.app.json --pretty false && tsc --noEmit -p tsconfig.node.json --pretty false"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/state": "6.7.5",
+    "@codemirror/view": "6.43.12",
+    "@lezer/highlight": "1.2.5",
+    "dompurify": "3.4.17",
+    "highlight.js": "11.12.0",
+    "markdown-it": "15.0.3",
+    "qrcode": "1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@types/markdown-it": "14.2.0",
+    "@types/qrcode": "1.5.5",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.1.0",
+    "playwright": "1.62.1",
     "typescript": "7.0.2",
     "vite": "8.3.5"
   }

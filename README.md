@@ -28,9 +28,23 @@ The first secure vertical slice is implemented: initial owner bootstrap, session
 
 The responsive Web client provides List, Compact table, Kanban, free multimedia Canvas and relationship Graph views. It includes persistent folders and subfolders, saved views, per-column sorting, configurable columns, bulk updates, light and dark themes, command palette, quick task creation, server cursor pagination and shareable task links. A demo seed generates 220 realistic tasks for interface and performance testing.
 
+Projects now use server-like navigation with categories and typed rooms for work,
+chat, announcements, documents, canvases and shared files. Project-specific access
+can inherit organization roles or use a private membership list. Markdown composers
+provide formatting, preview, mentions and task suggestions. Enabled plugins can add
+actions to messages, text and media, including CyMD editing and CyAnnota annotations
+on shared chat images. See [rooms and content extensions](docs/content-plugins.md)
+for the protocol, local persistence and current limitations.
+
+Team servers can disable, optionally allow or require two-factor authentication.
+Users can enroll a TOTP app (including Google Authenticator), verify email codes
+through the server's TLS SMTP relay, and manage single-use recovery codes in account
+settings. See [two-factor authentication](docs/two-factor-authentication.md) for server
+configuration, native-client behavior and the local-solo exception.
+
 Attachments are hashed in the browser, uploaded in verified chunks and quarantined outside the Web root. The media worker validates PNG, JPEG, GIF, WebP, MP4 and WebM containers before making them available to their organization. Validated images and videos have previews, downloads and in-task playback with range requests. Video transcoding and antivirus scanning remain planned.
 
-Each workspace has a resource library for documents, canvases and server files. Team chat supports project channels, private groups, mentions, task link previews, images, videos and files. Voice and screen sharing use authenticated WebRTC signaling; deployments across strict NAT or firewalls will require a private TURN relay.
+Each workspace has a resource library for documents, canvases and server files. Team chat supports project channels, private groups, mentions, task link previews, images, videos and files. Voice/video rooms support live cameras, independent screen sharing, mute/deafen and input-device selection with authenticated WebRTC signaling. Configure your own STUN/TURN services for separate networks; see [live calls](docs/live-calls.md) for deployment settings and limits.
 
 Owners and administrators can open **Migration** inside a project to analyze a ClickUp list or Jira Cloud project, map source statuses and users, preview the result and run an idempotent import. Source tokens are never persisted; previews expire after 30 minutes. Tasks, descriptions, priorities, dates, assignees, comments, checklists, labels, parent links and supported dependencies are preserved. Remote attachments remain safe HTTPS source links in this first version.
 
@@ -54,6 +68,10 @@ English is the default language in the Web application, PWA metadata and Desktop
 System status names are translated by the interface. Project names, custom status names, tasks, comments and other user-authored content are never translated or renamed automatically.
 
 ## Quick start
+
+Optional encryption at rest is available for project content, media and local/Sync
+snapshots. It is disabled by default; existing data needs an explicit offline
+conversion. See [data encryption and key management](docs/data-encryption.md).
 
 With Node.js 22 and the local `.tools/dotnet` SDK already installed:
 

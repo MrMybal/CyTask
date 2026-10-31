@@ -2,6 +2,23 @@
 
 All notable changes to CyTask are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Server-like project navigation with categories, typed rooms, room links and project-specific roles.
+- Markdown composers with mentions, task suggestions and embedded CyMD editing.
+- Plugin actions on messages, text and shared media, including CyAnnota annotations.
+- Live voice and camera rooms with independent screen sharing, device selection and configurable STUN/TURN connectivity.
+- Optional or required two-factor authentication using authenticator apps or email codes, with account settings and recovery codes.
+- Optional content encryption at rest for local/Sync workspaces, uploaded media and PostgreSQL content, with external desktop key files and an explicit offline conversion command.
+
+### Improved
+
+- Clearer text, status and priority contrast across all six themes, including selected rows and keyboard focus.
+- More readable compact-table labels and controls while preserving the compact layout.
+- Expanded regression coverage for project access, content extensions, calls, authentication, encrypted storage and interface themes.
+
 ## [0.2.2] - 2026-10-25
 
 ### Added

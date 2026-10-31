@@ -7,12 +7,25 @@ public sealed class CyTaskOptions
     public bool ApplyMigrations { get; init; }
     public bool UseInMemoryStore { get; init; }
     public bool LocalMode { get; init; }
+    public bool DataEncryptionEnabled { get; init; }
+    public string? DataEncryptionKey { get; init; }
     public string? LocalWorkspacePath { get; init; }
     public string? LocalDeviceId { get; init; }
     public string? LocalAccessKey { get; init; }
     public string LocalWorkspaceName { get; init; } = "Local workspace";
     public int LocalSyncSeconds { get; init; } = 2;
     public int SessionHours { get; init; } = 12;
+    public string MfaPolicy { get; init; } = "disabled";
+    public bool MfaAuthenticatorEnabled { get; init; } = true;
+    public bool MfaEmailEnabled { get; init; }
+    public string MfaIssuer { get; init; } = "CyTask";
+    public string? MfaEncryptionKey { get; init; }
+    public string? SmtpHost { get; init; }
+    public int SmtpPort { get; init; } = 587;
+    public string SmtpSecurity { get; init; } = "StartTls";
+    public string? SmtpUsername { get; init; }
+    public string? SmtpPassword { get; init; }
+    public string? SmtpFrom { get; init; }
     public string? LocalSessionStoragePath { get; init; }
     public int NativeAuthorizationCodeMinutes { get; init; } = 5;
     public int NativeAccessTokenMinutes { get; init; } = 60;
@@ -36,6 +49,14 @@ public sealed class CyTaskOptions
     public int SseHeartbeatSeconds { get; init; } = 15;
     public string? PluginSecretKey { get; init; }
     public string CyAnnotaUrl { get; init; } = "/plugins/cyannota/";
+    public string[] WebRtcStunUrls { get; init; } = [];
+    public string? WebRtcPublicOrigin { get; init; }
+    public string[] WebRtcTurnUrls { get; init; } = [];
+    public string? WebRtcTurnSharedSecret { get; init; }
+    public int WebRtcTurnCredentialSeconds { get; init; } = 3600;
+    public bool WebRtcRelayOnly { get; init; }
+    public int CallMaxParticipants { get; init; } = 8;
+    public int CallAccessCheckSeconds { get; init; } = 15;
     public bool AiLocalAgentsEnabled { get; init; }
     public string? AiLocalWorkspacePath { get; init; }
     public string CodexExecutable { get; init; } = "codex";

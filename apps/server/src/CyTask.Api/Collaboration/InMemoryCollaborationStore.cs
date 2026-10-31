@@ -11,6 +11,24 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace, LocalS
     private readonly Dictionary<Guid, ChatChannel> _channels = [];
     private readonly Dictionary<Guid, ChatMessage> _messages = [];
 
+    public Task<IReadOnlyList<CyTask.Api.Spaces.RoomActivity>> ListChannelActivityAsync(
+        Guid organizationId, Guid projectId, Guid userId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            IReadOnlyList<CyTask.Api.Spaces.RoomActivity> result = _channels.Values
+                .Where(x => x.OrganizationId == organizationId && x.ProjectId == projectId
+                    && (x.ChannelType == "channel" || x.MemberIds.Contains(userId)))
+                .Select(channel => {
+                    var messages = _messages.Values.Where(x => x.ChannelId == channel.Id).ToArray();
+                    return new CyTask.Api.Spaces.RoomActivity(channel.Id,
+                        messages.Length == 0 ? null : messages.Max(x => x.CreatedAt), messages.LongLength);
+                }).ToArray();
+            return Task.FromResult(result);
+        }
+    }
+
     public async Task<IReadOnlyList<ProjectResource>?> ListResourcesAsync(
         Guid organizationId, Guid projectId, CancellationToken cancellationToken)
     {
@@ -277,6 +295,18 @@ public sealed class InMemoryCollaborationStore(IWorkspaceStore workspace, LocalS
             _channels.Add(channel.Id, channel);
             localState.Changed();
             return channel;
+        }
+    }
+
+    public Task<ChatChannel?> FindMessageChannelAsync(Guid organizationId, Guid messageId,
+        Guid userId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var message = _messages.GetValueOrDefault(messageId);
+            var channel = message is null ? null : _channels.GetValueOrDefault(message.ChannelId);
+            return Task.FromResult(channel?.OrganizationId == organizationId && CanAccess(channel, userId) ? channel : null);
         }
     }
 

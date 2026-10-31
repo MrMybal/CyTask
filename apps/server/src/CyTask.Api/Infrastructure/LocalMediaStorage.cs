@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using CyTask.Api.Collaboration;
 using CyTask.Api.Domain;
 using CyTask.Api.Media;
+using CyTask.Api.Security;
 using Microsoft.Extensions.Options;
 
 namespace CyTask.Api.Infrastructure;
@@ -20,8 +21,10 @@ public sealed class LocalMediaStorage
     private readonly string _uploadsPath;
     private readonly string _quarantinePath;
     private readonly string _objectsPath;
+    private readonly string _root;
+    private readonly DataEncryption _encryption;
 
-    public LocalMediaStorage(IOptions<Configuration.CyTaskOptions> options, IHostEnvironment environment)
+    public LocalMediaStorage(IOptions<Configuration.CyTaskOptions> options, IHostEnvironment environment, DataEncryption encryption)
     {
         var configured = options.Value.MediaStoragePath;
         var root = Path.GetFullPath(Path.IsPathRooted(configured)
@@ -35,12 +38,17 @@ public sealed class LocalMediaStorage
         }
 
         _uploadsPath = Path.Combine(root, "uploads");
+        _root = root;
+        _encryption = encryption;
         _quarantinePath = Path.Combine(root, "quarantine");
         _objectsPath = Path.Combine(root, "objects");
         Directory.CreateDirectory(_uploadsPath);
         Directory.CreateDirectory(_quarantinePath);
         Directory.CreateDirectory(_objectsPath);
     }
+
+    public Task InitializeEncryptionAsync(DirectoryEncryption migration, CancellationToken cancellationToken, bool migrateOffline = false) =>
+        migration.InitializeAsync(_root, "media", path => Path.GetExtension(path) is ".blob" or ".chunk" or ".partial", false, cancellationToken, migrateOffline);
 
     public async Task<StoredChunk> WriteChunkAsync(
         Guid organizationId,
@@ -64,13 +72,7 @@ public sealed class LocalMediaStorage
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
         {
-            await using (var target = new FileStream(
-                             partialPath,
-                             FileMode.CreateNew,
-                             FileAccess.Write,
-                             FileShare.None,
-                             buffer.Length,
-                             FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await using (var target = _encryption.CreateFile(partialPath, "media"))
             {
                 int read;
                 while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
@@ -108,7 +110,7 @@ public sealed class LocalMediaStorage
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 
@@ -184,24 +186,12 @@ public sealed class LocalMediaStorage
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
         {
-            await using (var target = new FileStream(
-                             partialPath,
-                             FileMode.CreateNew,
-                             FileAccess.Write,
-                             FileShare.None,
-                             buffer.Length,
-                             FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await using (var target = _encryption.CreateFile(partialPath, "media"))
             {
                 foreach (var chunk in upload.Chunks.OrderBy(chunk => chunk.Index))
                 {
                     var path = ChunkPath(uploadDirectory, chunk.Index);
-                    await using var source = new FileStream(
-                        path,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.Read,
-                        buffer.Length,
-                        FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    await using var source = _encryption.OpenFile(path, "media");
                     int read;
                     long chunkTotal = 0;
                     while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
@@ -251,7 +241,7 @@ public sealed class LocalMediaStorage
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 
@@ -296,17 +286,11 @@ public sealed class LocalMediaStorage
         File.Move(source, target, overwrite: true);
     }
 
-    private static FileStream? OpenRead(string path)
+    private Stream? OpenRead(string path)
     {
         try
         {
-            return new FileStream(
-                path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                64 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            return _encryption.OpenFile(path, "media");
         }
         catch (Exception exception) when (
             exception is FileNotFoundException or DirectoryNotFoundException)

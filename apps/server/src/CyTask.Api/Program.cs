@@ -9,6 +9,7 @@ using CyTask.Api.Migrations;
 using CyTask.Api.Plugins;
 using CyTask.Api.Realtime;
 using CyTask.Api.Security;
+using CyTask.Api.Spaces;
 using Microsoft.AspNetCore.Http.Json;
 using Npgsql;
 
@@ -33,7 +34,10 @@ if (args is ["--health-check"])
     return;
 }
 
-var builder = WebApplication.CreateBuilder(args);
+var encryptOffline = args is ["--encrypt-storage", "--confirm-backup"];
+if (args.Contains("--encrypt-storage", StringComparer.Ordinal) && !encryptOffline)
+    throw new InvalidOperationException("Stop all CyTask processes and synchronization, back up the data and key, then use --encrypt-storage --confirm-backup.");
+var builder = WebApplication.CreateBuilder(encryptOffline ? [] : args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(options =>
@@ -45,6 +49,8 @@ builder.Logging.AddSimpleConsole(options =>
 
 builder.Services.AddOptions<CyTaskOptions>()
     .Bind(builder.Configuration.GetSection(CyTaskOptions.SectionName))
+    .Validate(options => !options.DataEncryptionEnabled || DataEncryption.ValidKey(options.DataEncryptionKey),
+        "DataEncryptionKey must be a base64-encoded 32-byte key when data encryption is enabled.")
     .Validate(options => !options.LocalMode || options.UseInMemoryStore,
         "LocalMode requires UseInMemoryStore.")
     .Validate(options => !options.LocalMode || !string.IsNullOrWhiteSpace(options.LocalWorkspacePath),
@@ -103,6 +109,8 @@ builder.Services.AddOptions<CyTaskOptions>()
         "EventReplayBatchSize must be between 16 and 1024.")
     .Validate(options => options.SseHeartbeatSeconds is >= 5 and <= 60,
         "SseHeartbeatSeconds must be between 5 and 60.")
+    .Validate(CallConfiguration.ValidOptions, "Invalid WebRTC configuration. Use explicit STUN/TURN URLs, a TURN shared secret of at least 32 characters, and valid call limits.")
+    .Validate(MfaService.ValidOptions,"Invalid MFA configuration. Configure a supported policy, allowed methods, persistent encryption key and TLS SMTP settings when email is enabled.")
     .Validate(options => options.UseInMemoryStore || AiSecretProtector.IsValidKey(options.PluginSecretKey),
         "PluginSecretKey must be a base64-encoded 32-byte key when persistent storage is enabled.")
     .Validate(options => options.AiRequestTimeoutSeconds is >= 10 and <= 600,
@@ -137,9 +145,24 @@ builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });
 builder.Services.AddProblemDetails();
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("mfa",context=>RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString()??"unknown",_=>new FixedWindowRateLimiterOptions{
+            PermitLimit=60,Window=TimeSpan.FromMinutes(1),QueueLimit=0,AutoReplenishment=true
+        }));
+    options.AddPolicy("calls", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
     options.AddPolicy("authentication", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -183,6 +206,12 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddSingleton<PasswordService>();
+builder.Services.AddSingleton<DataEncryption>();
+builder.Services.AddSingleton<DirectoryEncryption>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<MfaSecretProtector>();
+builder.Services.AddSingleton<IMfaMailer,SmtpMfaMailer>();
+builder.Services.AddSingleton<MfaService>();
 builder.Services.AddSingleton<OutboxDispatchSignal>();
 builder.Services.AddSingleton<WorkspaceEventHub>();
 builder.Services.AddSingleton<PluginCatalog>();
@@ -211,6 +240,7 @@ builder.Services.AddHttpClient("migration", client =>
         | System.Net.DecompressionMethods.Deflate
 });
 builder.Services.AddSingleton<LocalStateClock>();
+builder.Services.AddSingleton<ProjectAccessService>();
 builder.Services.AddSingleton<LocalMediaStorage>();
 builder.Services.AddSingleton<ChatSignalHub>();
 builder.Services.AddSingleton<RequireSessionFilter>();
@@ -223,10 +253,15 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Attach
 if (cyTaskOptions.UseInMemoryStore)
 {
     builder.Services.AddSingleton<InMemoryWorkspaceStore>();
+    builder.Services.AddSingleton<IMfaStore,InMemoryMfaStore>();
+    builder.Services.AddSingleton<InMemoryProjectSpaceStore>();
+    builder.Services.AddSingleton<IProjectSpaceStore>(provider => provider.GetRequiredService<InMemoryProjectSpaceStore>());
     builder.Services.AddSingleton<IWorkspaceStore>(provider => provider.GetRequiredService<InMemoryWorkspaceStore>());
     builder.Services.AddSingleton<InMemoryCollaborationStore>();
     builder.Services.AddSingleton<ICollaborationStore>(provider => provider.GetRequiredService<InMemoryCollaborationStore>());
     builder.Services.AddSingleton<InMemoryPluginStore>();
+    builder.Services.AddSingleton<InMemoryContentPluginStore>();
+    builder.Services.AddSingleton<IContentPluginStore>(provider => provider.GetRequiredService<InMemoryContentPluginStore>());
     builder.Services.AddSingleton<IPluginStore>(provider => provider.GetRequiredService<InMemoryPluginStore>());
     builder.Services.AddSingleton<LocalSyncCoordinator>();
     builder.Services.AddSingleton<ILocalSyncService>(provider => provider.GetRequiredService<LocalSyncCoordinator>());
@@ -253,8 +288,11 @@ else
         return dataSourceBuilder.Build();
     });
     builder.Services.AddSingleton<IWorkspaceStore, PostgresWorkspaceStore>();
+    builder.Services.AddSingleton<IMfaStore,PostgresMfaStore>();
+    builder.Services.AddSingleton<IProjectSpaceStore, PostgresProjectSpaceStore>();
     builder.Services.AddSingleton<ICollaborationStore, PostgresCollaborationStore>();
     builder.Services.AddSingleton<IPluginStore, PostgresPluginStore>();
+    builder.Services.AddSingleton<IContentPluginStore, PostgresContentPluginStore>();
     builder.Services.AddSingleton<ICyAnnotaStore, PostgresCyAnnotaStore>();
     builder.Services.AddSingleton<PostgresOutboxEventStore>();
     builder.Services.AddSingleton<IWorkspaceEventReplayStore>(
@@ -264,10 +302,33 @@ else
     builder.Services.AddSingleton<OutboxDispatcher>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<OutboxDispatcher>());
     builder.Services.AddSingleton<DatabaseMigrator>();
+    builder.Services.AddSingleton<DatabaseEncryptionMigration>();
     builder.Services.AddSingleton<ILocalSyncService, DisabledLocalSyncService>();
 }
 
 var app = builder.Build();
+
+if (encryptOffline)
+{
+    if (!cyTaskOptions.DataEncryptionEnabled)
+        throw new InvalidOperationException("Enable DataEncryptionEnabled and supply DataEncryptionKey before an offline conversion.");
+    var directoryEncryption = app.Services.GetRequiredService<DirectoryEncryption>();
+    if (cyTaskOptions.LocalMode)
+        await directoryEncryption.InitializeAsync(Path.Combine(Path.GetFullPath(cyTaskOptions.LocalWorkspacePath!), ".cytask"), "workspace",
+            path => (Path.GetExtension(path) is ".json" or ".tmp") && !path.Contains(Path.DirectorySeparatorChar + "media" + Path.DirectorySeparatorChar, StringComparison.Ordinal),
+            true, CancellationToken.None, migrateOffline: true);
+    await app.Services.GetRequiredService<LocalMediaStorage>().InitializeEncryptionAsync(directoryEncryption, CancellationToken.None, migrateOffline: true);
+    if (!cyTaskOptions.UseInMemoryStore)
+    {
+        if (cyTaskOptions.ApplyMigrations) await app.Services.GetRequiredService<DatabaseMigrator>().ApplyAsync(CancellationToken.None);
+        await app.Services.GetRequiredService<DatabaseEncryptionMigration>().InitializeAsync(CancellationToken.None, migrateOffline: true);
+    }
+    await app.DisposeAsync();
+    return;
+}
+
+await app.Services.GetRequiredService<LocalMediaStorage>().InitializeEncryptionAsync(
+    app.Services.GetRequiredService<DirectoryEncryption>(), app.Lifetime.ApplicationStopping);
 
 await app.Services.GetRequiredService<ILocalSyncService>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
@@ -277,6 +338,9 @@ if (!cyTaskOptions.UseInMemoryStore && cyTaskOptions.ApplyMigrations)
     await app.Services.GetRequiredService<DatabaseMigrator>().ApplyAsync(app.Lifetime.ApplicationStopping);
 }
 
+if (!cyTaskOptions.UseInMemoryStore)
+    await app.Services.GetRequiredService<DatabaseEncryptionMigration>().InitializeAsync(app.Lifetime.ApplicationStopping);
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
@@ -285,6 +349,8 @@ if (!app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 app.Use((context, next) =>
 {
+    var styleNonce = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+    context.Items["CyTask.StyleNonce"] = styleNonce;
     context.Response.OnStarting(() =>
     {
         context.Response.Headers.XContentTypeOptions = "nosniff";
@@ -295,16 +361,17 @@ app.Use((context, next) =>
         var isApi = context.Request.Path.StartsWithSegments("/api") ||
                     context.Request.Path.StartsWithSegments("/health");
         var isCyAnnota = context.Request.Path.StartsWithSegments("/plugins/cyannota");
+        var isCyMd = context.Request.Path.StartsWithSegments("/plugins/cymd");
         var policy = isApi
             ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
             : isCyAnnota
                 ? "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; " +
                   "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; " +
                   "connect-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:; " +
-                  "object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'"
-                : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; " +
-                  "connect-src 'self'; frame-src 'self'; object-src 'none'; frame-ancestors 'none'; " +
-                  "base-uri 'self'; form-action 'self'";
+                  "object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'none';"
+                : "default-src 'self'; script-src 'self'; style-src 'self' 'nonce-" + styleNonce + "'; img-src 'self' data: blob:; media-src 'self' blob:; " +
+                  "connect-src 'self'; frame-src 'self'; object-src 'none'; frame-ancestors " + (isCyMd ? "'self'; " : "'none'; ") +
+                  "base-uri 'self'; form-action 'self';";
         context.Response.Headers.Append("Content-Security-Policy", policy);
         return Task.CompletedTask;
     });
@@ -313,6 +380,29 @@ app.Use((context, next) =>
 app.UseRateLimiter();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 app.UseMiddleware<SessionMiddleware>();
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value;
+    var relative = path is "/" or "/index.html" ? "index.html"
+        : path is "/plugins/cymd/" or "/plugins/cymd/index.html" ? "plugins/cymd/index.html" : null;
+    if (HttpMethods.IsGet(context.Request.Method) && relative is not null)
+    {
+        var file = app.Environment.WebRootFileProvider.GetFileInfo(relative);
+        if (file.Exists)
+        {
+            await using var stream = file.CreateReadStream();
+            using var reader = new StreamReader(stream);
+            var html = await reader.ReadToEndAsync(context.RequestAborted);
+            var nonce = (string)context.Items["CyTask.StyleNonce"]!;
+            html = html.Replace("<head>", $"<head><meta name=\"cytask-style-nonce\" content=\"{nonce}\">", StringComparison.Ordinal);
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-store";
+            await context.Response.WriteAsync(html, context.RequestAborted);
+            return;
+        }
+    }
+    await next(context);
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapCyTaskApi();

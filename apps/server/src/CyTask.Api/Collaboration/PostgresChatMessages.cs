@@ -1,4 +1,5 @@
 using Npgsql;
+using CyTask.Api.Security;
 using NpgsqlTypes;
 
 namespace CyTask.Api.Collaboration;
@@ -32,7 +33,7 @@ public sealed partial class PostgresCollaborationStore
         {
             while (await reader.ReadAsync(cancellationToken))
                 rows.Add((reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2),
-                    reader.GetGuid(3), reader.GetString(4), reader.GetString(5),
+                    reader.GetGuid(3), reader.GetString(4), encryption.ReadString(reader, 5),
                     reader.GetFieldValue<DateTimeOffset>(6),
                     reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)));
         }

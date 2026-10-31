@@ -1,11 +1,12 @@
 using System.Data;
 using System.Text.Json;
+using CyTask.Api.Security;
 using CyTask.Api.Domain;
 using Npgsql;
 
 namespace CyTask.Api.Infrastructure;
 
-public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) : IWorkspaceStore
+public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource, DataEncryption encryption) : IWorkspaceStore
 {
     private static readonly (string Key, string Name, string Color)[] DefaultStatuses =
     [
@@ -754,8 +755,8 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
                 reader.GetString(3),
                 reader.GetGuid(4),
                 reader.IsDBNull(5) ? null : reader.GetGuid(5),
-                reader.GetString(6),
-                reader.GetString(7),
+                encryption.ReadString(reader, 6),
+                encryption.ReadString(reader, 7),
                 reader.GetFieldValue<DateTimeOffset>(8)));
         }
 
@@ -768,6 +769,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
         int limit,
         CancellationToken cancellationToken)
     {
+        if (encryption.Enabled) return await SearchEncryptedAsync(organizationId, query, limit, cancellationToken);
         await using var command = dataSource.CreateCommand("""
             SELECT result_type, id, result_key, title, excerpt, updated_at
             FROM (
@@ -987,8 +989,8 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
             {
                 activity.Add(new ActivityEntry(
                     reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
-                    reader.GetGuid(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.GetString(6),
-                    reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8)));
+                    reader.GetGuid(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), encryption.ReadString(reader, 6),
+                    encryption.ReadString(reader, 7), reader.GetFieldValue<DateTimeOffset>(8)));
             }
         }
 
@@ -2501,6 +2503,8 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
         TaskPageRequest request,
         CancellationToken cancellationToken)
     {
+        if (encryption.Enabled && (request.Query.Length > 0 || request.Sort == "title"))
+            return await GetEncryptedTaskPageAsync(organizationId, projectId, request, cancellationToken);
         if (!await ProjectExistsAsync(organizationId, projectId, cancellationToken))
         {
             return null;
@@ -2586,7 +2590,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
                 reader.GetGuid(0),
                 reader.GetGuid(1),
                 $"{reader.GetString(2)}-{reader.GetInt32(3)}",
-                reader.GetString(4),
+                encryption.ReadString(reader, 4),
                 reader.GetString(5)));
         }
 
@@ -3090,7 +3094,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
             RETURNING id, organization_id, task_id, title, is_completed, position,
                       revision, created_by, created_at, updated_at;
             """, connection, transaction);
-        updateCommand.Parameters.AddWithValue("title", title);
+        updateCommand.Parameters.AddWithValue("title", encryption.Encode(title, false));
         updateCommand.Parameters.AddWithValue("is_completed", isCompleted);
         updateCommand.Parameters.AddWithValue("updated_at", now);
         updateCommand.Parameters.AddWithValue("item_id", itemId);
@@ -3240,7 +3244,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
                 reader.GetGuid(1),
                 reader.GetGuid(2),
                 $"{reader.GetString(3)}-{reader.GetInt32(4)}",
-                reader.GetString(5),
+                encryption.ReadString(reader, 5),
                 reader.GetString(6),
                 reader.GetFieldValue<DateTimeOffset>(7));
             (reader.GetString(0) == "depends_on" ? dependsOn : blocking).Add(relation);
@@ -3454,8 +3458,8 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
               )
             RETURNING revision;
             """, connection, transaction);
-        updateCommand.Parameters.AddWithValue("title", title);
-        updateCommand.Parameters.AddWithValue("description", description);
+        updateCommand.Parameters.AddWithValue("title", encryption.Encode(title, false));
+        updateCommand.Parameters.AddWithValue("description", encryption.Encode(description, false));
         updateCommand.Parameters.AddWithValue("status", status);
         updateCommand.Parameters.AddWithValue("priority", priority);
         updateCommand.Parameters.AddWithValue("due_at", (object?)dueAt ?? DBNull.Value);
@@ -3562,7 +3566,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
 
 
 
-    private static async Task<TaskChecklistItem?> ReadChecklistItemAsync(
+    private async Task<TaskChecklistItem?> ReadChecklistItemAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid organizationId,
@@ -3622,7 +3626,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
-    private static async Task<TaskRelation?> ReadTaskRelationAsync(
+    private async Task<TaskRelation?> ReadTaskRelationAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid organizationId,
@@ -3649,12 +3653,12 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
             reader.GetGuid(0),
             reader.GetGuid(1),
             $"{reader.GetString(2)}-{reader.GetInt32(3)}",
-            reader.GetString(4),
+            encryption.ReadString(reader, 4),
             reader.GetString(5),
             linkedAt);
     }
 
-    private static async Task<WorkItem?> ReadTaskAsync(
+    private async Task<WorkItem?> ReadTaskAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid organizationId,
@@ -3714,7 +3718,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
 
         return result;
     }
-    private static async Task InsertSessionAsync(
+    private async Task InsertSessionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid userId,
@@ -3733,7 +3737,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
             ("organization_id", organizationId), ("expires_at", expiresAt), ("created_at", createdAt));
     }
 
-    private static Task<int> InsertOutboxAsync<T>(
+    private Task<int> InsertOutboxAsync<T>(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid organizationId,
@@ -3749,7 +3753,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
             ("aggregate_id", aggregateId), ("payload", JsonSerializer.Serialize(payload)),
             ("created_at", DateTimeOffset.UtcNow));
 
-    private static Task<int> InsertAuditAsync(
+    private Task<int> InsertAuditAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid organizationId,
@@ -3791,7 +3795,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
         .Replace("%", "\\%", StringComparison.Ordinal)
         .Replace("_", "\\_", StringComparison.Ordinal);
 
-    private static async Task<int> ExecuteAsync(
+    private async Task<int> ExecuteAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
@@ -3804,7 +3808,7 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
             command.Parameters.AddWithValue(name, value);
         }
 
-        return await command.ExecuteNonQueryAsync(cancellationToken);
+        return await command.ExecuteProtectedNonQueryAsync(encryption, cancellationToken);
     }
 
     private static UserAccount ReadUser(NpgsqlDataReader reader) => new(
@@ -3829,9 +3833,9 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
         reader.GetFieldValue<DateTimeOffset>(3));
 
 
-    private static WorkItem ReadTask(NpgsqlDataReader reader) => new(
+    private WorkItem ReadTask(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetInt32(3),
-        $"{reader.GetString(4)}-{reader.GetInt32(3)}", reader.GetString(5), reader.GetString(6),
+        $"{reader.GetString(4)}-{reader.GetInt32(3)}", encryption.ReadString(reader, 5), encryption.ReadString(reader, 6),
         reader.GetString(7), reader.GetString(8),
         reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9),
         reader.IsDBNull(10) ? null : reader.GetGuid(10),
@@ -3839,18 +3843,18 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
         reader.GetInt64(12), reader.GetGuid(13),
         reader.GetFieldValue<DateTimeOffset>(14), reader.GetFieldValue<DateTimeOffset>(15));
 
-    private static Comment ReadComment(NpgsqlDataReader reader) => new(
+    private Comment ReadComment(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3),
-        reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6));
+        reader.GetString(4), encryption.ReadString(reader, 5), reader.GetFieldValue<DateTimeOffset>(6));
 
 
-    private static TaskChecklistItem ReadChecklistItem(NpgsqlDataReader reader) => new(
-        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
+    private TaskChecklistItem ReadChecklistItem(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), encryption.ReadString(reader, 3),
         reader.GetBoolean(4), reader.GetInt32(5), reader.GetInt64(6), reader.GetGuid(7),
         reader.GetFieldValue<DateTimeOffset>(8), reader.GetFieldValue<DateTimeOffset>(9));
 
-    private static Attachment ReadAttachment(NpgsqlDataReader reader) => new(
-        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
+    private Attachment ReadAttachment(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), encryption.ReadString(reader, 3),
         reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6),
         reader.GetString(7), reader.GetString(8), reader.GetBoolean(9), reader.GetGuid(10),
         reader.GetFieldValue<DateTimeOffset>(11),
@@ -3860,9 +3864,9 @@ public sealed partial class PostgresWorkspaceStore(NpgsqlDataSource dataSource) 
         reader.IsDBNull(15) ? null : reader.GetFieldValue<DateTimeOffset>(15),
         reader.IsDBNull(16) ? null : reader.GetDouble(16));
 
-    private static ExternalReference ReadExternalReference(NpgsqlDataReader reader) => new(
+    private ExternalReference ReadExternalReference(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
-        reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7),
-        reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetGuid(9),
+        reader.GetString(4), reader.GetString(5), reader.GetString(6), encryption.ReadString(reader, 7),
+        reader.IsDBNull(8) ? null : encryption.ReadString(reader, 8), reader.GetGuid(9),
         reader.GetFieldValue<DateTimeOffset>(10));
 }

@@ -35,19 +35,25 @@ public static class ApiEndpoints
 
         var authenticated = api.MapGroup(string.Empty)
             .AddEndpointFilter<RequireSessionFilter>()
-            .AddEndpointFilter<ApiScopeFilter>();
+            .AddEndpointFilter<ApiScopeFilter>()
+            .AddEndpointFilter<CyTask.Api.Spaces.ProjectAccessFilter>();
+        api.MapMfaEndpoints(authenticated);
+        CyTask.Api.Spaces.ProjectSpaceEndpoints.MapProjectSpaceEndpoints(authenticated);
         authenticated.MapGet("/me", GetMe);
         authenticated.MapGet("/local-sync/status", static (ILocalSyncService localSync) =>
             Results.Ok(localSync.Status));
+        authenticated.MapGet("/storage/security", static (DataEncryption encryption) =>
+            Results.Ok(new { encryptionAtRest = encryption.Enabled, algorithm = encryption.Enabled ? "AES-256-GCM" : null, endToEnd = false }));
         authenticated.MapPost("/local-sync/flush", static async (
                 ILocalSyncService localSync, CancellationToken cancellationToken) =>
                 Results.Ok(await localSync.FlushAsync(cancellationToken)))
             .AddEndpointFilter<CsrfFilter>();
-        authenticated.MapDelete("/session", LogoutAsync).AddEndpointFilter<CsrfFilter>();
+        authenticated.MapDelete("/session", LogoutAsync).WithMetadata(new AllowUnverifiedCleanup()).AddEndpointFilter<CsrfFilter>();
         authenticated.MapPost("/oauth/native/authorizations", CreateNativeAuthorizationAsync)
             .AddEndpointFilter<RequireCookieSessionFilter>()
             .AddEndpointFilter<CsrfFilter>();
         authenticated.MapDelete("/oauth/token", RevokeNativeTokenAsync)
+            .WithMetadata(new AllowUnverifiedCleanup())
             .AddEndpointFilter<RequireBearerTokenFilter>();
         authenticated.MapGet("/tokens", ListApiTokensAsync)
             .AddEndpointFilter<RequireCookieSessionFilter>();
@@ -262,6 +268,7 @@ public static class ApiEndpoints
         HttpContext context,
         IWorkspaceStore store,
         PasswordService passwords,
+        MfaService mfa,
         IHostEnvironment environment,
         IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
@@ -307,6 +314,8 @@ public static class ApiEndpoints
                 title: "CyTask is already initialized");
         }
 
+        var account=await store.FindUserByEmailAsync(result.User.Email,cancellationToken);
+        if(await MfaBeforeSessionAsync(account!,result.User,sessionToken,expiresAt,context,store,mfa,environment,options.Value.LocalMode,cancellationToken) is { } mfaResult)return mfaResult;
         SessionSecurity.SetSessionCookies(
             context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt,
             localLoopback: options.Value.LocalMode);
@@ -318,11 +327,12 @@ public static class ApiEndpoints
         HttpContext context,
         IWorkspaceStore store,
         PasswordService passwords,
+        MfaService mfa,
         IHostEnvironment environment,
         IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
     {
-        if (!SessionSecurity.IsValidEmail(request.Email) || request.Password.Length is < 1 or > 200)
+        if (!SessionSecurity.IsValidEmail(request.Email) || request.Password is not {Length:>=1 and <=200})
         {
             return InvalidCredentials();
         }
@@ -334,6 +344,13 @@ public static class ApiEndpoints
             return InvalidCredentials();
         }
 
+        MfaEndpoints.NoStore(context);
+        try{
+            if(await mfa.StartLoginAsync(user,cancellationToken) is { } challenge){
+                SessionSecurity.DeleteSessionCookies(context.Response,environment,options.Value.LocalMode);
+                MfaEndpoints.SetChallenge(context,challenge);return Results.Ok(new{mfaRequired=true,challenge});
+            }
+        }catch(MfaException exception){return Results.Problem(statusCode:exception.Status,title:exception.Message);}
         var sessionToken = SessionSecurity.CreateToken();
         var csrfToken = SessionSecurity.CreateToken();
         var expiresAt = DateTimeOffset.UtcNow.AddHours(options.Value.SessionHours);
@@ -350,6 +367,9 @@ public static class ApiEndpoints
             return InvalidCredentials();
         }
 
+        if(!await mfa.ProvePasswordSessionAsync(user.Id,SessionSecurity.HashToken(sessionToken),expiresAt,cancellationToken)){
+            await store.DeleteSessionAsync(SessionSecurity.HashToken(sessionToken),cancellationToken);return InvalidCredentials();
+        }
         SessionSecurity.SetSessionCookies(
             context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt,
             localLoopback: options.Value.LocalMode);
@@ -360,6 +380,7 @@ public static class ApiEndpoints
         CreateNativeAuthorizationRequest request,
         HttpContext context,
         IWorkspaceStore store,
+        MfaService mfa,
         IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
     {
@@ -396,6 +417,8 @@ public static class ApiEndpoints
                 title: "Native authorization could not be created");
         }
 
+        if(!await mfa.AuthorizeNativeAsync(context,SessionSecurity.HashToken(code),expiresAt,cancellationToken))return InvalidCredentials();
+
         var callback = new UriBuilder(redirectUri!)
         {
             Query = QueryString.Create(
@@ -411,6 +434,7 @@ public static class ApiEndpoints
     private static async Task<IResult> ExchangeNativeTokenAsync(
         HttpContext context,
         IWorkspaceStore store,
+        MfaService mfa,
         IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
     {
@@ -462,6 +486,10 @@ public static class ApiEndpoints
             return OAuthError("invalid_grant", "The authorization grant is invalid");
         }
 
+        if(!await mfa.RedeemNativeAsync(user.UserId,SessionSecurity.HashToken(code),SessionSecurity.HashToken(accessToken),expiresAt,cancellationToken)){
+            await store.DeleteAccessTokenAsync(SessionSecurity.HashToken(accessToken),cancellationToken);return OAuthError("invalid_grant","The authorization grant is invalid");
+        }
+
         return Results.Ok(new NativeTokenResponse(
             accessToken,
             "Bearer",
@@ -472,12 +500,14 @@ public static class ApiEndpoints
     private static async Task<IResult> RevokeNativeTokenAsync(
         HttpContext context,
         IWorkspaceStore store,
+        MfaService mfa,
         CancellationToken cancellationToken)
     {
         if (context.Items.TryGetValue(SessionSecurity.AccessTokenHashItem, out var value) &&
             value is byte[] accessTokenHash)
         {
             await store.DeleteAccessTokenAsync(accessTokenHash, cancellationToken);
+            await mfa.RevokeProofAsync(context.GetUser()!.UserId,accessTokenHash,cancellationToken);
         }
         return Results.NoContent();
     }
@@ -502,12 +532,13 @@ public static class ApiEndpoints
         HttpContext context,
         IWorkspaceStore store,
         PasswordService passwords,
+        MfaService mfa,
         WorkspaceEventHub events,
         IHostEnvironment environment,
         IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
     {
-        var displayName = request.DisplayName.Trim();
+        var displayName = request.DisplayName?.Trim()??string.Empty;
         var errors = new Dictionary<string, string[]>();
         if (!IsValidInvitationToken(request.Token))
         {
@@ -519,7 +550,7 @@ public static class ApiEndpoints
             errors[nameof(request.DisplayName)] = ["Le nom doit contenir entre 1 et 80 caractères."];
         }
 
-        if (request.Password.Length is < 12 or > 200)
+        if (request.Password is not {Length:>=12 and <=200})
         {
             errors[nameof(request.Password)] = ["Le mot de passe doit contenir entre 12 et 200 caractères."];
         }
@@ -547,22 +578,41 @@ public static class ApiEndpoints
             return InvalidInvitation();
         }
 
+        var account=await store.FindUserByEmailAsync(result.User.Email,cancellationToken);
+        events.Publish(result.User.OrganizationId, "invitation.accepted", result.User.UserId);
+        if(await MfaBeforeSessionAsync(account!,result.User,sessionToken,expiresAt,context,store,mfa,environment,options.Value.LocalMode,cancellationToken) is { } mfaResult)return mfaResult;
         SessionSecurity.SetSessionCookies(
             context.Response, environment, result.SessionToken, result.CsrfToken, expiresAt,
             localLoopback: options.Value.LocalMode);
-        events.Publish(result.User.OrganizationId, "invitation.accepted", result.User.UserId);
         return Results.Ok(ToSessionResponse(result.User, result.CsrfToken));
     }
 
     private static IResult GetMe(HttpContext context)
     {
+        MfaEndpoints.NoStore(context);
         var user = context.GetUser()!;
         return Results.Ok(ToSessionResponse(user, string.Empty));
+    }
+
+    private static async Task<IResult?> MfaBeforeSessionAsync(UserAccount account,AuthenticatedUser user,string token,DateTimeOffset expires,
+        HttpContext context,IWorkspaceStore store,MfaService mfa,IHostEnvironment environment,bool localMode,CancellationToken cancellationToken)
+    {
+        MfaEndpoints.NoStore(context);
+        try{
+            if(await mfa.StartLoginAsync(account,cancellationToken) is { } challenge){
+                await store.DeleteSessionAsync(SessionSecurity.HashToken(token),cancellationToken);
+                SessionSecurity.DeleteSessionCookies(context.Response,environment,localMode);MfaEndpoints.SetChallenge(context,challenge);
+                return Results.Ok(new{mfaRequired=true,challenge});
+            }
+            if(await mfa.ProvePasswordSessionAsync(user.UserId,SessionSecurity.HashToken(token),expires,cancellationToken))return null;
+            await store.DeleteSessionAsync(SessionSecurity.HashToken(token),cancellationToken);return InvalidCredentials();
+        }catch(MfaException exception){await store.DeleteSessionAsync(SessionSecurity.HashToken(token),cancellationToken);return Results.Problem(statusCode:exception.Status,title:exception.Message);}
     }
 
     private static async Task<IResult> LogoutAsync(
         HttpContext context,
         IWorkspaceStore store,
+        MfaService mfa,
         IHostEnvironment environment,
         IOptions<CyTaskOptions> options,
         CancellationToken cancellationToken)
@@ -570,6 +620,7 @@ public static class ApiEndpoints
         if (context.Request.Cookies.TryGetValue(SessionSecurity.SessionCookie(environment, options.Value.LocalMode), out var token))
         {
             await store.DeleteSessionAsync(SessionSecurity.HashToken(token), cancellationToken);
+            await mfa.RevokeProofAsync(context.GetUser()!.UserId,SessionSecurity.HashToken(token),cancellationToken);
         }
 
         SessionSecurity.DeleteSessionCookies(context.Response, environment, options.Value.LocalMode);
@@ -579,11 +630,15 @@ public static class ApiEndpoints
     private static async Task ListProjectsAsync(
         HttpContext context,
         IWorkspaceStore store,
+        CyTask.Api.Spaces.ProjectAccessService access,
         CancellationToken cancellationToken)
     {
         var user = context.GetUser()!;
         var projects = await store.ListProjectsAsync(user.OrganizationId, cancellationToken);
-        await context.Response.WriteAsJsonAsync(projects, cancellationToken);
+        var visible = new List<Project>();
+        foreach (var project in projects)
+            if (await access.RoleAsync(user, project.Id, cancellationToken) is not null) visible.Add(project);
+        await context.Response.WriteAsJsonAsync(visible, cancellationToken);
     }
 
     private static async Task<IResult> ListMembersAsync(
@@ -599,12 +654,16 @@ public static class ApiEndpoints
         int? limit,
         HttpContext context,
         IWorkspaceStore store,
+        CyTask.Api.Spaces.ProjectAccessService access,
         CancellationToken cancellationToken)
     {
         var user = context.GetUser()!;
         var safeLimit = Math.Clamp(limit ?? 50, 1, 100);
-        return Results.Ok(await store.ListActivityAsync(
-            user.OrganizationId, safeLimit, cancellationToken));
+        var items = await store.ListActivityAsync(user.OrganizationId, safeLimit, cancellationToken);
+        var visible = new List<ActivityEntry>();
+        foreach (var item in items)
+            if (await access.CanReadEntityAsync(user, item.AggregateType, item.AggregateId, cancellationToken)) visible.Add(item);
+        return Results.Ok(visible);
     }
 
     private static async Task<IResult> SearchAsync(
@@ -612,6 +671,7 @@ public static class ApiEndpoints
         int? limit,
         HttpContext context,
         IWorkspaceStore store,
+        CyTask.Api.Spaces.ProjectAccessService access,
         CancellationToken cancellationToken)
     {
         var query = q?.Trim() ?? string.Empty;
@@ -625,8 +685,11 @@ public static class ApiEndpoints
 
         var user = context.GetUser()!;
         var safeLimit = Math.Clamp(limit ?? 30, 1, 50);
-        return Results.Ok(await store.SearchAsync(
-            user.OrganizationId, query, safeLimit, cancellationToken));
+        var hits = await store.SearchAsync(user.OrganizationId, query, safeLimit, cancellationToken);
+        var visible = new List<SearchHit>();
+        foreach (var hit in hits)
+            if (await access.CanReadEntityAsync(user, hit.Type, hit.Id, cancellationToken)) visible.Add(hit);
+        return Results.Ok(visible);
     }
 
     private static async Task<IResult> ExportAsync(
@@ -2202,6 +2265,7 @@ public static class ApiEndpoints
 
     private static async Task EventsAsync(
         HttpContext context,
+        MfaService mfa,
         WorkspaceEventHub events,
         IWorkspaceEventReplayStore replayStore,
         IOptions<CyTaskOptions> options,
@@ -2255,7 +2319,7 @@ public static class ApiEndpoints
                     if (RememberEvent(workspaceEvent.Id, sentIds, sentOrder))
                     {
                         await WriteWorkspaceEventAsync(
-                            context.Response,
+                            context,
                             workspaceEvent,
                             cancellationToken);
                     }
@@ -2271,6 +2335,7 @@ public static class ApiEndpoints
         var heartbeat = TimeSpan.FromSeconds(options.Value.SseHeartbeatSeconds);
         while (!cancellationToken.IsCancellationRequested)
         {
+            if(!await mfa.ContextAllowedAsync(context,cancellationToken))break;
             var readableTask = subscription.Reader.WaitToReadAsync(cancellationToken).AsTask();
             var heartbeatTask = Task.Delay(heartbeat, cancellationToken);
             if (await Task.WhenAny(readableTask, heartbeatTask) == heartbeatTask)
@@ -2290,7 +2355,7 @@ public static class ApiEndpoints
                 if (RememberEvent(workspaceEvent.Id, sentIds, sentOrder))
                 {
                     await WriteWorkspaceEventAsync(
-                        context.Response,
+                        context,
                         workspaceEvent,
                         cancellationToken);
                 }
@@ -2299,10 +2364,13 @@ public static class ApiEndpoints
     }
 
     private static async Task WriteWorkspaceEventAsync(
-        HttpResponse response,
+        HttpContext context,
         WorkspaceEvent workspaceEvent,
         CancellationToken cancellationToken)
     {
+        var response = context.Response;
+        if (context.GetUser()!.Role is not ("owner" or "admin"))
+            workspaceEvent = workspaceEvent with { Type = "workspace.synchronized", EntityId = Guid.Empty };
         var data = JsonSerializer.Serialize(workspaceEvent, JsonSerializerOptions.Web);
         await response.WriteAsync(
             $"id: {workspaceEvent.Id}\nevent: {workspaceEvent.Type}\ndata: {data}\n\n",
@@ -2347,17 +2415,17 @@ public static class ApiEndpoints
             errors[nameof(request.Email)] = ["L’adresse e-mail est invalide."];
         }
 
-        if (request.DisplayName.Trim().Length is < 1 or > 80)
+        if (request.DisplayName is null||request.DisplayName.Trim().Length is < 1 or > 80)
         {
             errors[nameof(request.DisplayName)] = ["Le nom doit contenir entre 1 et 80 caractères."];
         }
 
-        if (request.Password.Length is < 12 or > 200)
+        if (request.Password is not {Length:>=12 and <=200})
         {
             errors[nameof(request.Password)] = ["Le mot de passe doit contenir entre 12 et 200 caractères."];
         }
 
-        if (request.OrganizationName.Trim().Length is < 2 or > 120)
+        if (request.OrganizationName is null||request.OrganizationName.Trim().Length is < 2 or > 120)
         {
             errors[nameof(request.OrganizationName)] = ["L’organisation doit contenir entre 2 et 120 caractères."];
         }
@@ -2443,8 +2511,8 @@ public static class ApiEndpoints
         response.Headers.Pragma = "no-cache";
     }
 
-    private static bool IsValidInvitationToken(string token) =>
-        token.Length is >= 40 and <= 128 && token.All(character =>
+    private static bool IsValidInvitationToken(string? token) =>
+        token is {Length:>=40 and <=128} && token.All(character =>
             char.IsAsciiLetterOrDigit(character) || character is '-' or '_');
 
     private static IResult InvalidInvitation() => Results.Problem(

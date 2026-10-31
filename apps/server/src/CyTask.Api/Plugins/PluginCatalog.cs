@@ -6,6 +6,7 @@ public sealed class PluginCatalog
     public const string AiAssistantPluginId = "dev.cytask.ai-assistant";
     public const string UnrealPluginId = "dev.cytask.unreal";
     public const string CyAnnotaPluginId = "dev.cytask.cyannota";
+    public const string CyMDPluginId = "dev.cytask.cymd";
 
     private readonly IReadOnlyList<PluginManifest> _plugins =
     [
@@ -62,7 +63,7 @@ public sealed class PluginCatalog
             1,
             UnrealPluginId,
             "Unreal Engine",
-            "Ajoute aux tickets un contexte Unreal partagé avec le plugin de l’éditeur.",
+            "Ajoute aux tickets et aux échanges un contexte Unreal partagé avec le plugin de l’éditeur.",
             "0.3.0",
             "v1",
             "ui-extension",
@@ -83,17 +84,20 @@ public sealed class PluginCatalog
                         new("reviewBuild", "Build de revue", "text", Placeholder: "VerticalSlice-142", MaxLength: 240),
                         new("notes", "Notes Unreal", "textarea", Placeholder: "Contexte technique, étapes de reproduction…", MaxLength: 20000)
                     ])
-            ]),
+            ], [new("context", "Unreal context", "fields", ["message", "text"],
+                [new("mapPath", "Map / level", "map-path", Placeholder:"/Game/Maps/Hangar", MaxLength:1024),
+                 new("assetPaths", "Assets", "string-list", MaxLength:1024),
+                 new("notes", "Notes", "textarea", MaxLength:20000)])]),
             "https://github.com/MrMybal/CyTask/tree/main/integrations/unreal/CyTask"),
         new(
             1,
             CyAnnotaPluginId,
             "CyAnnota",
-            "Ouvre les images et vidéos CyTask dans CyAnnota et conserve leurs annotations versionnées dans la tâche.",
+            "Annote les images et vidéos des tickets, du chat et de la bibliothèque avec CyAnnota.",
             "0.1.0",
             "v1",
             "ui-extension",
-            ["tasks:read", "attachments:read", "annotations:write"],
+            ["tasks:read", "attachments:read", "resources:read", "annotations:write"],
             new PluginContributions(
             [
                 new PluginTaskTabDefinition(
@@ -101,7 +105,11 @@ public sealed class PluginCatalog
                     "Annotations",
                     "CA",
                     [])
-            ])),
+            ], [new("annotate", "Annotate with CyAnnota", "cyannota", ["media"], [])])),
+        new(
+            1, CyMDPluginId, "CyMD", "A full Markdown editor for messages, documents and task descriptions.",
+            "0.1.0", "v1", "ui-extension", ["editor:selection"],
+            new PluginContributions([], [new("edit", "Open in CyMD", "cymd", ["editor"], [])])),
         new(
             1,
             "dev.cytask.cyrevision",

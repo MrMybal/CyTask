@@ -4,6 +4,8 @@ import {
   type ProjectResource, type TaskOption
 } from "../api";
 import { localizedStatusName, useI18n } from "../i18n";
+import { MarkdownView } from "./Markdown";
+import { ContentPluginActions } from "./ContentPlugins";
 
 interface Props {
   messages: ChatMessage[];
@@ -54,7 +56,8 @@ export function ChatMessageList({
                   {pinged && <em>{t("mentioned you")}</em>}
                 </header>
               )}
-              <p>{highlightMentions(message.body, members)}</p>
+              <MarkdownView text={message.body} onOpenTask={onOpenTask}/>
+              <ContentPluginActions surface="message" target={{kind:"message",id:message.id}}/>
               {linkedTasks.length > 0 && (
                 <div className="chat-task-previews">
                   {linkedTasks.map((task) => (
@@ -150,6 +153,7 @@ function ChatAttachment({
           <span>{t("Enlarge")}</span>
         </button>
         <AttachmentFooter resource={resource} url={url} canDownload />
+        <ContentPluginActions surface="media" target={{kind:"resource",id:resource.id,resource}}/>
       </article>
     );
   }
@@ -163,6 +167,7 @@ function ChatAttachment({
           <a href={url} download={resource.name}>{t("Download")}</a>
         </div>
         <AttachmentFooter resource={resource} url={url} canDownload={false} />
+        <ContentPluginActions surface="media" target={{kind:"resource",id:resource.id,resource}}/>
       </article>
     );
   }
@@ -241,7 +246,7 @@ function MediaViewer({
 function referencedTasks(body: string, tasks: TaskOption[]) {
   const byId = new Map(tasks.map((task) => [task.id.toLowerCase(), task]));
   const byKey = new Map(tasks.map((task) => [task.key.toLowerCase(), task]));
-  const matches = body.matchAll(/#\/tasks\/([0-9a-f-]{36})|\b([a-z][a-z0-9]{1,9}-\d+)\b/gi);
+  const matches = body.matchAll(/#\/(?:servers\/[0-9a-f-]{36}\/rooms\/[0-9a-f-]{36}\/)?tasks\/([0-9a-f-]{36})|\b([a-z][a-z0-9]{1,9}-\d+)\b/gi);
   const result = new Map<string, TaskOption>();
   for (const match of matches) {
     const task = match[1] ? byId.get(match[1].toLowerCase()) : byKey.get(match[2]!.toLowerCase());

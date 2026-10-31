@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("cytaskDesktop", Object.freeze({
   setLocale: (locale) => ipcRenderer.invoke("cytask:set-locale", locale),
   connectServer: (profile) => ipcRenderer.invoke("cytask:connect-server", profile),
   chooseLocalFolder: () => ipcRenderer.invoke("cytask:choose-local-folder"),
+  chooseEncryptionKey: (folderPath, create) => ipcRenderer.invoke("cytask:choose-encryption-key", { folderPath, create }),
   openLocal: (profile) => ipcRenderer.invoke("cytask:open-local", profile),
   removeServer: (id) => ipcRenderer.invoke("cytask:remove-server", id),
   onConnectionError: (callback) => {

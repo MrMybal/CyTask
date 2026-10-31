@@ -5,6 +5,7 @@
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MailKit" />
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>

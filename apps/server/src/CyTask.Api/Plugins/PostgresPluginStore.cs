@@ -1,9 +1,10 @@
 using System.Text.Json;
+using CyTask.Api.Security;
 using Npgsql;
 
 namespace CyTask.Api.Plugins;
 
-public sealed class PostgresPluginStore(NpgsqlDataSource dataSource) : IPluginStore
+public sealed class PostgresPluginStore(NpgsqlDataSource dataSource, DataEncryption encryption) : IPluginStore
 {
     public async Task<IReadOnlyList<ProjectPluginState>> ListProjectPluginsAsync(
         Guid organizationId, Guid projectId, CancellationToken cancellationToken)
@@ -155,7 +156,7 @@ public sealed class PostgresPluginStore(NpgsqlDataSource dataSource) : IPluginSt
         command.Parameters.AddWithValue("project_id", projectId);
         command.Parameters.AddWithValue("task_id", taskId);
         command.Parameters.AddWithValue("plugin_id", pluginId);
-        command.Parameters.AddWithValue("data", data.GetRawText());
+        command.Parameters.AddWithValue("data", encryption.Encode(data.GetRawText(), true));
         command.Parameters.AddWithValue("expected_revision", expectedRevision);
         command.Parameters.AddWithValue("updated_by", userId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -290,9 +291,9 @@ public sealed class PostgresPluginStore(NpgsqlDataSource dataSource) : IPluginSt
         reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetInt64(9),
         reader.GetGuid(10), reader.GetFieldValue<DateTimeOffset>(11),
         reader.GetGuid(12), reader.GetFieldValue<DateTimeOffset>(13));
-    private static TaskPluginData ReadTaskPluginData(NpgsqlDataReader reader)
+    private TaskPluginData ReadTaskPluginData(NpgsqlDataReader reader)
     {
-        using var document = JsonDocument.Parse(reader.GetString(4));
+        using var document = JsonDocument.Parse(encryption.ReadString(reader, 4));
         return new(
             reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3),
             document.RootElement.Clone(), reader.GetInt64(5), reader.GetGuid(6),

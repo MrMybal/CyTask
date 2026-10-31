@@ -1,4 +1,5 @@
 using CyTask.Api.Domain;
+using CyTask.Api.Security;
 using Npgsql;
 
 namespace CyTask.Api.Infrastructure;
@@ -424,7 +425,7 @@ public sealed partial class PostgresWorkspaceStore
         return await reader.ReadAsync(cancellationToken) ? ReadAgentNotification(reader) : null;
     }
 
-    private static async Task<AgentMember?> ReadAgentAsync(
+    private async Task<AgentMember?> ReadAgentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid organizationId,
@@ -459,15 +460,15 @@ public sealed partial class PostgresWorkspaceStore
         FROM agent_notifications notification
         """;
 
-    private static AgentMember ReadAgent(NpgsqlDataReader reader) => new(
+    private AgentMember ReadAgent(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
-        reader.GetString(4), reader.GetFieldValue<string[]>(5), reader.GetString(6),
+        encryption.ReadString(reader, 4), reader.GetFieldValue<string[]>(5), reader.GetString(6),
         reader.GetGuid(7), reader.GetFieldValue<DateTimeOffset>(8),
         reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9), reader.GetInt64(10));
 
-    private static AgentNotification ReadAgentNotification(NpgsqlDataReader reader) => new(
+    private AgentNotification ReadAgentNotification(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3),
-        reader.GetString(4), reader.GetString(5), reader.GetString(6),
+        reader.GetString(4), encryption.ReadString(reader, 5), encryption.ReadString(reader, 6),
         reader.IsDBNull(7) ? null : reader.GetGuid(7), reader.GetInt64(8),
         reader.GetFieldValue<DateTimeOffset>(9),
         reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10));

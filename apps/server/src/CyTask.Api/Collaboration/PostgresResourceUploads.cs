@@ -1,4 +1,5 @@
 using Npgsql;
+using CyTask.Api.Security;
 
 namespace CyTask.Api.Collaboration;
 
@@ -35,7 +36,7 @@ public sealed partial class PostgresCollaborationStore
         command.Parameters.AddWithValue("organization", data.OrganizationId);
         command.Parameters.AddWithValue("project", data.ProjectId);
         AddNullableUuid(command, "folder", data.FolderLabelId);
-        command.Parameters.AddWithValue("name", data.FileName);
+        command.Parameters.AddWithValue("name", encryption.Encode(data.FileName, false));
         command.Parameters.AddWithValue("content_type", data.ContentType);
         command.Parameters.AddWithValue("size", data.SizeBytes);
         command.Parameters.AddWithValue("sha256", data.Sha256);

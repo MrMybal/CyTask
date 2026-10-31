@@ -2,6 +2,10 @@ namespace CyTask.Api.Collaboration;
 
 public interface ICollaborationStore
 {
+    Task<ChatChannel?> FindMessageChannelAsync(Guid organizationId, Guid messageId,
+        Guid userId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<CyTask.Api.Spaces.RoomActivity>> ListChannelActivityAsync(
+        Guid organizationId, Guid projectId, Guid userId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ProjectResource>?> ListResourcesAsync(
         Guid organizationId, Guid projectId, CancellationToken cancellationToken);
 

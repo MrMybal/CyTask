@@ -1908,10 +1908,12 @@ public sealed partial class CyTaskApiTests
             TestContext.Current.CancellationToken));
         Assert.Empty(remainingUploads.EnumerateArray());
     }
-    [Fact]
-    public async Task AttachmentChunksAreVerifiedAndQuarantined()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AttachmentChunksAreVerifiedAndQuarantined(bool encrypted)
     {
-        await using var factory = new CyTaskApiFactory();
+        await using var factory = new CyTaskApiFactory(dataEncryptionKey: encrypted ? Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)) : null);
         using var client = factory.CreateClient();
         var csrf = await BootstrapAsync(client);
         client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
@@ -2147,10 +2149,12 @@ public sealed partial class CyTaskApiTests
         Assert.Equal(4.04, reviewedWebm.GetProperty("durationSeconds").GetDouble(), 3);
     }
 
-    [Fact]
-    public async Task VideoDownloadSupportsRangeRequestsForSeeking()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task VideoDownloadSupportsRangeRequestsForSeeking(bool encrypted)
     {
-        await using var factory = new CyTaskApiFactory();
+        await using var factory = new CyTaskApiFactory(dataEncryptionKey: encrypted ? Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)) : null);
         using var client = factory.CreateClient();
         var csrf = await BootstrapAsync(client);
         client.DefaultRequestHeaders.Add("X-CSRF-Token", csrf);
@@ -2426,7 +2430,7 @@ public sealed partial class CyTaskApiTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, catalogResponse.StatusCode);
         var catalog = await ReadJsonAsync(catalogResponse);
-        Assert.Equal(5, catalog.GetArrayLength());
+        Assert.Equal(6, catalog.GetArrayLength());
         Assert.All(catalog.EnumerateArray(), plugin => Assert.False(plugin.GetProperty("enabled").GetBoolean()));
 
         foreach (var pluginId in new[] { "dev.cytask.git", "dev.cytask.ai-assistant", "dev.cytask.unreal", "dev.cytask.cyrevision", "dev.cytask.cyannota" })
@@ -3202,27 +3206,59 @@ public sealed partial class CyTaskApiTests
         private readonly Guid? _deviceId;
         private readonly string? _localSessionStoragePath;
         private readonly bool _production;
+        private readonly int _callMaxParticipants;
+        private readonly int _callAccessCheckSeconds;
+        private readonly string? _webRtcPublicOrigin;
+        private readonly string _mfaPolicy;
+        private readonly bool _mfaEmail;
+        private readonly bool _mfaAuthenticator;
+        private readonly string? _dataEncryptionKey;
+        private readonly TimeProvider? _clock;
+        private readonly CyTask.Api.Security.IMfaMailer? _mfaMailer;
 
         public CyTaskApiFactory(
             string? localPath = null,
             Guid? deviceId = null,
             string? localSessionStoragePath = null,
-            bool production = false)
+            bool production = false,
+            int callMaxParticipants = 8,
+            int callAccessCheckSeconds = 15,
+            string? webRtcPublicOrigin = null,
+            string mfaPolicy = "disabled",bool mfaEmail = false,TimeProvider? clock = null,CyTask.Api.Security.IMfaMailer? mfaMailer = null,bool mfaAuthenticator=true,string? dataEncryptionKey=null)
         {
             _localPath = localPath;
+            _dataEncryptionKey = dataEncryptionKey;
             _deviceId = deviceId;
             _localSessionStoragePath = localSessionStoragePath;
             _production = production;
+            _callMaxParticipants = callMaxParticipants;
+            _callAccessCheckSeconds = callAccessCheckSeconds;
+            _webRtcPublicOrigin = webRtcPublicOrigin;
+            _mfaPolicy=mfaPolicy;_mfaEmail=mfaEmail;_clock=clock;_mfaMailer=mfaMailer;
+            _mfaAuthenticator=mfaAuthenticator;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment(_production ? "Production" : "Development");
             builder.UseSetting("CyTask:UseInMemoryStore", "true");
+            builder.UseSetting("CyTask:DataEncryptionEnabled", _dataEncryptionKey is null ? "false" : "true");
+            builder.UseSetting("CyTask:DataEncryptionKey", _dataEncryptionKey ?? "");
             builder.UseSetting("CyTask:MediaStoragePath", _localPath is null
                 ? _mediaPath : Path.Combine(_localPath, ".cytask", "media"));
             builder.UseSetting("CyTask:MediaReviewSeconds", "3600");
             builder.UseSetting("CyTask:UploadChunkBytes", "65536");
+            builder.UseSetting("CyTask:CallMaxParticipants", _callMaxParticipants.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            builder.UseSetting("CyTask:CallAccessCheckSeconds", _callAccessCheckSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            builder.UseSetting("CyTask:WebRtcPublicOrigin", _webRtcPublicOrigin ?? "");
+            builder.UseSetting("CyTask:MfaPolicy",_mfaPolicy);
+            builder.UseSetting("CyTask:MfaEmailEnabled",_mfaEmail?"true":"false");
+            builder.UseSetting("CyTask:MfaAuthenticatorEnabled",_mfaAuthenticator?"true":"false");
+            if(_mfaEmail){builder.UseSetting("CyTask:SmtpHost","smtp.fixture.invalid");builder.UseSetting("CyTask:SmtpFrom","security@fixture.invalid");}
+            builder.ConfigureServices(services=>{
+                if(_clock is not null)services.AddSingleton(_clock);
+                if(_mfaMailer is not null)services.AddSingleton(_mfaMailer);
+            });
             if (_localPath is not null)
             {
                 builder.UseSetting("CyTask:LocalMode", "true");

@@ -632,7 +632,7 @@ export default function Home() {
               ? 'Enregistré dans CyTask · rév. ' + message.revision
               : 'Enregistré dans CyTask',
           );
-          showImportNotice('Annotations enregistrées dans la tâche CyTask');
+          showImportNotice('Annotations enregistrées dans CyTask');
         } else {
           const text = typeof message.error === 'string'
             ? message.error
