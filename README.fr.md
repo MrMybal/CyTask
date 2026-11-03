@@ -13,6 +13,23 @@ Le produit doit fonctionner avec ou sans dépôt Git. Git, Unreal Engine, les
 traitements médias et CyRevision sont des intégrations autour d'un
 cœur qui reste utilisable seul.
 
+## Aperçu de l’application
+
+Découvrez l’espace de démonstration **Nebula Station** et ses 220 tâches : salons de projet, dossiers, responsables multiples et colonnes d’état configurables.
+
+![Vue compacte de CyTask avec salons, dossiers, responsables, priorités et états](assets/screenshots/tasks-compact.png)
+
+| Tableau Kanban | Discussion d’équipe et médias partagés |
+| --- | --- |
+| ![Tableau Kanban de CyTask avec les tâches regroupées par état](assets/screenshots/kanban.png) | ![Discussion CyTask avec mentions, documents et aperçu d’image](assets/screenshots/team-chat.png) |
+
+<details>
+<summary>Voir le thème clair</summary>
+
+![Vue compacte de CyTask avec le thème clair Cloud](assets/screenshots/tasks-light.png)
+
+</details>
+
 ## Objectifs
 
 - application Web rapide et installable, client Electron Windows/Linux/macOS, puis Android ;

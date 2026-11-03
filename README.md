@@ -10,6 +10,23 @@ CyTask is an open-source, self-hostable project and task manager built for digit
 
 It works with or without a Git repository. Git, Unreal Engine, media processing, AI assistants, CyRevision and CyAnnota are optional integrations around a standalone core.
 
+## App preview
+
+Explore the **Nebula Station** demo workspace with 220 tasks: project rooms, folders, multiple assignees and configurable status columns.
+
+![CyTask compact task view with project rooms, folders, assignees, priorities and statuses](assets/screenshots/tasks-compact.png)
+
+| Kanban board | Team chat and shared media |
+| --- | --- |
+| ![CyTask Kanban board with tasks grouped by status](assets/screenshots/kanban.png) | ![CyTask team chat with mentions, documents and an image preview](assets/screenshots/team-chat.png) |
+
+<details>
+<summary>View the light theme</summary>
+
+![CyTask compact task view using the Cloud light theme](assets/screenshots/tasks-light.png)
+
+</details>
+
 ## Goals
 
 - fast installable Web application and Electron client for Windows, Linux and macOS, with Android planned;
