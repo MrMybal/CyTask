@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { LanguageSwitcher, useI18n } from "../i18n";
+import {helpUrl} from "../helpUrl";
 
 interface Props {
   children: ReactNode;
@@ -10,7 +11,7 @@ interface State {
 }
 
 function ErrorFallback() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return (
     <main className="fatal-screen">
       <span className="brand-mark"><img src="/icons/cytask.png" alt="" /></span>
@@ -20,6 +21,7 @@ function ErrorFallback() {
       <button className="primary-button" type="button" onClick={() => window.location.reload()}>
         {t("Reload CyTask")}
       </button>
+      <a href={helpUrl(locale)} target="_blank" rel="noopener noreferrer">{t("User guide")}</a>
     </main>
   );
 }

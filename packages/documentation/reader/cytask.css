@@ -1,0 +1,12 @@
+/* Application-owned theme; upstream CyDoc is not modified. */
+.cydoc-viewer[data-theme=dark]{--bg:#101418;--sidebar:#151b21;--surface:#202932;--card:#151b21;--text:#edf1f5;--muted:#b0bdc7;--faint:#a9b8c5;--line:#52616e;--accent:#8cdbbd;--accent-bg:#203c32}
+.cydoc-viewer[data-theme=light]{--bg:#f3f2ee;--sidebar:#e9edee;--surface:#e3e7e8;--card:#fffefa;--text:#1c2832;--muted:#4e5c67;--faint:#52616e;--line:#77828b;--accent:#19664f;--accent-bg:#dcece5}
+.cydoc-viewer .sidebar{padding-top:20px}.cydoc-viewer .topbar{height:58px;padding:0 26px}.cydoc-viewer .page-layout{padding-top:30px;gap:30px}
+.cydoc-viewer .brand-mark{background:transparent;background-image:url("assets/favicon.png");background-size:contain;background-repeat:no-repeat}
+.cydoc-viewer .brand-mark>.icon{visibility:hidden}.cydoc-viewer .footer{margin-inline:26px}
+.cydoc-viewer .cy-media{background:var(--card);border-color:var(--line);scroll-margin-top:80px}
+.cydoc-viewer[data-theme=paper]{--faint:#746656}
+.cydoc-viewer .page-aside .toc{top:80px}.cydoc-viewer .diagram svg{max-width:none;min-width:min(100%,440px)}
+.cydoc-viewer .media-expanded{background:var(--bg);z-index:100}
+@media(max-width:720px){.cydoc-viewer .topbar{padding:0 12px;gap:8px}.cydoc-viewer .topbar-actions{gap:8px}.cydoc-viewer .topbar-start{min-width:0;gap:6px}.cydoc-viewer #breadcrumb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}.cytask-offline-download{font-size:10px}.cydoc-viewer .page-layout{padding:24px 16px}.cydoc-viewer .footer{margin:0 16px;flex-wrap:wrap}}
+@media print{.cytask-offline-download{display:none}}

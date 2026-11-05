@@ -2,6 +2,8 @@
 
 # CyTask Desktop
 
+[Documentation](https://mrmybal.github.io/CyTask/#/fr/desktop-local)
+
 Client Electron pour Windows, Linux et macOS. Il charge une instance CyTask distante ou lance un moteur local auto-contenu à partir d’un dossier. Il mémorise jusqu’à vingt espaces : domaines HTTPS, IP locales ou projets locaux compatibles Syncthing.
 
 ## Développement

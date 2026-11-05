@@ -2,6 +2,8 @@
 
 # CyTask Desktop
 
+[Documentation](https://mrmybal.github.io/CyTask/#/en/desktop-local)
+
 Electron client for Windows, Linux and macOS. It connects to a remote CyTask instance or starts a self-contained local engine from a folder. It remembers up to twenty workspaces: HTTPS domains, local IP addresses or Syncthing-compatible local projects.
 
 English is the default interface language. French can be selected with the persistent **EN / FR** control.

@@ -1,0 +1,80 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/documentation.yml'
+      - '.node-version'
+      - 'README*.md'
+      - 'docs/**'
+      - 'assets/**'
+      - 'packages/documentation/**'
+      - 'packages/contracts/**'
+      - 'packages/sdk-js/**'
+      - 'integrations/**'
+      - 'apps/*/README*.md'
+      - 'apps/server/src/**'
+      - 'apps/web/src/helpUrl.ts'
+      - 'infra/README.md'
+      - 'plugins/*/README.md'
+      - 'plugins/cymd/PROTOCOL.md'
+      - 'plugins/cymd/web/src/guide*.md'
+      - 'scripts/build-help.mjs'
+      - 'scripts/stage-help-pages.mjs'
+      - 'scripts/tests/help-pages.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: packages/documentation/package-lock.json
+      - name: Install documentation compiler
+        run: npm ci --prefix packages/documentation --no-audit --no-fund
+      - name: Generate and validate CyDoc reader
+        run: node scripts/build-help.mjs --check
+      - name: Test documentation packaging
+        run: node --test scripts/tests/help-pages.test.mjs apps/client/tests/help.test.cjs
+      - name: Prepare documentation site
+        run: node scripts/stage-help-pages.mjs
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload documentation site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: .build/pages
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy documentation
+        id: deployment
+        uses: actions/deploy-pages@v4

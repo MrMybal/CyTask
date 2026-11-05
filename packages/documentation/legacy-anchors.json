@@ -1,0 +1,262 @@
+{
+  "en": {
+    "getting-started": {
+      "choose-a-mode": "choose-a-mode",
+      "your-first-project": "your-first-project",
+      "find-your-way": "find-your-way"
+    },
+    "desktop-local": {
+      "open-a-local-workspace": "open-a-local-workspace",
+      "understand-storage": "understand-storage",
+      "close-move-and-restore": "close-move-and-restore"
+    },
+    "team-server": {
+      "connect": "connect",
+      "retained-sessions": "retained-sessions",
+      "first-administrator": "first-administrator"
+    },
+    "projects-rooms": {
+      "choose-a-room-type": "choose-a-room-type",
+      "organize-the-sidebar": "organize-the-sidebar",
+      "share-and-access": "share-and-access"
+    },
+    "tasks": {
+      "create-a-task": "create-a-task",
+      "update-attributes": "update-attributes",
+      "configure-workflow-states": "configure-workflow-states",
+      "track-work": "track-work"
+    },
+    "views-folders": {
+      "folder-hierarchy": "folder-hierarchy",
+      "pick-a-presentation": "pick-a-presentation",
+      "sort-and-filter": "sort-and-filter",
+      "large-projects": "large-projects"
+    },
+    "hierarchy": {
+      "split-a-task": "split-a-task",
+      "set-a-dependency": "set-a-dependency",
+      "keep-the-graph-usable": "keep-the-graph-usable"
+    },
+    "files-media": {
+      "attach-and-preview": "attach-and-preview",
+      "understand-upload-processing": "understand-upload-processing",
+      "reuse-and-annotate": "reuse-and-annotate"
+    },
+    "canvas-graph": {
+      "create-a-canvas": "create-a-canvas",
+      "explore-the-graph": "explore-the-graph",
+      "work-with-large-boards": "work-with-large-boards"
+    },
+    "documents-markdown": {
+      "write-a-document": "write-a-document",
+      "editor-and-preview": "editor-and-preview",
+      "links-and-extensions": "links-and-extensions"
+    },
+    "chat": {
+      "start-a-conversation": "start-a-conversation",
+      "share-a-task": "share-a-task",
+      "share-media": "share-media"
+    },
+    "calls": {
+      "join-and-control-a-call": "join-and-control-a-call",
+      "network-requirements": "network-requirements",
+      "capacity-and-limits": "capacity-and-limits"
+    },
+    "notifications": {
+      "follow-activity": "follow-activity",
+      "unread-indicators": "unread-indicators",
+      "what-is-not-implied": "what-is-not-implied"
+    },
+    "permissions": {
+      "roles": "roles",
+      "configure-safely": "configure-safely",
+      "scope-and-limits": "scope-and-limits"
+    },
+    "plugins": {
+      "available-integration-families": "available-integration-families",
+      "message-and-text-extensions": "message-and-text-extensions",
+      "boundaries": "boundaries"
+    },
+    "ai-assistant": {
+      "configure-a-connection": "configure-a-connection",
+      "local-tools-and-remote-servers": "local-tools-and-remote-servers",
+      "assistance-versus-orchestration": "assistance-versus-orchestration"
+    },
+    "migration": {
+      "prepare": "prepare",
+      "analyze-and-map": "analyze-and-map",
+      "verify-the-result": "verify-the-result"
+    },
+    "agents-api": {
+      "create-an-agent": "create-an-agent",
+      "coordinate-work": "coordinate-work",
+      "connect-an-mcp-client": "connect-an-mcp-client",
+      "embed-and-develop": "embed-and-develop"
+    },
+    "mfa": {
+      "enroll-an-authenticator": "enroll-an-authenticator",
+      "email-and-recovery": "email-and-recovery",
+      "policy-and-sessions": "policy-and-sessions"
+    },
+    "encryption": {
+      "local-workspace": "local-workspace",
+      "coverage-and-limits": "coverage-and-limits",
+      "existing-data-offline-conversion": "existing-data-offline-conversion"
+    },
+    "sync-backup": {
+      "set-up-sync": "set-up-sync",
+      "concurrent-changes": "concurrent-changes",
+      "backup-is-different": "backup-is-different",
+      "export-workspace-data": "export-workspace-data"
+    },
+    "administration": {
+      "deploy-and-update": "deploy-and-update",
+      "essential-settings": "essential-settings",
+      "email-and-live-calls": "email-and-live-calls",
+      "acceptance-checklist": "acceptance-checklist"
+    },
+    "shortcuts": {
+      "workspace-shortcuts": "workspace-shortcuts",
+      "appearance": "appearance",
+      "language": "language"
+    },
+    "troubleshooting": {
+      "blank-screen-or-missing-interface": "blank-screen-or-missing-interface",
+      "missing-tasks-or-rejected-edits": "missing-tasks-or-rejected-edits",
+      "upload-or-playback-problems": "upload-or-playback-problems",
+      "calls-and-account-access": "calls-and-account-access",
+      "local-data-and-sync": "local-data-and-sync",
+      "help-offline": "help-offline"
+    }
+  },
+  "fr": {
+    "getting-started": {
+      "choisir-un-mode": "choose-a-mode",
+      "creer-son-premier-projet": "your-first-project",
+      "se-reperer": "find-your-way"
+    },
+    "desktop-local": {
+      "ouvrir-un-espace-local": "open-a-local-workspace",
+      "comprendre-le-stockage": "understand-storage",
+      "fermer-deplacer-et-restaurer": "close-move-and-restore"
+    },
+    "team-server": {
+      "connexion": "connect",
+      "sessions-memorisees": "retained-sessions",
+      "premier-administrateur": "first-administrator"
+    },
+    "projects-rooms": {
+      "choisir-un-type-de-salon": "choose-a-room-type",
+      "organiser-la-navigation": "organize-the-sidebar",
+      "partager-un-acces": "share-and-access"
+    },
+    "tasks": {
+      "creer-une-tache": "create-a-task",
+      "modifier-les-attributs": "update-attributes",
+      "configurer-les-etats": "configure-workflow-states",
+      "suivre-le-travail": "track-work"
+    },
+    "views-folders": {
+      "hierarchie-des-dossiers": "folder-hierarchy",
+      "choisir-une-presentation": "pick-a-presentation",
+      "trier-et-filtrer": "sort-and-filter",
+      "projets-volumineux": "large-projects"
+    },
+    "hierarchy": {
+      "decouper-une-tache": "split-a-task",
+      "ajouter-une-dependance": "set-a-dependency",
+      "garder-un-graphe-lisible": "keep-the-graph-usable"
+    },
+    "files-media": {
+      "joindre-et-consulter": "attach-and-preview",
+      "comprendre-le-traitement": "understand-upload-processing",
+      "reutiliser-et-annoter": "reuse-and-annotate"
+    },
+    "canvas-graph": {
+      "creer-un-canvas": "create-a-canvas",
+      "explorer-le-graphe": "explore-the-graph",
+      "grands-tableaux": "work-with-large-boards"
+    },
+    "documents-markdown": {
+      "rediger-un-document": "write-a-document",
+      "editeur-et-apercu": "editor-and-preview",
+      "liens-et-extensions": "links-and-extensions"
+    },
+    "chat": {
+      "demarrer-une-discussion": "start-a-conversation",
+      "partager-une-tache": "share-a-task",
+      "partager-des-medias": "share-media"
+    },
+    "calls": {
+      "rejoindre-et-controler-l-appel": "join-and-control-a-call",
+      "conditions-reseau": "network-requirements",
+      "capacite-et-limites": "capacity-and-limits"
+    },
+    "notifications": {
+      "suivre-l-activite": "follow-activity",
+      "indicateurs-non-lus": "unread-indicators",
+      "limites": "what-is-not-implied"
+    },
+    "permissions": {
+      "roles": "roles",
+      "configurer-correctement": "configure-safely",
+      "perimetre-et-limites": "scope-and-limits"
+    },
+    "plugins": {
+      "familles-d-integrations": "available-integration-families",
+      "extensions-des-messages-et-textes": "message-and-text-extensions",
+      "limites": "boundaries"
+    },
+    "ai-assistant": {
+      "configurer-une-connexion": "configure-a-connection",
+      "outils-locaux-et-serveur-distant": "local-tools-and-remote-servers",
+      "assistance-et-orchestration": "assistance-versus-orchestration"
+    },
+    "migration": {
+      "preparer": "prepare",
+      "analyser-et-associer": "analyze-and-map",
+      "verifier": "verify-the-result"
+    },
+    "agents-api": {
+      "creer-un-agent": "create-an-agent",
+      "coordonner-le-travail": "coordinate-work",
+      "connecter-un-client-mcp": "connect-an-mcp-client",
+      "integrer-dans-une-autre-application": "embed-and-develop"
+    },
+    "mfa": {
+      "configurer-un-authentificateur": "enroll-an-authenticator",
+      "courriel-et-recuperation": "email-and-recovery",
+      "politique-et-sessions": "policy-and-sessions"
+    },
+    "encryption": {
+      "espace-local": "local-workspace",
+      "couverture-et-limites": "coverage-and-limits",
+      "donnees-existantes-conversion-hors-ligne": "existing-data-offline-conversion"
+    },
+    "sync-backup": {
+      "configurer-sync": "set-up-sync",
+      "modifications-simultanees": "concurrent-changes",
+      "sauvegarder-reste-necessaire": "backup-is-different",
+      "exporter-les-donnees": "export-workspace-data"
+    },
+    "administration": {
+      "deployer-et-mettre-a-jour": "deploy-and-update",
+      "parametres-essentiels": "essential-settings",
+      "courriel-et-appels": "email-and-live-calls",
+      "verifications-de-mise-en-service": "acceptance-checklist"
+    },
+    "shortcuts": {
+      "raccourcis-de-l-espace": "workspace-shortcuts",
+      "apparence": "appearance",
+      "langue": "language"
+    },
+    "troubleshooting": {
+      "ecran-vide-ou-interface-absente": "blank-screen-or-missing-interface",
+      "taches-absentes-ou-modifications-refusees": "missing-tasks-or-rejected-edits",
+      "envoi-ou-lecture-des-medias": "upload-or-playback-problems",
+      "appels-et-connexion": "calls-and-account-access",
+      "local-et-sync": "local-data-and-sync",
+      "aide-hors-ligne": "help-offline"
+    }
+  }
+}

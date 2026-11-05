@@ -15,10 +15,17 @@ Thumbs.db
 
 # JavaScript
 /apps/web/public/plugins/cymd/
+/apps/web/public/help/
+/apps/client/build/help-links.cjs
 node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+
+# Generated Python caches
+__pycache__/
+*.pyc
+/infra/compose.private.yaml
 
 # .NET
 bin/

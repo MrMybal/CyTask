@@ -6,6 +6,8 @@
 
 # CyTask
 
+[Documentation](https://mrmybal.github.io/CyTask/#/fr/getting-started) · [English documentation](https://mrmybal.github.io/CyTask/#/en/getting-started)
+
 CyTask est un gestionnaire de projets et de tâches open source, auto-hébergeable,
 conçu pour les équipes de production numérique et les projets Unreal Engine.
 
@@ -29,6 +31,21 @@ Découvrez l’espace de démonstration **Nebula Station** et ses 220 tâches : 
 ![Vue compacte de CyTask avec le thème clair Cloud](assets/screenshots/tasks-light.png)
 
 </details>
+
+## Documentation intégrée
+
+Ouvrez **Guide utilisateur** depuis la barre des projets, **Paramètres et outils**
+ou l’écran de connexion. Dans le desktop, utilisez **Aide → Guide utilisateur**,
+**F1** ou le sélecteur d’espace. Aucun compte n’est nécessaire.
+
+Le lecteur local CyDoc regroupe les 24 chapitres utilisateur anglais/français,
+les références techniques, les opérations/schémas OpenAPI et un index limité aux
+sources publiques. Captures, galerie, schémas SVG, recherche, thèmes et impression
+sont inclus. Le desktop ouvre index.html en file:// sans serveur. Sur le Web,
+téléchargez et extrayez l’archive hors ligne, puis ouvrez index.html localement.
+
+Les sources sont dans [docs/user-guide](docs/user-guide/README.md).
+La génération et le paquet CyDoc épinglé sont dans [packages/documentation](packages/documentation/README.md).
 
 ## Objectifs
 

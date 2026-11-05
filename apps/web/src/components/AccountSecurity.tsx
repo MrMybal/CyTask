@@ -2,15 +2,17 @@ import {useEffect,useState,type FormEvent} from "react";
 import {api,ApiError,type MfaStatus,type MfaChallenge} from "../api";
 import {useI18n} from "../i18n";
 import {MfaFlow} from "./MfaFlow";
+import {helpUrl} from "../helpUrl";
 
 export function AccountSecurity(){
-  const {t}=useI18n();const [status,setStatus]=useState<MfaStatus>();const [flow,setFlow]=useState<MfaChallenge>();
+  const {t,locale}=useI18n();const [status,setStatus]=useState<MfaStatus>();const [flow,setFlow]=useState<MfaChallenge>();
   const [action,setAction]=useState<string>();const [error,setError]=useState("");const [pending,setPending]=useState(false);
   const load=()=>api.mfaStatus().then(setStatus).catch(()=>setError(t("Unable to load account security.")));
   useEffect(()=>{void load();},[]);
   async function begin(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget;const password=String(new FormData(form).get("password"));form.reset();setPending(true);setError("");
     try{setFlow(await api.mfaManage({password,action:action!}));setAction(undefined);}catch(reason){setError(t(reason instanceof ApiError?reason.message:"Unable to update account security."));}finally{setPending(false);}}
   return <details className="account-security workspace-settings-section"><summary>{t("Account security · Two-factor authentication")}</summary>
+    <p><a href={helpUrl(locale,"mfa")} target="_blank" rel="noopener noreferrer">{t("User guide")}</a></p>
     {flow?<MfaFlow initial={flow} onCancel={()=>setFlow(undefined)} onComplete={()=>{setFlow(undefined);void load();}}/>:<>
       {!status?<p>{t("Loading…")}</p>:!status.available?<p>{t(status.policy==="local"?"Two-factor authentication is not used in local solo mode.":"Two-factor authentication is disabled on this server.")}</p>:<>
         <p>{t(status.policy==="required"?"Two-factor authentication is required by this server.":"Two-factor authentication is optional on this server.")}</p>
@@ -33,11 +35,12 @@ export function AccountSecurity(){
 }
 
 export function StorageSecurity(){
-  const {t}=useI18n();
+  const {t,locale}=useI18n();
   const [status,setStatus]=useState<Awaited<ReturnType<typeof api.storageSecurity>>>();
   const [failed,setFailed]=useState(false);
   useEffect(()=>{let active=true;void api.storageSecurity().then(value=>{if(active)setStatus(value);}).catch(()=>{if(active)setFailed(true);});return()=>{active=false;};},[]);
   return <details className="workspace-settings-section"><summary>{t("Data encryption")}</summary>
+    <p><a href={helpUrl(locale,"encryption")} target="_blank" rel="noopener noreferrer">{t("User guide")}</a></p>
     <p>{t(failed?"Unable to load storage security.":!status?"Loading…":status.encryptionAtRest?"Content encryption at rest is enabled (AES-256-GCM).":"Content encryption at rest is disabled.")}</p>
     <p>{t("Managed in the server configuration or the desktop local workspace settings. Existing data requires an offline migration and a separate key backup.")}</p>
     <p>{t("This is not end-to-end encryption. CyTask can read unlocked data; server routing metadata remains visible.")}</p>

@@ -265,3 +265,5 @@ input::placeholder { color: #586b7e; }
 @media (max-width: 840px) {
   .connection-topline { gap: 12px; }
 }
+.intro footer button { border:0;background:transparent;color:var(--text);font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px; }
+.intro footer button:focus-visible { outline:2px solid var(--accent);outline-offset:3px; }

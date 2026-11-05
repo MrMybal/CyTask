@@ -5,6 +5,8 @@ export type Locale = "en" | "fr";
 const STORAGE_KEY = "cytask.locale";
 
 const french: Record<string, string> = {
+  "User guide": "Guide utilisateur",
+  "Searchable guide · English / French · Offline": "Guide consultable · Anglais / Français · Hors ligne",
   "Data encryption": "Chiffrement des données",
   "Unable to load storage security.": "Impossible de charger l’état du chiffrement.",
   "Content encryption at rest is enabled (AES-256-GCM).": "Le chiffrement des contenus au repos est activé (AES-256-GCM).",

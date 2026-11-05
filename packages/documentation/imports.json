@@ -1,0 +1,259 @@
+{
+  "references": [
+    {"source":"infra/README.md","id":"infrastructure-reference","locale":"fr","status":"reference"},
+    {
+      "source": "README.md",
+      "id": "project-readme",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "README.fr.md",
+      "id": "project-readme",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "CHANGELOG.md",
+      "id": "changelog",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "docs/01-vision-produit.md",
+      "id": "product-vision",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/02-architecture.md",
+      "id": "architecture-target",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/03-securite.md",
+      "id": "security-design",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/04-feuille-de-route.md",
+      "id": "roadmap",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/05-developpement.md",
+      "id": "development-reference",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "docs/06-interface-taches.md",
+      "id": "interface-history",
+      "locale": "fr",
+      "status": "historical"
+    },
+    {
+      "source": "docs/07-api-plugins.md",
+      "id": "plugin-api-reference",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "docs/08-cyannota.md",
+      "id": "annotation-reference",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "docs/09-mode-local-sync.md",
+      "id": "sync-reference",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "docs/10-agents-mcp.md",
+      "id": "agent-reference",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "docs/content-plugins.md",
+      "id": "content-plugin-protocol",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "docs/data-encryption.md",
+      "id": "encryption-reference",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "docs/live-calls.md",
+      "id": "calls-reference",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "docs/two-factor-authentication.md",
+      "id": "mfa-reference",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "docs/decisions/README.md",
+      "id": "architecture-decisions",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/decisions/ADR-0001-monolithe-modulaire.md",
+      "id": "adr-0001",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/decisions/ADR-0002-preparation-synchronisation.md",
+      "id": "adr-0002",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/decisions/ADR-0003-pile-technique.md",
+      "id": "adr-0003",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "docs/decisions/ADR-0004-client-desktop-electron.md",
+      "id": "adr-0004",
+      "locale": "fr",
+      "status": "design"
+    },
+    {
+      "source": "apps/web/README.md",
+      "id": "web-development",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "apps/server/README.md",
+      "id": "server-development",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "apps/client/README.md",
+      "id": "desktop-development",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "apps/client/README.fr.md",
+      "id": "desktop-development",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "integrations/mcp/README.md",
+      "id": "mcp-integration",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "integrations/unreal/README.md",
+      "id": "unreal-integration",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "packages/sdk-js/README.md",
+      "id": "sdk-integration",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "plugins/cyannota/README.md",
+      "id": "cyannota-integration",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "plugins/cymd/README.md",
+      "id": "cymd-integration",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "plugins/cymd/PROTOCOL.md",
+      "id": "cymd-protocol",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "plugins/cymd/web/src/guide.en.md",
+      "id": "cymd-user-guide",
+      "locale": "en",
+      "status": "reference"
+    },
+    {
+      "source": "plugins/cymd/web/src/guide.md",
+      "id": "cymd-user-guide",
+      "locale": "fr",
+      "status": "reference"
+    },
+    {
+      "source": "plugins/git/README.md",
+      "id": "git-integration",
+      "locale": "fr",
+      "status": "reference"
+    }
+  ],
+  "sourceAllowlist": [
+    {
+      "source": "packages/sdk-js/src/index.mjs",
+      "destination": "source/sdk/index.mjs"
+    },
+    {
+      "source": "apps/server/src/CyTask.Api/Endpoints/ApiContracts.cs",
+      "destination": "source/contracts/ApiContracts.cs"
+    },
+    {
+      "source": "apps/server/src/CyTask.Api/Collaboration/CollaborationContracts.cs",
+      "destination": "source/contracts/CollaborationContracts.cs"
+    },
+    {
+      "source": "apps/web/src/helpUrl.ts",
+      "destination": "source/help/helpUrl.ts"
+    },
+    {
+      "source": "integrations/unreal/CyTask/Source/CyTaskCore/Public/CyTaskApiClient.h",
+      "destination": "source/unreal/CyTaskApiClient.h"
+    },
+    {
+      "source": "integrations/unreal/CyTask/Source/CyTaskCore/Public/CyTaskNativeAuthorization.h",
+      "destination": "source/unreal/CyTaskNativeAuthorization.h"
+    },
+    {
+      "source": "integrations/unreal/CyTask/Source/CyTaskAssetRecipes/Public/CyTaskAssetRecipe.h",
+      "destination": "source/unreal/CyTaskAssetRecipe.h"
+    },
+    {
+      "source": "integrations/unreal/CyTask/Source/CyTaskCompat/Public/CyTaskVersionCompat.h",
+      "destination": "source/unreal/CyTaskVersionCompat.h"
+    }
+  ],
+  "excluded": [
+    {
+      "source": "docs/repository-privacy.md",
+      "reason": "Repository-maintainer workflow; retained in the repository, outside the product manual."
+    },
+    {
+      "source": "docs/user-guide/README.md",
+      "reason": "Authoring/build instructions; retained separately and updated for CyDoc."
+    }
+  ]
+}

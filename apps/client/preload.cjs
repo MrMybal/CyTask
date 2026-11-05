@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("cytaskDesktop", Object.freeze({
   listServers: () => ipcRenderer.invoke("cytask:list-servers"),
   setLocale: (locale) => ipcRenderer.invoke("cytask:set-locale", locale),
+  openHelp: () => ipcRenderer.invoke("cytask:open-help"),
   connectServer: (profile) => ipcRenderer.invoke("cytask:connect-server", profile),
   chooseLocalFolder: () => ipcRenderer.invoke("cytask:choose-local-folder"),
   chooseEncryptionKey: (folderPath, create) => ipcRenderer.invoke("cytask:choose-encryption-key", { folderPath, create }),

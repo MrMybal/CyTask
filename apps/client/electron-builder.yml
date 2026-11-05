@@ -9,6 +9,8 @@ files:
   - preload.cjs
   - renderer/**/*
   - package.json
+  - build/help-links.cjs
+  - build/icon.png
 artifactName: CyTask-${version}-${os}-${arch}.${ext}
 extraResources:
   - from: server/current

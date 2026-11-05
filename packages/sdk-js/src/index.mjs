@@ -7,6 +7,38 @@ export class CyTaskApiError extends Error {
   }
 }
 
+/**
+ * @doc sdk-client
+ * @locale en
+ * @title JavaScript SDK client
+ * @section SDK
+ * @symbol CyTaskClient
+ * The dependency-free client uses the CyTask HTTP API with a runtime-supplied token.
+ *
+ * ## Connect {#connect}
+ * Supply baseUrl, token and optionally fetchImpl. Tokens must not be embedded in source.
+ *
+ * ## Work safely {#work}
+ * getTask reads details; updateTask reads the current revision before writing.
+ * claimTask is atomic; acknowledging a notification does not complete its task.
+ * Errors expose status and details through CyTaskApiError.
+ */
+/**
+ * @doc sdk-client
+ * @locale fr
+ * @title Client du SDK JavaScript
+ * @section SDK
+ * @symbol CyTaskClient
+ * Le client sans dépendance utilise l’API HTTP avec un token fourni à l’exécution.
+ *
+ * ## Connexion {#connect}
+ * Fournissez baseUrl, token et éventuellement fetchImpl. Ne placez pas de token dans les sources.
+ *
+ * ## Travailler correctement {#work}
+ * getTask lit la fiche ; updateTask lit la révision actuelle avant écriture.
+ * claimTask est atomique ; acquitter une notification ne termine pas sa tâche.
+ * CyTaskApiError expose status et details.
+ */
 export class CyTaskClient {
   constructor({ baseUrl, token, fetchImpl = globalThis.fetch } = {}) {
     if (typeof baseUrl !== "string" || baseUrl.length === 0) {

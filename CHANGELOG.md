@@ -6,6 +6,11 @@ All notable changes to CyTask are documented in this file.
 
 ### Added
 
+- Published CyDoc reader on GitHub Pages with automatic documentation builds and localized README links.
+- Local CyDoc documentation with bilingual user guides, technical references, API imports, public-source indexing, screenshot galleries and SVG diagrams.
+- Direct file-based Desktop help, contextual links and a downloadable self-contained offline manual.
+- Documentation entry points in the Web interface, sign-in screen and Desktop selector, plus the Desktop Help menu and F1 shortcut.
+
 - Server-like project navigation with categories, typed rooms, room links and project-specific roles.
 - Markdown composers with mentions, task suggestions and embedded CyMD editing.
 - Plugin actions on messages, text and shared media, including CyAnnota annotations.

@@ -5,6 +5,7 @@ import { InvitationScreen } from "./components/InvitationScreen";
 import { NativeAuthorizationScreen } from "./components/NativeAuthorizationScreen";
 import { Workspace } from "./components/Workspace";
 import { LanguageSwitcher, useI18n } from "./i18n";
+import {helpUrl} from "./helpUrl";
 
 type AppState =
   | { mode: "loading" }
@@ -53,7 +54,7 @@ function nativeAuthorizationRequest(): NativeAuthorizationRequest | "invalid" | 
 }
 
 export default function App() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [state, setState] = useState<AppState>({ mode: "loading" });
 
   useEffect(() => {
@@ -113,6 +114,7 @@ export default function App() {
         <h1>{t("Connection interrupted")}</h1>
         <p>{t(state.message)}</p>
         <button className="primary-button" onClick={() => window.location.reload()}>{t("Try again")}</button>
+        <a href={helpUrl(locale)} target="_blank" rel="noopener noreferrer">{t("User guide")}</a>
       </main>
     );
   }

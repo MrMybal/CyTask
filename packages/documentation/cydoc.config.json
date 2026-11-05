@@ -1,0 +1,48 @@
+{
+  "name": "CyTask",
+  "version": "0.2.2",
+  "defaultLocale": "en",
+  "locales": [
+    {
+      "code": "en",
+      "label": "English"
+    },
+    {
+      "code": "fr",
+      "label": "Français"
+    }
+  ],
+  "homePage": "getting-started",
+  "content": "content",
+  "assets": "assets",
+  "sources": [
+    "source/sdk",
+    "source/unreal",
+    "source/contracts",
+    "source/help"
+  ],
+  "sourceIndex": {
+    "enabled": true,
+    "includeDirs": [
+      "source/unreal"
+    ]
+  },
+  "apiImports": [
+    {
+      "format": "cydoc",
+      "prefix": "rest",
+      "path": "api/openapi-symbols.json"
+    }
+  ],
+  "modules": [
+    "image",
+    "gallery"
+  ],
+  "out": "export",
+  "translationReport": true,
+  "aliases": {
+    "overview": "getting-started",
+    "quickstart": "getting-started",
+    "api-links": "api-reference"
+  }
+}

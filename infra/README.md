@@ -7,8 +7,25 @@ Prérequis : Docker avec Compose.
 ```powershell
 Copy-Item infra/.env.example infra/.env
 # Remplacer impérativement CYTASK_DB_PASSWORD dans infra/.env
-docker compose --env-file infra/.env -f infra/compose.yaml up --build
+# Préparer aussi la clé de plugins et infra/compose.private.yaml comme ci-dessous.
+docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.private.yaml up --build
 ```
+
+Le stockage persistant exige également une clé de protection des secrets de
+plugins. Dans l’environnement privé, définir `CYTASK_PLUGIN_SECRET_KEY` avec
+32 octets cryptographiquement aléatoires encodés en base64, et conserver cette
+clé entre les redémarrages. Le fichier Compose de base ne transmet pas ce réglage :
+créer un fichier privé `infra/compose.private.yaml` (ignoré par Git) :
+
+```yaml
+services:
+  server:
+    environment:
+      CYTASK__PLUGINSECRETKEY: ${CYTASK_PLUGIN_SECRET_KEY:?Définir la clé de plugins persistante}
+```
+
+Le [guide d’administration](../docs/user-guide/fr/administration.md) précise les
+autres réglages, les sauvegardes et la mise à jour d’un déploiement.
 
 Le service écoute ensuite sur `http://127.0.0.1:8080` pour recevoir les requêtes
 d’un reverse proxy local. La base n’est pas publiée sur l’hôte. Les cookies de la

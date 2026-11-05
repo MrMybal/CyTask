@@ -8,10 +8,13 @@
   },
   "scripts": {
     "test:appearance": "node tests/appearance-smoke.mjs",
+    "test:help": "node tests/help-inputs.mjs && node tests/help-smoke.mjs",
+    "test:help-server": "node tests/help-server.mjs",
     "test:mfa": "node tests/mfa-smoke.mjs",
     "test:calls": "node tests/calls-smoke.mjs",
-    "prebuild": "node ../../scripts/build-cymd.mjs",
-    "prebuild:release": "node ../../scripts/build-cymd.mjs",
+    "prebuild": "node ../../scripts/build-cymd.mjs && node ../../scripts/build-help.mjs",
+    "prebuild:release": "node ../../scripts/build-cymd.mjs && node ../../scripts/build-help.mjs",
+    "predev": "node ../../scripts/build-help.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build",
     "build:release": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --mode release",
@@ -33,6 +36,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "cydoc": "file:../../packages/documentation/vendor/cydoc-0.1.0-cytask.tgz",
     "@types/markdown-it": "14.2.0",
     "@types/qrcode": "1.5.5",
     "@types/react": "19.2.18",

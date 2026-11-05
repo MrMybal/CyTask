@@ -1,5 +1,7 @@
 # Serveur CyTask
 
+[Documentation](https://mrmybal.github.io/CyTask/#/fr/administration)
+
 API ASP.NET Core 10 de la première tranche verticale.
 
 ## Exécution temporaire

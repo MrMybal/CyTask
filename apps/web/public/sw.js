@@ -1,4 +1,4 @@
-const cacheName = "cytask-shell-v1";
+const cacheName = "cytask-shell-v2";
 const shell = ["/", "/manifest.webmanifest", "/icons/cytask.png"];
 
 self.addEventListener("install", (event) => {
@@ -9,7 +9,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
-      keys.filter((key) => key.startsWith("cytask-") && key !== cacheName)
+      keys.filter((key) => key.startsWith("cytask-shell-") && key !== cacheName)
         .map((key) => caches.delete(key))
     ))
   );
@@ -20,7 +20,8 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin ||
-      url.pathname.startsWith("/api/") || url.pathname.startsWith("/health/")) {
+      url.pathname.startsWith("/api/") || url.pathname.startsWith("/health/") ||
+      url.pathname === "/help" || url.pathname.startsWith("/help/")) {
     return;
   }
 

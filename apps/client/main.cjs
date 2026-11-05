@@ -56,6 +56,7 @@ let localServerError = "";
 let localServerStopPromise = null;
 let quittingAfterLocalStop = false;
 let interfaceLocale = "en";
+let documentationWindow = null;
 
 function nativeText(english, french) {
   return interfaceLocale === "fr" ? french : english;
@@ -76,6 +77,92 @@ if (!hasLock) {
 
 function rendererRoot() {
   return path.join(__dirname, "renderer");
+}
+
+function documentationRoot() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "server", "wwwroot", "help")
+    : path.resolve(__dirname, "../web/public/help");
+}
+
+function isDocumentationUrl(value) {
+  return documentationLinks().isHelpFileUrl(value, documentationRoot());
+}
+
+function documentationLinks() { return require("./build/help-links.cjs"); }
+
+function installDocumentationShortcut(win) {
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "F1") {
+      event.preventDefault();
+      if (win === workspaceWindow) {
+        void win.webContents.executeJavaScript("document.querySelector('.server-rail-help')?.href ?? null")
+          .then(url => openDocumentation(documentationLinks().webHelpTarget(url, new URL(win.webContents.getURL()).origin) ?? undefined))
+          .catch(() => openDocumentation());
+      } else openDocumentation();
+    }
+  });
+}
+
+function openDocumentation(target) {
+  const index = path.join(documentationRoot(), "index.html");
+  if (!fsSync.existsSync(index) || !fsSync.existsSync(path.join(__dirname, "build/help-links.cjs"))) {
+    dialog.showErrorBox("CyTask", nativeText(
+      "The bundled guide is missing. Rebuild the Web client or reinstall the current desktop release.",
+      "Le guide embarqué est absent. Recompilez le Web ou réinstallez la version desktop actuelle."));
+    return;
+  }
+  const links = documentationLinks();
+  const existing = documentationWindow && !documentationWindow.isDestroyed();
+  if (existing && target === undefined) {
+    documentationWindow.show(); documentationWindow.focus(); return;
+  }
+  const current = existing ? links.readHelpRoute(documentationWindow.webContents.getURL()) : {};
+  const requested = typeof target === "string" ? {...current, locale: target} : target ?? {locale: interfaceLocale};
+  const route = links.normalizeHelpTarget(requested);
+  const url = links.createLocalHelpUrl(index, route);
+  if (documentationWindow && !documentationWindow.isDestroyed()) {
+    void documentationWindow.loadURL(url).catch(() => {});
+    documentationWindow.show();
+    documentationWindow.focus();
+    return;
+  }
+  // Persist reader preferences/notes separately from all workspace sessions.
+  const helpSession = session.fromPartition("persist:cytask-documentation");
+  helpSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  helpSession.setPermissionCheckHandler(() => false);
+  helpSession.webRequest.onBeforeRequest((details, callback) => {
+    callback({cancel: !isDocumentationUrl(details.url) && !/^(?:data|blob):/.test(details.url)});
+  });
+  documentationWindow = new BrowserWindow({
+    width: 1200, height: 850, minWidth: 420, minHeight: 480, show: false,
+    title: "CyTask — " + (route.locale === "fr" ? "Guide utilisateur" : "User guide"),
+    backgroundColor: "#101418", icon: iconPath(),
+    webPreferences: {
+      partition: "persist:cytask-documentation",
+      nodeIntegration: false, contextIsolation: true, sandbox: true,
+      webSecurity: true, allowRunningInsecureContent: false, webviewTag: false
+    }
+  });
+  const win = documentationWindow;
+  installDocumentationShortcut(win);
+  win.webContents.setWindowOpenHandler(({url: target}) => {
+    const external = safeExternalUrl(target);
+    if (external) void shell.openExternal(external);
+    return {action: "deny"};
+  });
+  win.webContents.on("will-navigate", (event, target) => {
+    if (isDocumentationUrl(target)) return;
+    event.preventDefault();
+    const external = safeExternalUrl(target);
+    if (external) void shell.openExternal(external);
+  });
+  win.webContents.on("will-attach-webview", event => event.preventDefault());
+  win.once("ready-to-show", () => win.show());
+  win.on("closed", () => { documentationWindow = null; });
+  void win.loadURL(url).catch(() => {
+    if (!win.isDestroyed()) dialog.showErrorBox("CyTask", nativeText("Unable to open the bundled manual.", "Impossible d’ouvrir le manuel embarqué."));
+  });
 }
 
 function iconPath() {
@@ -474,7 +561,15 @@ function safeExternalUrl(value) {
 }
 
 function installWorkspaceGuards(win, trustedOrigin) {
+  installDocumentationShortcut(win);
   win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const requested = documentationLinks().webHelpTarget(url, trustedOrigin);
+      if (requested) {
+        openDocumentation(requested);
+        return {action: "deny"};
+      }
+    } catch { /* Invalid links never gain desktop access. */ }
     const target = safeExternalUrl(url);
     if (target) void shell.openExternal(target);
     return { action: "deny" };
@@ -526,7 +621,11 @@ function buildMenu() {
         ...(!app.isPackaged ? [{ role: "toggleDevTools", label: nativeText("Developer tools", "Outils de développement") }] : [])
       ]
     },
-    { role: "windowMenu", label: nativeText("Window", "Fenêtre") }
+    { role: "windowMenu", label: nativeText("Window", "Fenêtre") },
+    { label: nativeText("Help", "Aide"), submenu: [{
+      label: nativeText("User guide", "Guide utilisateur"), accelerator: "F1",
+      click: () => openDocumentation()
+    }] }
   );
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -558,6 +657,7 @@ function createSelectorWindow() {
     }
   });
   selectorWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  installDocumentationShortcut(selectorWindow);
   selectorWindow.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith(`${APP_SCHEME}://app/`)) event.preventDefault();
   });
@@ -654,6 +754,11 @@ async function openWorkspace(profile, runtimeUrl = profile.url, localAccessKey =
 }
 
 function registerIpc() {
+  ipcMain.handle("cytask:open-help", event => {
+    assertSelectorSender(event);
+    openDocumentation(interfaceLocale);
+    return {ok: true};
+  });
   ipcMain.handle("cytask:set-locale", async (event, locale) => {
     assertSelectorSender(event);
     interfaceLocale = locale === "fr" ? "fr" : "en";
@@ -785,12 +890,16 @@ app.whenReady().then(async () => {
   await protocol.handle(APP_SCHEME, (request) => {
     const url = new URL(request.url);
     if (url.hostname !== "app") return new Response("Not found", { status: 404 });
-    const pathname = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
+    let pathname;
+    try { pathname = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname); }
+    catch { return new Response("Bad request", {status: 400}); }
+    if (pathname.includes("\0") || pathname.includes("\\")) return new Response("Forbidden", {status:403});
     const root = rendererRoot();
     const file = path.resolve(root, `.${pathname}`);
     if (file !== root && !file.startsWith(`${root}${path.sep}`)) {
       return new Response("Forbidden", { status: 403 });
     }
+    if (!fsSync.existsSync(file) || !fsSync.statSync(file).isFile()) return new Response("Not found", {status:404});
     return net.fetch(pathToFileURL(file).toString());
   });
   registerIpc();

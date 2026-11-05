@@ -39,6 +39,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             apps/web/package-lock.json
+            packages/documentation/package-lock.json
             plugins/cyannota/web/package-lock.json
             plugins/cymd/web/package-lock.json
             apps/client/package-lock.json
@@ -80,6 +81,9 @@ jobs:
         working-directory: apps/web
         run: npm run build
 
+      - name: Check native documentation links
+        run: node --test apps/client/tests/help.test.cjs
+
       - name: Audit production Web dependencies
         working-directory: apps/web
         run: npm audit --omit=dev --audit-level=high
@@ -95,6 +99,14 @@ jobs:
       - name: Test theme readability
         working-directory: apps/web
         run: npm run test:appearance
+
+      - name: Test bilingual offline user guide
+        working-directory: apps/web
+        run: npm run test:help
+
+      - name: Test guide delivery and workspace entry
+        working-directory: apps/web
+        run: npm run test:help-server
 
       - name: Test two-factor sign-in
         working-directory: apps/web

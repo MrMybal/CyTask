@@ -10,6 +10,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "node ../../scripts/build-help.mjs",
+    "help:build": "node ../../scripts/build-help.mjs",
     "dev": "electron .",
     "check": "node --check main.cjs && node --check preload.cjs && node --check renderer/selector.js",
     "audit:release:win": "python ../../scripts/check-release-privacy.py --electron-runtime node_modules/electron/dist release/win-unpacked",

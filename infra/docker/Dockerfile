@@ -1,10 +1,32 @@
 FROM node:22.17.1-alpine AS web-build
 WORKDIR /source/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
+COPY packages/documentation/vendor/ /source/packages/documentation/vendor/
 RUN npm ci --no-fund --no-audit
 COPY apps/web/ ./
 COPY scripts/build-cymd.mjs /source/scripts/build-cymd.mjs
+COPY scripts/build-help.mjs /source/scripts/build-help.mjs
+COPY docs/user-guide/ /source/docs/user-guide/
+COPY assets/screenshots/ /source/assets/screenshots/
 COPY plugins/cymd/ /source/plugins/cymd/
+COPY packages/documentation/ /source/packages/documentation/
+COPY packages/sdk-js/ /source/packages/sdk-js/
+COPY packages/contracts/ /source/packages/contracts/
+COPY README.md README.fr.md CHANGELOG.md LICENSE /source/
+COPY docs/ /source/docs/
+COPY assets/ /source/assets/
+COPY infra/README.md /source/infra/README.md
+COPY apps/client/README.md apps/client/README.fr.md /source/apps/client/
+COPY apps/server/README.md /source/apps/server/README.md
+COPY apps/server/src/CyTask.Api/Contracts/ /source/apps/server/src/CyTask.Api/Contracts/
+COPY apps/server/src/CyTask.Api/Endpoints/ApiContracts.cs /source/apps/server/src/CyTask.Api/Endpoints/ApiContracts.cs
+COPY apps/server/src/CyTask.Api/Collaboration/CollaborationContracts.cs /source/apps/server/src/CyTask.Api/Collaboration/CollaborationContracts.cs
+COPY apps/server/src/CyTask.Api/Spaces/ProjectSpaceEndpoints.cs /source/apps/server/src/CyTask.Api/Spaces/ProjectSpaceEndpoints.cs
+COPY apps/server/src/CyTask.Api/Plugins/ContentPluginEndpoints.cs /source/apps/server/src/CyTask.Api/Plugins/ContentPluginEndpoints.cs
+COPY integrations/mcp/README.md /source/integrations/mcp/README.md
+COPY integrations/unreal/ /source/integrations/unreal/
+COPY plugins/cyannota/README.md /source/plugins/cyannota/README.md
+COPY plugins/git/README.md /source/plugins/git/README.md
 RUN npm run build
 
 FROM node:22.17.1-alpine AS cyannota-build

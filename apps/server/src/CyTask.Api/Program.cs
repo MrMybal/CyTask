@@ -362,8 +362,13 @@ app.Use((context, next) =>
                     context.Request.Path.StartsWithSegments("/health");
         var isCyAnnota = context.Request.Path.StartsWithSegments("/plugins/cyannota");
         var isCyMd = context.Request.Path.StartsWithSegments("/plugins/cymd");
+        var isDocumentation = context.Request.Path.StartsWithSegments("/help");
         var policy = isApi
             ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+            : isDocumentation
+                ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+                  "img-src 'self' data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; " +
+                  "frame-ancestors 'none'; base-uri 'none'; form-action 'none';"
             : isCyAnnota
                 ? "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; " +
                   "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; " +

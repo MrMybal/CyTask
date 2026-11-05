@@ -1,0 +1,9 @@
+{
+  "name": "@cytask/documentation",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {"build": "node ../../scripts/build-help.mjs", "check": "node ../../scripts/build-help.mjs --check"},
+  "devDependencies": {"cydoc": "file:vendor/cydoc-0.1.0-cytask.tgz"}
+}

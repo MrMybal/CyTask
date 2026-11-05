@@ -13,6 +13,9 @@
 .server-tooltip { display:none; }
 .server-rail .server-rail-add { color:var(--accent);font-size:27px; }
 .server-rail .server-rail-settings { margin-top:auto;width:36px;height:36px;background:transparent; }
+.server-rail-help { display:grid;place-items:center;flex-shrink:0;width:30px;height:30px;border:1px solid var(--line);border-radius:50%;color:var(--text);text-decoration:none;font-weight:700;font-size:14px; }
+.server-rail-help:hover { background:var(--surface-hover); }
+.workspace-guide-link { color:var(--text);text-decoration:none; }
 .server-workspace .sidebar { grid-column:2;grid-row:1;padding:0;background:var(--panel);border-right:1px solid var(--line);overflow:hidden; }
 .server-workspace.sidebar-collapsed .sidebar { width:0;border:0;visibility:hidden; }
 .server-workspace .sidebar-top { min-height:52px;height:52px;padding:0;border-bottom:1px solid var(--line); }

@@ -1,9 +1,16 @@
 "use strict";
 
 const api = window.cytaskDesktop;
+document.getElementById("open-help").addEventListener("click", () => {
+  void api.openHelp().catch(error => {
+    document.getElementById("form-error").textContent = String(error.message);
+    document.getElementById("form-error").hidden = false;
+  });
+});
 const translations = {
   en: {
     pageTitle: "CyTask — Choose a workspace",
+    documentation: "User guide",
     desktopClient: "DESKTOP CLIENT",
     heroTitle: "Your projects, with a team or entirely local.",
     heroCopy: "Open a CyTask server or work from a simple folder. That folder can then be shared through Syncthing or the CyRevision Sync engine.",
@@ -59,6 +66,7 @@ const translations = {
   },
   fr: {
     pageTitle: "CyTask — Choisir un espace",
+    documentation: "Guide utilisateur",
     desktopClient: "CLIENT DESKTOP",
     heroTitle: "Tes projets, en équipe ou entièrement en local.",
     heroCopy: "Ouvre un serveur CyTask ou travaille dans un simple dossier. Ce dossier peut ensuite être partagé par Syncthing ou par le moteur Sync de CyRevision.",

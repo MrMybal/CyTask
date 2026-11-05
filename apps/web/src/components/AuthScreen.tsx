@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { ApiError, api, type Session, type MfaChallenge } from "../api";
 import {MfaFlow} from "./MfaFlow";
 import { LanguageSwitcher, useI18n } from "../i18n";
+import {helpUrl} from "../helpUrl";
 
 interface AuthScreenProps {
   bootstrapRequired: boolean;
@@ -9,7 +10,7 @@ interface AuthScreenProps {
 }
 
 export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [challenge,setChallenge]=useState<MfaChallenge>();
@@ -60,7 +61,7 @@ export function AuthScreen({ bootstrapRequired, onAuthenticated }: AuthScreenPro
           <h1>{t("Clear work, from commit to asset.")}</h1>
           <p className="hero-copy">{t("A fast, self-hosted workspace for tasks, media and Unreal.")}</p>
         </div>
-        <p className="auth-footnote">{t("Open source · Self-hosted · Extensible")}</p>
+        <p className="auth-footnote">{t("Open source · Self-hosted · Extensible")} · <a href={helpUrl(locale)} target="_blank" rel="noopener noreferrer">{t("User guide")}</a></p>
       </section>
 
       <section className="auth-panel">

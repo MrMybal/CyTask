@@ -6,6 +6,8 @@
 
 # CyTask
 
+[Documentation](https://mrmybal.github.io/CyTask/#/en/getting-started) · [Documentation en français](https://mrmybal.github.io/CyTask/#/fr/getting-started)
+
 CyTask is an open-source, self-hostable project and task manager built for digital production teams and Unreal Engine projects.
 
 It works with or without a Git repository. Git, Unreal Engine, media processing, AI assistants, CyRevision and CyAnnota are optional integrations around a standalone core.
@@ -78,7 +80,22 @@ PostgreSQL is the production persistence target. Explicit in-memory storage is a
 ## Windows client
 
 Download the latest Windows x64 installer or portable client from [GitHub Releases](https://github.com/MrMybal/CyTask/releases/latest). Published releases include SHA-256 checksums. The current binaries are not yet Authenticode-signed, so Windows SmartScreen may display a warning.
-## Languages
+## In-app documentation
+
+Open **User guide** from the project rail, **Settings and tools**, or the sign-in
+screen. In Desktop, use **Help → User guide**, **F1**, or the workspace selector.
+The guide is bundled with the application and needs no account.
+
+CyDoc supplies the local reader: 24 English/French user-guide chapters, technical
+references, imported OpenAPI operations/schemas and a scoped public-source index.
+Screenshots, a gallery, SVG diagrams, search, themes and printing are included.
+Desktop opens the bundled index.html through file:// without a server. On the Web,
+download the offline archive, extract it and open index.html locally.
+
+Guide sources are maintained in [docs/user-guide](docs/user-guide/README.md).
+Generation settings and the pinned CyDoc package live in [packages/documentation](packages/documentation/README.md).
+
+## Interface languages
 
 English is the default language in the Web application, PWA metadata and Desktop workspace selector. French remains available from the **EN / FR** selector and the preference is saved locally on each client.
 

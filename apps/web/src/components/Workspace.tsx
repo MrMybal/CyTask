@@ -10,6 +10,7 @@ import {
   useState
 } from "react";
 import {AccountSecurity,StorageSecurity} from "./AccountSecurity";
+import {helpUrl} from "../helpUrl";
 import {
   ApiError,
   api,
@@ -2108,6 +2109,13 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
   }
 
+  const contextualHelpPage = details ? "tasks" : showAgents ? "agents-api" : showTokens ? "api-reference"
+    : showTeam ? "permissions" : workspaceArea === "migration" ? "migration" : workspaceArea === "plugins" ? "plugins"
+    : selectedRoom?.kind === "voice" || selectedRoom?.kind === "video" ? "calls"
+    : selectedRoom?.kind === "document" ? "documents-markdown"
+    : selectedRoom?.kind === "canvas" || selectedRoom?.kind === "graph" ? "canvas-graph"
+    : workspaceArea === "chat" ? "chat" : workspaceArea === "contents" ? "files-media"
+    : selectedProjectId ? "views-folders" : "getting-started";
   const paletteActions = useMemo<PaletteAction[]>(() => {
     const actions: PaletteAction[] = [];
     if (selectedProjectId && canContribute) {
@@ -2120,6 +2128,12 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
       });
     }
     actions.push(
+      {
+        id: "documentation",
+        label: t("User guide"),
+        keywords: "help documentation guide aide manuel offline",
+        run: () => { window.open(helpUrl(locale, contextualHelpPage), "_blank", "noopener,noreferrer"); }
+      },
       {
         id: "toggle-view",
         label: t(taskView === "list" ? "Switch to Kanban view" : "Switch to List view"),
@@ -2174,7 +2188,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
     }
     return actions;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canAdministerOrganization, canContribute, selectedProjectId, sidebarCollapsed, taskView]);
+  }, [canAdministerOrganization, canContribute, selectedProjectId, sidebarCollapsed, taskView, locale, contextualHelpPage]);
 
   return (
     <ContentPluginProvider projectId={selectedProjectId} canEdit={canContribute} onError={setError} onNotice={message=>notify("success",message)}>
@@ -2194,6 +2208,7 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
           {project.key.slice(0, 3)}<span className="server-tooltip">{project.name}</span></button>)}</div>
         {canAdministerOrganization && <button className="server-rail-add" type="button" aria-label={t("Create project")} title={t("Create project")} onClick={() => setShowProjectForm(true)}>+</button>}
         <button className="server-rail-settings" type="button" title={t("Settings and tools")} aria-label={t("Settings and tools")} onClick={() => setShowWorkspaceSettings(true)}><RoomIcon kind="settings"/></button>
+        <a className="server-rail-help" href={helpUrl(locale, contextualHelpPage)} target="_blank" rel="noopener noreferrer" title={t("User guide")} aria-label={t("User guide")}>?</a>
       </nav>
       <aside className="sidebar">
         <div className="sidebar-top">
@@ -2361,6 +2376,9 @@ export function Workspace({ session, onLogout }: WorkspaceProps) {
             </header>
 
             <div className="workspace-settings-grid">
+              <a className="workspace-settings-option wide workspace-guide-link" href={helpUrl(locale)} target="_blank" rel="noopener noreferrer">
+                <span className="project-avatar">?</span><span><strong>{t("User guide")}</strong><small>{t("Searchable guide · English / French · Offline")}</small></span>
+              </a>
               {localSync?.enabled && (
                 <button
                   className={`workspace-settings-option wide${localSync.conflictCount > 0 ? " has-conflicts" : ""}`}
