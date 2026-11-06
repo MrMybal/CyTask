@@ -15,6 +15,7 @@ jobs:
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
+      CYTASK_TEST_BROWSER: chrome
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -88,9 +89,11 @@ jobs:
         working-directory: apps/web
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Install call test browser
+      - name: Install browser for Web tests
         working-directory: apps/web
-        run: npx playwright install --with-deps chromium
+        # Ubuntu permits the packaged Chrome sandbox; downloaded headless-shell
+        # binaries cannot create user namespaces on the hosted runner.
+        run: npx playwright install --with-deps chrome
 
       - name: Test live calls with synthetic devices
         working-directory: apps/web
