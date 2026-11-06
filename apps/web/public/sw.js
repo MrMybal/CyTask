@@ -21,7 +21,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin ||
       url.pathname.startsWith("/api/") || url.pathname.startsWith("/health/") ||
-      url.pathname === "/help" || url.pathname.startsWith("/help/")) {
+      url.pathname === "/help" || url.pathname.startsWith("/help/") ||
+      url.pathname === "/Documentation" || url.pathname.startsWith("/Documentation/")) {
     return;
   }
 

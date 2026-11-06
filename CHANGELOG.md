@@ -4,10 +4,12 @@ All notable changes to CyTask are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-06
+
 ### Added
 
 - Published CyDoc reader on GitHub Pages with automatic documentation builds and localized README links.
-- Local CyDoc documentation with bilingual user guides, technical references, API imports, public-source indexing, screenshot galleries and SVG diagrams.
+- Local CyDoc documentation with complete English/French user guides, public API contracts and SDK signatures, screenshot galleries and SVG diagrams.
 - Direct file-based Desktop help, contextual links and a downloadable self-contained offline manual.
 - Documentation entry points in the Web interface, sign-in screen and Desktop selector, plus the Desktop Help menu and F1 shortcut.
 
@@ -20,6 +22,8 @@ All notable changes to CyTask are documented in this file.
 
 ### Improved
 
+- Updated documentation reader with global header search, nested navigation, wider sidebar, descriptive tooltips and preserved reading positions.
+- Standard Documentation.html/DocData layout with separate agent guidance, offline archive and compatible contextual help links.
 - Clearer text, status and priority contrast across all six themes, including selected rows and keyboard focus.
 - More readable compact-table labels and controls while preserving the compact layout.
 - Expanded regression coverage for project access, content extensions, calls, authentication, encrypted storage and interface themes.

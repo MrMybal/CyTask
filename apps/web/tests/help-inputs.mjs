@@ -4,7 +4,6 @@ import path from "node:path";
 import {createHash} from "node:crypto";
 import {fileURLToPath} from "node:url";
 const root=fileURLToPath(new URL("../../../",import.meta.url));
-const settings=JSON.parse(await fs.readFile(path.join(root,"packages/documentation/imports.json"),"utf8"));
 const docker=await fs.readFile(path.join(root,"infra/docker/Dockerfile"),"utf8");
 const copies=[];let stage=0;
 for(const line of docker.split(/\r?\n/)){
@@ -15,11 +14,10 @@ for(const line of docker.split(/\r?\n/)){
   copies.push({name,directory:(await fs.stat(path.join(root,name))).isDirectory()});
  }
 }
-const required=[...settings.references.map(entry=>entry.source),...settings.sourceAllowlist.map(entry=>entry.source),
- "packages/documentation","packages/contracts","docs/user-guide","docs/images","assets","LICENSE","scripts/build-help.mjs",
- "apps/server/src/CyTask.Api/Contracts/openapi.json","apps/server/src/CyTask.Api/Spaces/ProjectSpaceEndpoints.cs","apps/server/src/CyTask.Api/Plugins/ContentPluginEndpoints.cs"];
+const required=[".CyDocBuild","packages/sdk-js/src/index.mjs","LICENSE","scripts/build-help.mjs",
+ "apps/server/src/CyTask.Api/Contracts/openapi.json"];
 for(const file of required)assert.ok(copies.some(entry=>file===entry.name||entry.directory&&file.startsWith(entry.name+"/")),"Documentation input copied to Docker Web stage: "+file);
-for(const file of ["packages/documentation/package-lock.json","apps/web/package-lock.json"]){
+for(const file of [".CyDocBuild/package-lock.json","apps/web/package-lock.json"]){
  const lock=JSON.parse(await fs.readFile(path.join(root,file),"utf8")),dependency=lock.packages["node_modules/cydoc"];
  const archive=path.resolve(root,path.dirname(file),dependency.resolved.slice(5));
  assert.equal(dependency.integrity,"sha512-"+createHash("sha512").update(await fs.readFile(archive)).digest("base64"),"Pinned local CyDoc archive: "+file);

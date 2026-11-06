@@ -12,6 +12,7 @@ test("CyDoc file URLs encode paths and preserve page, anchor and media state",()
  assert.throws(()=>links.createLocalHelpUrl("relative/index.html"),/absolute/);
 });
 test("Only trusted help links are converted; previous French anchors still work",()=>{
+ assert.deepEqual(links.webHelpTarget("https://fixture.invalid/Documentation/Documentation.html#/fr/mfa","https://fixture.invalid"),{locale:"fr",pageId:"mfa"});
  assert.deepEqual(links.webHelpTarget("https://fixture.invalid/help/manual.html#/fr/mfa","https://fixture.invalid"),{locale:"fr",pageId:"mfa"});
  assert.deepEqual(links.webHelpTarget("https://fixture.invalid/help/index.html?lang=fr#/guide/tasks?section=modifier-les-attributs","https://fixture.invalid"),{locale:"fr",pageId:"tasks",anchor:"update-attributes"});
  for(const value of ["https://other.invalid/help/manual.html","https://fixture.invalid/api/v1/me","javascript:alert(1)","file:///tmp/help/index.html"])

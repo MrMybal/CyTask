@@ -1,6 +1,6 @@
 {
   "name": "@cytask/web",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "engines": {
@@ -36,7 +36,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "cydoc": "file:../../packages/documentation/vendor/cydoc-0.1.0-cytask.tgz",
+    "cydoc": "file:../../.CyDocBuild/vendor/cydoc-0.1.0-6ddf9a5.tgz",
     "@types/markdown-it": "14.2.0",
     "@types/qrcode": "1.5.5",
     "@types/react": "19.2.18",

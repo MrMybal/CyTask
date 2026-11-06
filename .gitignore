@@ -23,6 +23,11 @@ coverage/
 *.tsbuildinfo
 
 # Generated Python caches
+/Documentation/
+/apps/web/public/Documentation/
+/.CyDocBuild/generated/
+/.CyDocBuild/internal/
+/.CyDocBuild/manual/*/reference/
 __pycache__/
 *.pyc
 /infra/compose.private.yaml

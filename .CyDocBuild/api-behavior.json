@@ -1,0 +1,134 @@
+{
+  "POST /api/v1/auth/mfa/advance": {
+    "en": "The token must match the browser’s HttpOnly, Strict MFA cookie. The method field chooses totp or email during enrollment; email sends a code; verify checks totp, email or recovery. A challenge does not grant workspace access.",
+    "fr": "Le token doit correspondre au cookie HttpOnly/Strict MFA. method choisit totp/email pendant l’enrôlement ; email envoie un code ; verify valide totp/email/recovery. Un défi n’autorise pas l’accès à l’espace."
+  },
+  "POST /api/v1/migrations/analyze": {
+    "en": "Owners and administrators only. Source credentials are used for this request and are not persisted. The normalized preview expires after 30 minutes.",
+    "fr": "Réservé aux propriétaires et administrateurs. Les identifiants de la source sont utilisés pour cet appel uniquement et ne sont jamais persistés. L’aperçu normalisé expire après 30 minutes."
+  },
+  "POST /api/v1/migrations/{previewId}/import": {
+    "en": "Owners and administrators only. Retrying skips tickets already linked to the same source identifier.",
+    "fr": "Réservé aux propriétaires et administrateurs. Une reprise ignore les tickets déjà associés au même identifiant source."
+  },
+  "POST /api/v1/bootstrap": {
+    "en": "Returns 409 after any account exists. A required MFA policy returns an enrollment challenge before opening a session.",
+    "fr": "Refusé (409) dès qu'un compte existe. Une politique MFA obligatoire retourne un défi d’enrôlement avant d’ouvrir une session."
+  },
+  "POST /api/v1/local/session": {
+    "en": "Available only in local mode over loopback. Desktop supplies the ephemeral access key when starting the engine.",
+    "fr": "Disponible uniquement en mode local depuis la boucle locale. La clé éphémère est injectée au lancement par le client desktop."
+  },
+  "POST /api/v1/agents": {
+    "en": "Owner and admin roles. The returned token is displayed only once.",
+    "fr": "Rôles owner et admin. Le jeton retourné n'est affiché qu'une seule fois."
+  },
+  "POST /api/v1/local-sync/flush": {
+    "en": "Requires an authenticated session and CSRF token. This has no destructive effect on a centralized server.",
+    "fr": "Session authentifiée et jeton CSRF requis. Sans effet destructif en mode serveur central."
+  },
+  "GET /api/v1/tokens": {
+    "en": "Browser session only: API tokens cannot inventory other tokens.",
+    "fr": "Session navigateur uniquement : un jeton ne peut pas inventorier les jetons."
+  },
+  "POST /api/v1/tokens": {
+    "en": "Browser session and CSRF are required. The response’s secret field is never displayed again.",
+    "fr": "Session navigateur + CSRF. Le champ `secret` de la réponse n'est jamais réaffiché."
+  },
+  "GET /api/v1/events": {
+    "en": "Uses text/event-stream. Event types include task.created, task.updated, comment.created, attachment.available, attachment.rejected and project.created. Each SSE id is a UUID. Reconnect with Last-Event-ID to replay retained missed events in order. A reset event requires an API refresh when the cursor is invalid or expired; ready confirms that the stream is open.",
+    "fr": "`text/event-stream`. Types : `task.created`, `task.updated`, `comment.created`, `attachment.available`, `attachment.rejected`, `project.created`, etc. Chaque événement possède un UUID dans le champ SSE `id`. À la reconnexion, `Last-Event-ID` rejoue dans l'ordre les événements manqués encore retenus. `reset` demande une resynchronisation par l'API si le curseur est invalide ou expiré ; `ready` confirme l'ouverture du flux."
+  },
+  "GET /api/v1/export": {
+    "en": "Owner and admin roles only.",
+    "fr": "Rôles `owner` et `admin` uniquement."
+  },
+  "POST /api/v1/invitations": {
+    "en": "Owner and admin roles. The token is shown once and is carried in the invitation URL fragment.",
+    "fr": "Rôles `owner` et `admin`. Le jeton n'est montré qu'une fois et se transmet dans le fragment d'URL."
+  },
+  "POST /api/v1/projects": {
+    "en": "Owner and admin roles.",
+    "fr": "Rôles `owner` et `admin`."
+  },
+  "PUT /api/v1/projects/{projectId}/plugins/{pluginId}": {
+    "en": "Owner and admin roles.",
+    "fr": "Rôles owner et admin."
+  },
+  "DELETE /api/v1/projects/{projectId}/plugins/{pluginId}": {
+    "en": "Owner and admin roles. Existing data is retained.",
+    "fr": "Rôles owner et admin. Les données existantes sont conservées."
+  },
+  "POST /api/v1/projects/{projectId}/statuses": {
+    "en": "Owner and admin roles. A project accepts at most 25 states, including system states.",
+    "fr": "Rôles owner et admin. Maximum 25 états par projet, états système inclus."
+  },
+  "PATCH /api/v1/projects/{projectId}/statuses/{statusKey}": {
+    "en": "Owner and admin roles. The state’s stable key does not change.",
+    "fr": "Rôles owner et admin. La clé stable de l'état ne change pas."
+  },
+  "POST /api/v1/projects/{projectId}/labels": {
+    "en": "Owner, admin and member roles. A project accepts at most 64 labels.",
+    "fr": "Rôles `owner`, `admin` et `member`. Maximum 64 labels par projet."
+  },
+  "DELETE /api/v1/projects/{projectId}/labels/{labelId}": {
+    "en": "Owner and admin roles. Also removes the label from every task in the project.",
+    "fr": "Rôles `owner` et `admin`. Retire aussi le label de toutes les tâches du projet."
+  },
+  "GET /api/v1/projects/{projectId}/task-page": {
+    "en": "Uses stable pagination with opaque cursors. The historical tasks route remains available for integrations that need the complete task list.",
+    "fr": "Pagination stable par curseur opaque pour les interfaces interactives. La route historique /tasks reste disponible pour les intégrations qui ont besoin d'un export complet."
+  },
+  "GET /api/v1/projects/{projectId}/task-options": {
+    "en": "Returns only fields needed by counters, hierarchy controls and relationship selectors.",
+    "fr": "Retourne uniquement les champs nécessaires aux compteurs, hiérarchies et sélecteurs de relations."
+  },
+  "GET /api/v1/projects/{projectId}/media-previews": {
+    "en": "Returns at most four available images or videos per task in one request for Kanban and Canvas previews.",
+    "fr": "Retourne au maximum quatre images ou vidéos disponibles par tâche, en une seule requête optimisée pour le Kanban et le Canvas."
+  },
+  "PUT /api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}": {
+    "en": "The media must be a validated task image or video. Annotation documents are limited to 4 MiB and 5,000 annotations.",
+    "fr": "Le média doit être une image ou vidéo validée de la tâche. Le document est limité à 4 Mio et 5 000 annotations."
+  },
+  "PATCH /api/v1/tasks/{taskId}": {
+    "en": "expectedRevision must match the current revision; otherwise the server returns 409. Omitting priority, dueAt or assigneeIds preserves its current value.",
+    "fr": "`expectedRevision` doit égaler la révision courante, sinon 409. Les champs `priority`, `dueAt` et `assigneeIds` omis conservent leur valeur."
+  },
+  "PUT /api/v1/tasks/{taskId}/labels/{labelId}": {
+    "en": "Idempotent. The task and label must belong to the same project.",
+    "fr": "Opération idempotente. La tâche et le label doivent appartenir au même projet."
+  },
+  "PUT /api/v1/tasks/{taskId}/parent/{parentTaskId}": {
+    "en": "Idempotent. Both tasks must belong to the same project. Cycles are rejected.",
+    "fr": "Opération idempotente. Les deux tâches doivent appartenir au même projet. Les cycles sont refusés."
+  },
+  "POST /api/v1/tasks/{taskId}/dependencies": {
+    "en": "Idempotent. Self-dependencies and transitive cycles return 409.",
+    "fr": "Idempotent. Refuse les auto-dépendances et les cycles transitifs (409)."
+  },
+  "GET /api/v1/attachments/{attachmentId}/content": {
+    "en": "Only available attachments can be downloaded. The server uses its detected content type and Content-Disposition: attachment. Range requests and the content-hash ETag are supported.",
+    "fr": "Uniquement en état `available`. Servie en `Content-Disposition: attachment` avec le type détecté par le serveur. Supporte les requêtes de plage et l'ETag d'empreinte."
+  },
+  "GET /api/v1/tasks/{taskId}/attachment-uploads": {
+    "en": "Returns only unexpired sessions created by the authenticated user, including received chunks, so an interrupted upload can resume.",
+    "fr": "Retourne uniquement les sessions non expirées créées par l'utilisateur authentifié, avec les blocs déjà reçus. Cette liste permet de reprendre après une fermeture du client."
+  },
+  "POST /api/v1/tasks/{taskId}/attachment-uploads": {
+    "en": "Declare the complete file’s name, type, size and SHA-256. Send each chunk in order, then call complete. The assembled file enters quarantine and becomes available or rejected after inspection, with SSE events.",
+    "fr": "Déclarer nom, type, taille et SHA-256 du fichier complet. Envoyer ensuite chaque bloc dans l'ordre puis appeler `complete`. Le fichier passe en quarantaine, est analysé, puis devient `available` ou `rejected` (événements SSE)."
+  },
+  "GET /api/v1/attachment-uploads/{uploadId}": {
+    "en": "Only the session creator can read it. Received chunks determine the resume offset.",
+    "fr": "Accessible uniquement au créateur de la session. Les blocs reçus permettent de calculer l'offset de reprise."
+  },
+  "PUT /api/v1/attachment-uploads/{uploadId}/chunks/{index}": {
+    "en": "Use application/octet-stream and the chunk hash in X-Chunk-SHA256. Chunks are sequential and use chunkSizeBytes except for the last one. Replaying an identical chunk returns 200.",
+    "fr": "Corps `application/octet-stream`, en-tête `X-Chunk-SHA256` avec l'empreinte du bloc. Les blocs sont séquentiels et de taille `chunkSizeBytes`, sauf le dernier. Rejouer un bloc identique répond 200."
+  },
+  "POST /api/v1/tasks/{taskId}/external-references": {
+    "en": "This is a declarative reference. The server never calls webUrl.",
+    "fr": "Référence déclarative : le serveur n'appelle jamais `webUrl`."
+  }
+}

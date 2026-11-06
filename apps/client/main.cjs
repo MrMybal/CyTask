@@ -81,8 +81,8 @@ function rendererRoot() {
 
 function documentationRoot() {
   return app.isPackaged
-    ? path.join(process.resourcesPath, "server", "wwwroot", "help")
-    : path.resolve(__dirname, "../web/public/help");
+    ? path.join(process.resourcesPath, "server", "wwwroot", "Documentation")
+    : path.resolve(__dirname, "../web/public/Documentation");
 }
 
 function isDocumentationUrl(value) {
@@ -105,7 +105,7 @@ function installDocumentationShortcut(win) {
 }
 
 function openDocumentation(target) {
-  const index = path.join(documentationRoot(), "index.html");
+  const index = path.join(documentationRoot(), "Documentation.html");
   if (!fsSync.existsSync(index) || !fsSync.existsSync(path.join(__dirname, "build/help-links.cjs"))) {
     dialog.showErrorBox("CyTask", nativeText(
       "The bundled guide is missing. Rebuild the Web client or reinstall the current desktop release.",

@@ -8,7 +8,7 @@ import {fileURLToPath} from "node:url";
 import {chromium} from "playwright";
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const fixture=await mkdtemp(path.join(tmpdir(),"CyTask-help-desktop-"));
-const output=path.join(root,".build/help-tests");await mkdir(output,{recursive:true});
+const output=path.join(root,".CyDocBuild/internal/tests");await mkdir(output,{recursive:true});
 for(const name of ["profile","roaming","local","temp"])await mkdir(path.join(fixture,name));
 const listener=net.createServer();await new Promise(resolve=>listener.listen(0,"127.0.0.1",resolve));
 const port=listener.address().port;await new Promise(resolve=>listener.close(resolve));
@@ -34,7 +34,7 @@ try{
   await wait(async()=>{const response=await fetch("http://127.0.0.1:"+port+"/json/version");return response.ok;},"Desktop debug endpoint");
   browser=await chromium.connectOverCDP("http://127.0.0.1:"+port);
   const pages=()=>browser.contexts().flatMap(context=>context.pages());
-  const isGuide=page=>page.url().startsWith("file:")&&new URL(page.url()).pathname.endsWith("/help/index.html");
+  const isGuide=page=>page.url().startsWith("file:")&&new URL(page.url()).pathname.endsWith("/Documentation/Documentation.html");
   const selector=await wait(()=>pages().find(page=>page.url()==="cytask-client://app/index.html"),"Workspace selector");
   await selector.waitForFunction(()=>typeof window.cytaskDesktop==="object");
   assert.equal(await selector.locator("#open-help").innerText(),"User guide");

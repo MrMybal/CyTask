@@ -86,14 +86,15 @@ Open **User guide** from the project rail, **Settings and tools**, or the sign-i
 screen. In Desktop, use **Help → User guide**, **F1**, or the workspace selector.
 The guide is bundled with the application and needs no account.
 
-CyDoc supplies the local reader: 24 English/French user-guide chapters, technical
-references, imported OpenAPI operations/schemas and a scoped public-source index.
+CyDoc supplies the local reader: English/French user guides, public API contracts,
+imported OpenAPI operations/schemas and SDK signatures with short examples.
 Screenshots, a gallery, SVG diagrams, search, themes and printing are included.
-Desktop opens the bundled index.html through file:// without a server. On the Web,
-download the offline archive, extract it and open index.html locally.
+Desktop opens the bundled Documentation/Documentation.html through file:// without
+a server. On the Web, download the offline archive, extract it and open that file.
 
-Guide sources are maintained in [docs/user-guide](docs/user-guide/README.md).
-Generation settings and the pinned CyDoc package live in [packages/documentation](packages/documentation/README.md).
+Guide sources, generation settings and the pinned CyDoc package live in
+[.CyDocBuild](.CyDocBuild/README.md). The distributed manual keeps its resources in
+DocData and separate agent guidance in DocAI.md.
 
 ## Interface languages
 

@@ -362,7 +362,8 @@ app.Use((context, next) =>
                     context.Request.Path.StartsWithSegments("/health");
         var isCyAnnota = context.Request.Path.StartsWithSegments("/plugins/cyannota");
         var isCyMd = context.Request.Path.StartsWithSegments("/plugins/cymd");
-        var isDocumentation = context.Request.Path.StartsWithSegments("/help");
+        var isDocumentation = context.Request.Path.StartsWithSegments("/help") ||
+                              context.Request.Path.StartsWithSegments("/Documentation");
         var policy = isApi
             ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
             : isDocumentation

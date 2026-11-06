@@ -9,7 +9,7 @@ on:
       - 'README*.md'
       - 'docs/**'
       - 'assets/**'
-      - 'packages/documentation/**'
+      - '.CyDocBuild/**'
       - 'packages/contracts/**'
       - 'packages/sdk-js/**'
       - 'integrations/**'
@@ -47,9 +47,9 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: packages/documentation/package-lock.json
+          cache-dependency-path: .CyDocBuild/package-lock.json
       - name: Install documentation compiler
-        run: npm ci --prefix packages/documentation --no-audit --no-fund
+        run: npm ci --prefix .CyDocBuild --no-audit --no-fund
       - name: Generate and validate CyDoc reader
         run: node scripts/build-help.mjs --check
       - name: Test documentation packaging

@@ -24,5 +24,5 @@ import type {Locale} from "./i18n";
  * Le desktop transforme cette route publique en URL de fichier local encodée.
  */
 export function helpUrl(locale:Locale,pageId="getting-started",anchor?:string,state?:Record<string,string>){
-  return createLink({locale,pageId,anchor,state},"/help/manual.html");
+  return createLink({locale,pageId,anchor,state},"/Documentation/Documentation.html");
 }

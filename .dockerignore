@@ -2,6 +2,13 @@
 .data
 .tools
 .build
+Documentation
+.CyDocBuild/internal
+.CyDocBuild/generated
+.CyDocBuild/manual/en/reference
+.CyDocBuild/manual/fr/reference
+apps/web/public/Documentation
+apps/web/public/help
 **/.claude
 **/.codex
 **/.agents

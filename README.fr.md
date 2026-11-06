@@ -38,14 +38,15 @@ Ouvrez **Guide utilisateur** depuis la barre des projets, **Paramètres et outil
 ou l’écran de connexion. Dans le desktop, utilisez **Aide → Guide utilisateur**,
 **F1** ou le sélecteur d’espace. Aucun compte n’est nécessaire.
 
-Le lecteur local CyDoc regroupe les 24 chapitres utilisateur anglais/français,
-les références techniques, les opérations/schémas OpenAPI et un index limité aux
-sources publiques. Captures, galerie, schémas SVG, recherche, thèmes et impression
-sont inclus. Le desktop ouvre index.html en file:// sans serveur. Sur le Web,
-téléchargez et extrayez l’archive hors ligne, puis ouvrez index.html localement.
+Le lecteur local CyDoc regroupe les guides utilisateur anglais/français, les
+contrats publics, opérations/schémas OpenAPI et signatures SDK avec exemples courts.
+Captures, galerie, schémas SVG, recherche, thèmes et impression sont inclus.
+Le desktop ouvre Documentation/Documentation.html en file:// sans serveur.
+Sur le Web, téléchargez et extrayez l'archive hors ligne, puis ouvrez ce fichier.
 
-Les sources sont dans [docs/user-guide](docs/user-guide/README.md).
-La génération et le paquet CyDoc épinglé sont dans [packages/documentation](packages/documentation/README.md).
+Les sources, la génération et le paquet CyDoc épinglé se trouvent dans
+[.CyDocBuild](.CyDocBuild/README.md). Le manuel distribué conserve ses ressources
+dans DocData et les consignes destinées aux agents à part dans DocAI.md.
 
 ## Objectifs
 

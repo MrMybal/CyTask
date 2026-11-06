@@ -1,0 +1,338 @@
+{
+  "GET /api/v1/account/mfa": {
+    "en": "Read the current account’s two-factor settings",
+    "fr": "Lire la configuration MFA du compte courant"
+  },
+  "POST /api/v1/account/mfa": {
+    "en": "Start a two-factor change after password confirmation",
+    "fr": "Commencer une modification MFA après confirmation du mot de passe"
+  },
+  "GET /api/v1/auth/mfa/pending": {
+    "en": "Resume the browser’s pending two-factor challenge",
+    "fr": "Reprendre le défi lié au cookie MFA du navigateur"
+  },
+  "POST /api/v1/auth/mfa/advance": {
+    "en": "Choose, send or verify a second factor",
+    "fr": "Choisir, envoyer ou vérifier un second facteur"
+  },
+  "POST /api/v1/auth/mfa/cancel": {
+    "en": "Cancel the browser’s two-factor challenge",
+    "fr": "Annuler un défi MFA lié au navigateur"
+  },
+  "GET /api/v1/migrations/capabilities": {
+    "en": "List available migration sources",
+    "fr": "Lister les sources de migration disponibles"
+  },
+  "POST /api/v1/migrations/analyze": {
+    "en": "Analyze a ClickUp list or Jira Cloud project",
+    "fr": "Analyser une liste ClickUp ou un projet Jira Cloud"
+  },
+  "POST /api/v1/migrations/{previewId}/import": {
+    "en": "Import a confirmed preview into CyTask",
+    "fr": "Importer un aperçu validé dans CyTask"
+  },
+  "GET /health/live": {
+    "en": "Check that the process is alive",
+    "fr": "Le processus répond"
+  },
+  "GET /health/ready": {
+    "en": "Check that storage is ready",
+    "fr": "Le stockage est joignable"
+  },
+  "GET /api/v1/openapi.json": {
+    "en": "Read the OpenAPI contract",
+    "fr": "Ce document"
+  },
+  "GET /api/v1/bootstrap/status": {
+    "en": "Check whether the first owner must be created",
+    "fr": "Le premier compte reste-t-il à créer ?"
+  },
+  "POST /api/v1/bootstrap": {
+    "en": "Create the initial owner and organization",
+    "fr": "Créer le premier compte et l'organisation"
+  },
+  "POST /api/v1/sessions": {
+    "en": "Open a browser session",
+    "fr": "Ouvrir une session navigateur"
+  },
+  "DELETE /api/v1/session": {
+    "en": "Close the current session",
+    "fr": "Fermer la session courante"
+  },
+  "GET /api/v1/me": {
+    "en": "Read the authenticated identity",
+    "fr": "Identité du compte authentifié"
+  },
+  "POST /api/v1/local/session": {
+    "en": "Open the desktop’s local workspace automatically",
+    "fr": "Ouvrir automatiquement l'espace local du client desktop"
+  },
+  "GET /api/v1/agents": {
+    "en": "List agent members",
+    "fr": "Lister les membres agents"
+  },
+  "POST /api/v1/agents": {
+    "en": "Create an agent without an interactive password",
+    "fr": "Créer un agent sans mot de passe interactif"
+  },
+  "PATCH /api/v1/agents/{agentUserId}/status": {
+    "en": "Activate, pause or disable an agent",
+    "fr": "Activer, mettre en pause ou désactiver un agent"
+  },
+  "POST /api/v1/agents/{agentUserId}/notifications": {
+    "en": "Send an agent a durable call or notification",
+    "fr": "Appeler un agent ou lui envoyer une notification durable"
+  },
+  "GET /api/v1/agent/context": {
+    "en": "Read the current agent’s compact work context",
+    "fr": "Lire le contexte de travail compact de l'agent courant"
+  },
+  "GET /api/v1/agent/notifications": {
+    "en": "List the current agent’s notifications",
+    "fr": "Lister les notifications de l'agent courant"
+  },
+  "POST /api/v1/agent/notifications/{notificationId}/ack": {
+    "en": "Acknowledge the current agent’s notification",
+    "fr": "Acquitter une notification de l'agent courant"
+  },
+  "POST /api/v1/agent/tasks/{taskId}/claim": {
+    "en": "Atomically claim an available task",
+    "fr": "Prendre atomiquement une tâche disponible"
+  },
+  "GET /api/v1/storage/security": {
+    "en": "Read storage encryption status",
+    "fr": "Lire l’état du chiffrement des données"
+  },
+  "GET /api/v1/local-sync/status": {
+    "en": "Read local folder synchronization status",
+    "fr": "Lire l’état du dossier local"
+  },
+  "POST /api/v1/local-sync/flush": {
+    "en": "Merge snapshots and save immediately",
+    "fr": "Fusionner les snapshots et sauvegarder immédiatement"
+  },
+  "GET /api/v1/tokens": {
+    "en": "List your API tokens",
+    "fr": "Lister ses jetons d'API"
+  },
+  "POST /api/v1/tokens": {
+    "en": "Create an API token",
+    "fr": "Créer un jeton d'API"
+  },
+  "DELETE /api/v1/tokens/{tokenId}": {
+    "en": "Revoke an API token",
+    "fr": "Révoquer un jeton d'API"
+  },
+  "GET /api/v1/events": {
+    "en": "Receive durable real-time events over SSE",
+    "fr": "Flux d'événements temps réel durable (SSE)"
+  },
+  "GET /api/v1/activity": {
+    "en": "Read organization activity",
+    "fr": "Journal d'activité de l'organisation"
+  },
+  "GET /api/v1/search": {
+    "en": "Search projects and tasks",
+    "fr": "Recherche projets et tâches"
+  },
+  "GET /api/v1/export": {
+    "en": "Export organization data as JSON",
+    "fr": "Export JSON complet de l'organisation"
+  },
+  "GET /api/v1/members": {
+    "en": "List organization members",
+    "fr": "Membres de l'organisation"
+  },
+  "POST /api/v1/invitations": {
+    "en": "Create a single-use invitation",
+    "fr": "Créer une invitation à usage unique"
+  },
+  "GET /api/v1/projects": {
+    "en": "List organization projects",
+    "fr": "Projets de l'organisation"
+  },
+  "POST /api/v1/projects": {
+    "en": "Create a project",
+    "fr": "Créer un projet"
+  },
+  "GET /api/v1/plugins/catalog": {
+    "en": "List compatible official plugins",
+    "fr": "Catalogue des plugins officiels compatibles"
+  },
+  "GET /api/v1/projects/{projectId}/plugins": {
+    "en": "Read the project’s plugins and activation state",
+    "fr": "Plugins disponibles et état d'activation du projet"
+  },
+  "PUT /api/v1/projects/{projectId}/plugins/{pluginId}": {
+    "en": "Enable a project plugin",
+    "fr": "Activer un plugin pour le projet"
+  },
+  "DELETE /api/v1/projects/{projectId}/plugins/{pluginId}": {
+    "en": "Disable a project plugin",
+    "fr": "Désactiver un plugin pour le projet"
+  },
+  "GET /api/v1/projects/{projectId}/statuses": {
+    "en": "Read project workflow states",
+    "fr": "États configurés pour le projet"
+  },
+  "POST /api/v1/projects/{projectId}/statuses": {
+    "en": "Create a custom workflow state",
+    "fr": "Créer un état personnalisé"
+  },
+  "PATCH /api/v1/projects/{projectId}/statuses/{statusKey}": {
+    "en": "Change a workflow state’s name and color",
+    "fr": "Modifier le nom et la couleur d'un état"
+  },
+  "GET /api/v1/projects/{projectId}/labels": {
+    "en": "Read project labels and assignments",
+    "fr": "Labels et affectations d'un projet"
+  },
+  "POST /api/v1/projects/{projectId}/labels": {
+    "en": "Create a project label",
+    "fr": "Créer un label de projet"
+  },
+  "DELETE /api/v1/projects/{projectId}/labels/{labelId}": {
+    "en": "Delete a project label",
+    "fr": "Supprimer un label du projet"
+  },
+  "GET /api/v1/projects/{projectId}/task-hierarchy": {
+    "en": "Read project task hierarchy",
+    "fr": "Hiérarchie des tâches d'un projet"
+  },
+  "GET /api/v1/projects/{projectId}/task-page": {
+    "en": "Read a filtered task page",
+    "fr": "Page filtrée de tâches"
+  },
+  "GET /api/v1/projects/{projectId}/task-options": {
+    "en": "Read lightweight task options",
+    "fr": "Options légères de tâches d'un projet"
+  },
+  "GET /api/v1/projects/{projectId}/media-previews": {
+    "en": "Read project media previews",
+    "fr": "Prévisualisations médias du projet"
+  },
+  "GET /api/v1/projects/{projectId}/tasks": {
+    "en": "Read project tasks",
+    "fr": "Tâches d'un projet"
+  },
+  "POST /api/v1/projects/{projectId}/tasks": {
+    "en": "Create a task",
+    "fr": "Créer une tâche"
+  },
+  "GET /api/v1/tasks/{taskId}/plugins": {
+    "en": "Read active task plugin contributions",
+    "fr": "Contributions actives et données d'un ticket"
+  },
+  "GET /api/v1/tasks/{taskId}/plugins/{pluginId}/data": {
+    "en": "Read structured plugin data",
+    "fr": "Lire les données structurées d'un plugin"
+  },
+  "PUT /api/v1/tasks/{taskId}/plugins/{pluginId}/data": {
+    "en": "Write structured plugin data with a revision check",
+    "fr": "Écrire les données structurées avec contrôle de révision"
+  },
+  "GET /api/v1/tasks/{taskId}/plugins/{pluginId}/history": {
+    "en": "Read archived plugin data revisions",
+    "fr": "Lister les révisions archivées des données d'un plugin"
+  },
+  "GET /api/v1/tasks/{taskId}/plugins/cyannota/workspace": {
+    "en": "Read CyAnnota workspace settings and annotated media revisions",
+    "fr": "Configuration CyAnnota et révisions des médias annotés"
+  },
+  "GET /api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}": {
+    "en": "Read a media annotation document",
+    "fr": "Lire le document CyAnnota d'un média"
+  },
+  "PUT /api/v1/tasks/{taskId}/plugins/cyannota/media/{attachmentId}": {
+    "en": "Save media annotations with a revision check",
+    "fr": "Sauver les annotations avec contrôle de révision"
+  },
+  "GET /api/v1/tasks/{taskId}": {
+    "en": "Read a task, its comments and checklist",
+    "fr": "Détail d'une tâche, ses commentaires et sa checklist"
+  },
+  "PATCH /api/v1/tasks/{taskId}": {
+    "en": "Update a task with a revision check",
+    "fr": "Mettre à jour une tâche avec contrôle de révision"
+  },
+  "POST /api/v1/tasks/{taskId}/comments": {
+    "en": "Add a task comment",
+    "fr": "Commenter une tâche"
+  },
+  "POST /api/v1/tasks/{taskId}/checklist": {
+    "en": "Add a checklist item",
+    "fr": "Ajouter un élément à la checklist"
+  },
+  "PATCH /api/v1/tasks/{taskId}/checklist/{itemId}": {
+    "en": "Edit or complete a checklist item",
+    "fr": "Modifier ou valider un élément de checklist"
+  },
+  "DELETE /api/v1/tasks/{taskId}/checklist/{itemId}": {
+    "en": "Delete a checklist item",
+    "fr": "Supprimer un élément de checklist"
+  },
+  "PUT /api/v1/tasks/{taskId}/labels/{labelId}": {
+    "en": "Assign a label to a task",
+    "fr": "Attribuer un label à une tâche"
+  },
+  "DELETE /api/v1/tasks/{taskId}/labels/{labelId}": {
+    "en": "Remove a task label",
+    "fr": "Retirer un label d'une tâche"
+  },
+  "PUT /api/v1/tasks/{taskId}/parent/{parentTaskId}": {
+    "en": "Set a task’s parent",
+    "fr": "Définir la tâche parente"
+  },
+  "DELETE /api/v1/tasks/{taskId}/parent": {
+    "en": "Detach a task from its parent",
+    "fr": "Détacher une sous-tâche de son parent"
+  },
+  "GET /api/v1/tasks/{taskId}/dependencies": {
+    "en": "Read dependencies and blocked tasks",
+    "fr": "Dépendances et tâches bloquées"
+  },
+  "POST /api/v1/tasks/{taskId}/dependencies": {
+    "en": "Declare a task dependency",
+    "fr": "Déclarer une dépendance"
+  },
+  "DELETE /api/v1/tasks/{taskId}/dependencies/{dependsOnTaskId}": {
+    "en": "Remove a task dependency",
+    "fr": "Retirer une dépendance"
+  },
+  "GET /api/v1/tasks/{taskId}/attachments": {
+    "en": "Read task attachments",
+    "fr": "Pièces jointes d'une tâche"
+  },
+  "GET /api/v1/attachments/{attachmentId}/content": {
+    "en": "Download a validated attachment",
+    "fr": "Télécharger une pièce jointe validée"
+  },
+  "GET /api/v1/tasks/{taskId}/attachment-uploads": {
+    "en": "List your active resumable task uploads",
+    "fr": "Lister ses sessions d'envoi actives pour une tâche"
+  },
+  "POST /api/v1/tasks/{taskId}/attachment-uploads": {
+    "en": "Start a chunked upload",
+    "fr": "Ouvrir une session d'envoi par blocs"
+  },
+  "GET /api/v1/attachment-uploads/{uploadId}": {
+    "en": "Read an upload session",
+    "fr": "État d'une session d'envoi"
+  },
+  "PUT /api/v1/attachment-uploads/{uploadId}/chunks/{index}": {
+    "en": "Upload a file chunk",
+    "fr": "Envoyer un bloc"
+  },
+  "POST /api/v1/attachment-uploads/{uploadId}/complete": {
+    "en": "Complete an upload and place it in quarantine",
+    "fr": "Clore l'envoi et passer en quarantaine"
+  },
+  "GET /api/v1/tasks/{taskId}/external-references": {
+    "en": "Read a task’s Git references",
+    "fr": "Références Git d'une tâche"
+  },
+  "POST /api/v1/tasks/{taskId}/external-references": {
+    "en": "Link a commit, branch, tag or pull request",
+    "fr": "Lier un commit, une branche, un tag ou une demande de fusion"
+  }
+}

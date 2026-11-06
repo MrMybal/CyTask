@@ -1,0 +1,5 @@
+/* Application palette only: layout, hierarchy, tooltips and search come from CyDoc. */
+.cydoc-viewer[data-theme=dark]{--bg:#101418;--sidebar:#151b21;--surface:#202932;--card:#151b21;--text:#edf1f5;--muted:#b0bdc7;--faint:#a9b8c5;--line:#52616e;--accent:#8cdbbd;--accent-bg:#203c32}
+.cydoc-viewer[data-theme=light]{--bg:#f3f2ee;--sidebar:#e9edee;--surface:#e3e7e8;--card:#fffefa;--text:#1c2832;--muted:#4e5c67;--faint:#52616e;--line:#77828b;--accent:#19664f;--accent-bg:#dcece5}
+.cydoc-viewer .cy-media{scroll-margin-top:85px}.cytask-offline-download{margin:12px 24px;font-size:12px}.cydoc-viewer .media-expanded{background:var(--bg)}
+@media print{.cytask-offline-download{display:none}}

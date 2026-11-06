@@ -39,7 +39,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             apps/web/package-lock.json
-            packages/documentation/package-lock.json
+            .CyDocBuild/package-lock.json
             plugins/cyannota/web/package-lock.json
             plugins/cymd/web/package-lock.json
             apps/client/package-lock.json
