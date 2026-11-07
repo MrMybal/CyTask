@@ -1,251 +1,162 @@
-[English](README.md) | **Français**
+<table width="100%">
+  <tr>
+    <td width="300" align="left" valign="top">
+      <a href="https://mrmybal.github.io/CyTask/Documentation.html#/fr/getting-started">Documentation</a><br>
+      <a href="https://github.com/MrMybal/CyTask">Dépôt des sources</a><br>
+      <a href="https://github.com/MrMybal/CyTask/issues">Suivi des problèmes</a><br><br>
+      <sub>README</sub><br>
+      <a href="README.md">English</a> · <a href="README.fr.md">Français</a>
+    </td>
+    <td width="400" align="center" valign="middle">
+      <a href="assets/branding/cytask-logo.png"><img src="assets/branding/cytask-logo.png" alt="Logo CyTask" width="128"></a>
+    </td>
+    <td width="300" align="right" valign="top">
+      <p><sub>Licence de l’application</sub><br><a href="LICENSE"><strong>GNU AGPL v3</strong></a></p>
+      <p><sub>Version</sub><br><a href="CHANGELOG.fr.md"><strong>0.2.3</strong></a><br><strong>EN DÉVELOPPEMENT</strong></p>
+      <p><a href="https://github.com/MrMybal/CyTask/releases/tag/v0.2.3"><strong>Télécharger la 0.2.3</strong></a><br><sub>Windows x64 · portable / installateur</sub></p>
+    </td>
+  </tr>
+</table>
 
-<p align="center">
-  <img src="assets/branding/cytask-logo.png" alt="Logo CyTask" width="360" />
-</p>
+<h1 align="center">CyTask</h1>
 
-# CyTask
+Un gestionnaire de projets et de tâches open source pour les équipes de production numérique, les créateurs indépendants et les projets Unreal Engine. Utilisez un dossier local en solo, synchronisez des appareils de confiance ou connectez-vous à votre serveur d’équipe auto-hébergé. Un dépôt Git reste facultatif.
 
-[Documentation](https://mrmybal.github.io/CyTask/#/fr/getting-started) · [English documentation](https://mrmybal.github.io/CyTask/#/en/getting-started)
+> **EN DÉVELOPPEMENT · 0.2.3**
+>
+> Un client Windows est disponible pour les essais et retours. Certaines intégrations et plateformes restent incomplètes ; conservez des sauvegardes restaurables des projets importants. Consultez les [notes de version et limites documentées](CHANGELOG.fr.md).
 
-CyTask est un gestionnaire de projets et de tâches open source, auto-hébergeable,
-conçu pour les équipes de production numérique et les projets Unreal Engine.
+[![Vue compacte de CyTask avec salons de projet, dossiers, responsables multiples, priorités et états colorés](assets/screenshots/tasks-compact.png)](assets/screenshots/tasks-compact.png)
 
-Le produit doit fonctionner avec ou sans dépôt Git. Git, Unreal Engine, les
-traitements médias et CyRevision sont des intégrations autour d'un
-cœur qui reste utilisable seul.
+## À propos de CyTask
 
-## Aperçu de l’application
+Les projets sont des espaces avec catégories et salons typés : tableaux de tâches, discussions d’équipe, annonces, documents, canvas, fichiers et appels en direct. Classez les tâches dans des dossiers et sous-dossiers, assignez plusieurs personnes, définissez des états colorés et suivez sous-tâches, checklists et dépendances. Choisissez la vue Liste, Compacte, Kanban, Canvas ou Graphe selon le travail.
 
-Découvrez l’espace de démonstration **Nebula Station** et ses 220 tâches : salons de projet, dossiers, responsables multiples et colonnes d’état configurables.
-
-![Vue compacte de CyTask avec salons, dossiers, responsables, priorités et états](assets/screenshots/tasks-compact.png)
+Le client desktop peut ouvrir directement un dossier local en mode solo, sans écran de création de compte. Le mode Sync transporte des snapshots immuables et des médias par un outil externe comme Syncthing ou CyRevision Sync ; il ne réplique pas une base active. Un serveur d’équipe utilise PostgreSQL, des invitations et des droits propres à chaque projet.
 
 | Tableau Kanban | Discussion d’équipe et médias partagés |
 | --- | --- |
-| ![Tableau Kanban de CyTask avec les tâches regroupées par état](assets/screenshots/kanban.png) | ![Discussion CyTask avec mentions, documents et aperçu d’image](assets/screenshots/team-chat.png) |
+| [![Tâches regroupées par état dans le Kanban de CyTask](assets/screenshots/kanban.png)](assets/screenshots/kanban.png) | [![Discussion CyTask avec mentions, liens de tâches et aperçu d’image](assets/screenshots/team-chat.png)](assets/screenshots/team-chat.png) |
+
+Ces captures présentent le projet fictif **Nebula Station** et ses 220 tâches. Les textes saisis dans le projet conservent leur langue d’origine. L’interface est en anglais par défaut et propose aussi le français.
 
 <details>
-<summary>Voir le thème clair</summary>
+<summary>Voir l’apparence claire</summary>
 
-![Vue compacte de CyTask avec le thème clair Cloud](assets/screenshots/tasks-light.png)
+[![Vue compacte des tâches avec le thème clair Cloud de CyTask](assets/screenshots/tasks-light.png)](assets/screenshots/tasks-light.png)
+
+Six préréglages sont disponibles : Graphite, Minuit, Forêt, Brume, Papier et Contraste élevé.
 
 </details>
 
-## Documentation intégrée
+## Fonctionnalités
 
-Ouvrez **Guide utilisateur** depuis la barre des projets, **Paramètres et outils**
-ou l’écran de connexion. Dans le desktop, utilisez **Aide → Guide utilisateur**,
-**F1** ou le sélecteur d’espace. Aucun compte n’est nécessaire.
+- **Tâches et hiérarchie** : responsables multiples, états personnalisés, priorités, dates, labels, tâches parentes/enfants, dépendances, checklists et historique d’activité.
+- **Navigation rapide** : tri par colonne, modification directe, filtres enregistrés, colonnes configurables, opérations groupées, palette de commandes et liens partageables.
+- **Salons d’équipe** : discussions et groupes privés, mentions, aperçus de tâches, lecture d’images/vidéos, vocal, caméras en direct et partage d’écran indépendant.
+- **Ressources partagées** : documents, canvas multimédias, dessin, fichiers et pièces jointes, avec aperçus d’images sur les cartes Kanban.
+- **Local ou hébergé** : dossiers autonomes, espaces synchronisés par un outil externe ou serveur auto-hébergé, avec double authentification et chiffrement au repos optionnels.
+- **Migration** : aperçu des imports ClickUp ou Jira Cloud, correspondance des utilisateurs et états, puis import des données prises en charge sans dupliquer les imports précédents. Les pièces jointes distantes restent des liens vers la source.
+- **Intégrations facultatives** : Git, AI Assistant, Unreal Engine, CyRevision et CyAnnota ; CyMD ajoute l’édition Markdown enrichie. Les plugins apportent des champs validés et actions de contenu prises en charge, pas du code arbitraire injecté par manifeste.
+- **Agents et automatisation** : identités à droits limités, appels persistants, notifications, prise atomique des tâches, SDK JavaScript et connecteur MCP stdio. Un appel de travail n’exécute pas arbitrairement le texte d’une tâche.
+- **Aide intégrée** : guides CyDoc complets en anglais/français, contrats API, captures, schémas SVG, recherche et thèmes de lecture. Le desktop ouvre directement `Documentation/Documentation.html` ; le même lecteur est [disponible en ligne](https://mrmybal.github.io/CyTask/Documentation.html#/fr/getting-started).
 
-Le lecteur local CyDoc regroupe les guides utilisateur anglais/français, les
-contrats publics, opérations/schémas OpenAPI et signatures SDK avec exemples courts.
-Captures, galerie, schémas SVG, recherche, thèmes et impression sont inclus.
-Le desktop ouvre Documentation/Documentation.html en file:// sans serveur.
-Sur le Web, téléchargez et extrayez l'archive hors ligne, puis ouvrez ce fichier.
+---
 
-Les sources, la génération et le paquet CyDoc épinglé se trouvent dans
-[.CyDocBuild](.CyDocBuild/README.md). Le manuel distribué conserve ses ressources
-dans DocData et les consignes destinées aux agents à part dans DocAI.md.
+## Installation
 
-## Objectifs
+### Windows x64
 
-- application Web rapide et installable, client Electron Windows/Linux/macOS, puis Android ;
-- serveur d'équipe auto-hébergeable avec une sécurité vérifiable ;
-- tâches, projets, sous-tâches, labels, commentaires, dépendances, pièces jointes et temps réel ;
-- images et vidéos avec conversion locale optionnelle et traitement serveur ;
-- commits, branches et demandes de fusion reliés aux tâches via un plugin Git ;
-- panneau CyTask dans Unreal Engine 4.27 à 5.8 ;
-- recettes d'assets contrôlées, prévisualisables et exécutables depuis Unreal ;
-- extensions signées et limitées par permissions ;
-- fondations compatibles avec un futur mode décentralisé CyRevision/Syncthing.
+Le client 0.2.3 publié comprend Electron, le moteur .NET local, l’interface Web et l’aide hors ligne. Le mode local solo ne nécessite pas d’installation séparée de Node.js, du SDK .NET ou d’une base de données.
 
-## État du dépôt
+1. Téléchargez l’[exécutable portable](https://github.com/MrMybal/CyTask/releases/download/v0.2.3/CyTask-0.2.3-portable-x64.exe) ou l’[installateur](https://github.com/MrMybal/CyTask/releases/download/v0.2.3/CyTask-0.2.3-setup-x64.exe).
+2. Fermez l’ancienne instance de CyTask, puis lancez la portable ou l’installateur. Conservez vos dossiers de projet et sauvegardez séparément les clés de chiffrement.
+3. Choisissez **Dossier local** pour travailler seul, **Sync** pour un dossier synchronisé par un outil externe, ou une connexion serveur avec son adresse HTTPS et votre compte d’équipe.
+4. Créez un projet et une première tâche, ou rouvrez un espace existant.
 
-La navigation organise désormais les projets comme des serveurs, avec catégories
-et salons de tâches, discussions, annonces, documents, canvas et fichiers partagés.
-Les droits d’un projet peuvent être hérités ou limités à une liste de membres.
-Les éditeurs Markdown proposent mise en forme, aperçu et suggestions de mentions
-et de tâches. Les plugins activés peuvent ajouter des actions aux messages, textes
-et médias : édition CyMD et annotations CyAnnota sur les images du chat, notamment.
-Le [contrat des extensions de contenu](docs/content-plugins.md) décrit également
-la sauvegarde locale et les limites actuelles.
+Les [notes de publication et empreintes SHA-256](https://github.com/MrMybal/CyTask/releases/tag/v0.2.3) accompagnent les téléchargements. Ces exécutables ne sont pas signés avec Authenticode ; Windows SmartScreen peut afficher un avertissement.
 
-La première tranche verticale est implémentée : amorçage sécurisé du premier
-compte, sessions, invitations à usage unique, rôles, organisation, projets,
-tâches éditables avec contrôle de révision, sous-tâches, labels, checklists, commentaires et événements temps réel.
-La recherche, le journal d’activité et l’export JSON sont également disponibles.
-Le pipeline de pièces jointes calcule les empreintes côté client, envoie les données
-par blocs vérifiés et conserve les originaux en quarantaine hors du Web. Un worker
-d'analyse en sort chaque fichier : il parcourt réellement le conteneur PNG, JPEG,
-GIF, WebP, MP4 ou WebM, refuse les fichiers tronqués ou dont le contenu ne
-correspond pas au type annoncé, puis rend le fichier téléchargeable dans la seule
-organisation qui l'a déposé. Les vidéos MP4 et WebM exposent leurs dimensions et leur
-durée, se lisent directement dans la tâche et se déplacent dans la timeline grâce aux
-requêtes de plage. Le réencodage et l'analyse antivirale restent à faire.
-Les tâches peuvent aussi recevoir des références Git manuelles génériques ; aucun
-dépôt ni secret n'est requis tant que le connecteur Git officiel n'est pas activé.
-Le premier plugin Unreal source est également présent : panneau Slate, tâches personnelles et création auto-assignée, fichiers/assets historisés, connexion
-PKCE dans le navigateur système, consultation des projets et tâches, révocation du
-jeton, validateur strict et exécuteur confirmé de recettes d'assets. Le flux natif
-utilise un code unique et un jeton Bearer opaque révocable réservé au client
-`cytask-unreal` ; le jeton reste uniquement en mémoire dans l'éditeur.
+### Serveur d’équipe et autres plateformes
 
-Les propriétaires et administrateurs disposent maintenant d’un écran **Migration** dans chaque projet. Il analyse une liste ClickUp ou un projet Jira Cloud, permet de vérifier les correspondances d’états et de responsables, puis réalise un import idempotent. Les jetons de la source ne sont jamais enregistrés et les aperçus expirent après 30 minutes. Tâches, descriptions, priorités, dates, responsables, commentaires, checklists, labels, relations parentales et dépendances prises en charge sont conservés. Dans cette première version, les pièces jointes distantes restent des liens HTTPS sûrs vers la source.
+Déployez votre serveur avec un stockage persistant PostgreSQL/médias et HTTPS ; consultez le [manuel d’administration](https://mrmybal.github.io/CyTask/Documentation.html#/fr/administration) et la [configuration de déploiement](infra/README.md). SMTP et STUN/TURN se configurent séparément si les codes e-mail ou les appels en ont besoin.
 
-La première plateforme de plugins déclaratifs est également disponible. Un administrateur
-active Git, AI Assistant, Unreal Engine, CyRevision ou CyAnnota par projet depuis la page **Plugins**. AI Assistant gère plusieurs profils OpenAI, Anthropic, API compatible, Ollama, LM Studio, Codex, Claude Code ou OpenCode ; les jetons restent chiffrés côté serveur et chaque ticket choisit sa connexion. CyTask ajoute les onglets correspondants aux tickets et conserve leurs données structurées avec contrôle de révision. Les manifestes ne peuvent injecter ni JavaScript ni HTML : seuls les champs déclarés
-et validés par le serveur sont rendus. Le connecteur compagnon CyRevision recherche les tickets,
-ajoute leurs liens aux commits et pull requests, puis peut appliquer un état de fin après fusion.
-Il compile sur UE 5.2 et 5.8 ; la validation 4.27 reste à répéter sur une installation
-du moteur complète.
-Les serveurs d’équipe disposent d’une double authentification désactivable,
-facultative ou obligatoire : application TOTP compatible Google Authenticator,
-codes e-mail via SMTP TLS et codes de secours à usage unique. La gestion se trouve
-dans **Paramètres et outils → Sécurité du compte**. Voir la
-[configuration de la double authentification](docs/two-factor-authentication.md) ;
-le mode local solo conserve son ouverture sans compte interactif.
+Des cibles de packaging Linux et macOS existent dans les sources, mais la release 0.2.3 ne fournit que les binaires Windows x64. Aucun client Android n’est publié. Voir les [limites de plateforme et d’intégration](CHANGELOG.fr.md#limites-documentées).
 
-Le chiffrement au repos des contenus, médias et données locales/Sync est optionnel,
-désactivé par défaut. Les données existantes nécessitent une conversion explicite
-hors ligne. Voir [le chiffrement et la gestion des clés](docs/data-encryption.md).
+## Sources, compilation et bibliothèques nécessaires
 
-Le client Web responsive et installable consomme la même API que CyTask Desktop
-Electron et le plugin Unreal. Le client desktop mémorise plusieurs IP ou domaines, isole les sessions par origine et
-charge le site distant sans accès Node. Il peut aussi ouvrir un **dossier local** : un sidecar
-auto-contenu limité à `127.0.0.1` conserve des snapshots immuables et des médias compatibles
-avec Syncthing ou le moteur Sync de CyRevision, sans jamais répliquer une base active. Son interface de tâches propose maintenant cinq vues :
-Liste, Compacte en colonnes, Kanban, Canvas libre multimédia et graphe relationnel.
-Elle comprend également un thème clair/sombre, des dossiers et sous-dossiers persistants,
-des labels colorés, priorités, échéances, assignations multiples, vues rapides et filtres nommés mémorisés localement.
-La vue compacte se trie directement par chaque colonne et permet de modifier le statut, la priorité, l’échéance
-ou les responsables sans ouvrir la fiche complète. Ses dossiers sont repliables et ses sélections par ligne,
-par dossier ou globales permettent d’appliquer un statut, une priorité, une échéance ou plusieurs responsables à plusieurs tâches,
-et d’ajouter ou retirer un dossier/label sans effacer les autres classements. Les colonnes visibles et leur ordre sont configurables,
-réinitialisables et mémorisés par appareil ; les opérations groupées utilisent une concurrence bornée.
-Chaque espace possède une bibliothèque commune où documents, canvas et fichiers serveur
-peuvent être rangés dans les mêmes dossiers que les tâches, filtrés, regroupés et triés
-par colonne. Les fichiers utilisent des blocs vérifiés par SHA-256 et le même passage en
-quarantaine que les pièces jointes de tâches.
-La discussion d’équipe fournit des salons par projet, messages, mentions, images, vidéos
-et fichiers issus de cette bibliothèque. Les salons vocaux et vidéo proposent la caméra en direct,
-le partage d’écran indépendant, la coupure du micro/son et le choix des périphériques, via WebRTC
-et une signalisation WebSocket authentifiée. Les services STUN/TURN sont configurables ;
-un relais TURN privé est nécessaire pour les réseaux qui bloquent les connexions directes.
-Voir la [configuration des appels](docs/live-calls.md) pour les limites et le déploiement.
-Des groupes privés limitent côté serveur la liste des salons, les
-messages et la signalisation aux seuls membres invités. Les liens de tâches génèrent
-une carte ouvrable ; images et vidéos disposent d’un aperçu, d’une visionneuse
-agrandie, d’un lecteur intégré et d’un téléchargement direct.
-Elle propose aussi des vignettes et le téléchargement des fichiers validés, un motif pour les fichiers refusés,
-drag-and-drop multi-fichier sur toute la fenêtre de tâche, galerie intégrée aux détails
-et jusqu'à quatre aperçus image/vidéo par carte Kanban. Le Canvas permet d'ajouter
-et déplacer des textes, formes, tâches, images et vidéos, ainsi que de dessiner à main
-levée ; ses objets et blobs multimédias sont conservés localement dans le navigateur.
-L’interface comprend aussi une palette de commandes `Ctrl/⌘ + K`, l’ajout rapide
-d’une tâche en une ligne, le préchargement du détail au survol, la pagination serveur
-à curseur avec filtres, le chargement progressif et des notifications non bloquantes.
-Le déplacement optimiste utilise le contrôle de révision ; le détail reste organisé
-en onglets et possède des liens directs partageables. Les tâches intègrent des checklists avec progression, une hiérarchie
-parent/sous-tâches acyclique et des dépendances indiquant le travail qu'elles bloquent.
-PostgreSQL est la persistance cible ; un stockage mémoire explicite est disponible
-pour les tests et le développement rapide.
+<details>
+<summary>Compiler le client desktop ou lancer l’espace de développement</summary>
 
-Un dossier local s’ouvre désormais directement en mode solo, sans écran de création de compte. CyTask sait aussi créer des membres agents sans mot de passe interactif, leur envoyer des appels de travail persistants et leur permettre de prendre atomiquement une tâche libre. Le SDK JavaScript sans dépendance s’intègre dans une autre application ; le pont MCP stdio expose les projets, la hiérarchie, le découpage des tâches, les commentaires, les agents et leurs notifications aux orchestrateurs compatibles. Ces identités se gèrent dans **Paramètres et outils → Agents**.
+Utilisez Node.js **22.17.1** avec npm, le SDK .NET **10.0.302** indiqué dans `global.json` et PowerShell 7 pour les scripts Windows. PostgreSQL sert au déploiement d’équipe persistant, pas au moteur de dossier local. Unreal n’est nécessaire que pour compiler son plugin source facultatif.
 
-## Client Windows
+```sh
+git clone https://github.com/MrMybal/CyTask.git
+cd CyTask
+npm ci --prefix apps/web
+npm ci --prefix apps/client
+npm ci --prefix plugins/cymd/web
+npm ci --prefix plugins/cyannota/web
+npm run dist:win --prefix apps/client
+```
 
-Téléchargez le dernier installateur Windows x64 ou la version portable depuis les [releases GitHub](https://github.com/MrMybal/CyTask/releases/latest). Les releases fournissent les empreintes SHA-256. Les binaires actuels ne sont pas encore signés avec Authenticode ; Windows SmartScreen peut donc afficher un avertissement.
-## Démarrage rapide
+La compilation desktop construit les deux éditeurs embarqués, l’interface Web et la documentation, publie le serveur autonome, puis écrit portable et installateur dans `apps/client/release/`. Elle installe l’archive CyDoc locale épinglée ; l’accès au dépôt source privé de CyDoc n’est pas nécessaire. Utilisez un `dotnet` système ou placez le SDK sous `.tools/dotnet`.
 
-Avec Node.js 22 et le SDK local `.tools/dotnet` déjà installé :
+Pour le développement, le script Windows attend précisément `.tools/dotnet/dotnet.exe` :
 
 ```powershell
 ./scripts/dev.ps1
 ```
 
-Ouvrir ensuite `http://127.0.0.1:5173`. Ce mode perd ses données au redémarrage.
-Le même script lance la copie CyAnnota sur le port 5174 et la sert sous
-`/plugins/cyannota/` via le domaine CyTask.
-Pour PostgreSQL et le déploiement conteneurisé, voir [infra/README.md](infra/README.md).
+Ouvrez `http://127.0.0.1:5173`. Ce serveur de développement utilise un stockage mémoire et perd ses données au redémarrage ; ce n’est pas un déploiement d’équipe persistant. Pendant son exécution, lancez `pwsh ./scripts/seed-demo.ps1` dans un autre terminal pour créer l’espace fictif de 220 tâches. Les identifiants de démonstration ne doivent pas devenir des valeurs par défaut en production.
 
-Le client desktop se construit depuis `apps/client` :
+Voir la [compilation desktop](apps/client/README.fr.md), la [rédaction documentaire](.CyDocBuild/README.md), le [SDK](packages/sdk-js/README.md) et le [connecteur MCP](integrations/mcp/README.md). Les cibles Linux/macOS et le plugin Unreal nécessitent leurs propres compilations par plateforme/moteur ; consultez l’[intégration Unreal](integrations/unreal/README.md).
 
-```powershell
-Push-Location apps/client
-npm ci
-npm run dist:win
-Pop-Location
-```
+</details>
 
-Pour remplir le serveur local avec le projet fictif **Nebula Station**, lancer dans
-un second terminal pendant que le mode développement fonctionne :
-
-```powershell
-pwsh ./scripts/seed-demo.ps1
-```
-
-Le script crée une équipe et un jeu de charge de **220 tâches** réalistes avec états, priorités,
-échéances, responsables, dossiers et sous-dossiers, ainsi que des sous-tâches, checklists, commentaires,
-références Git et dépendances. Il active aussi les **5 plugins officiels** avec des données
-Git, AI Assistant, Unreal et CyRevision, ainsi que CyAnnota pour les médias, puis ajoute **6 contenus d’espace**, **4 salons** et
-une conversation d’exemple avec mentions et documents joints. Il est idempotent : une nouvelle exécution complète seulement les tâches
-manquantes. Le jeu de démonstration ajoute également un groupe privé et un lien de
-tâche prévisualisable. Les identifiants de démonstration sont affichés à la fin de son exécution.
-
-L'API est utilisable par des plugins et des scripts sans passer par le flux Unreal :
-un jeton personnel `cytask_pat_…` se crée depuis la section **API** du client Web,
-avec une portée lecture ou lecture/écriture, une expiration optionnelle et une
-révocation immédiate. Le contrat complet est servi par `/api/v1/openapi.json`.
-
-Les exemples MCP sont dans [`integrations/mcp`](integrations/mcp) et le client embarquable dans [`packages/sdk-js`](packages/sdk-js).
-
-```bash
-curl -H "Authorization: Bearer cytask_pat_…" http://127.0.0.1:5080/api/v1/projects
-```
-
-## Documentation
-
-- [Vision et périmètre](docs/01-vision-produit.md)
-- [Architecture](docs/02-architecture.md)
-- [Sécurité](docs/03-securite.md)
-- [Feuille de route](docs/04-feuille-de-route.md)
-- [Guide de développement](docs/05-developpement.md)
-- [Interface des tâches](docs/06-interface-taches.md)
-- [API pour plugins et intégrations](docs/07-api-plugins.md)
-- [Annotations CyAnnota](docs/08-cyannota.md)
-- [Mode local et synchronisation par dossier](docs/09-mode-local-sync.md)
-- [Client desktop](apps/client/README.md)
-- [Décisions d'architecture](docs/decisions)
-- [Contrats de plugins](packages/contracts)
-- [Plugin Unreal](integrations/unreal/README.md)
-
-## Organisation prévue
-
-```text
-apps/                  serveur, Web et clients
-integrations/unreal/   plugin Unreal et couches de compatibilité
-packages/              contrats et SDK partagés
-plugins/               plugins officiels, dont Git
-infra/                 déploiement local et production
-docs/                  produit, architecture, sécurité et décisions
-```
-
-## Vérifications
-
-```powershell
-./.tools/dotnet/dotnet test CyTask.slnx
-Push-Location apps/web; npm run build; Pop-Location
-Push-Location plugins/cyannota/web; npm run build; Pop-Location
-Push-Location apps/client; npm run check; Pop-Location
-```
-
-Les commandes de construction et de tests Unreal sont documentées dans
-[`integrations/unreal/README.md`](integrations/unreal/README.md).
+---
 
 ## Licence
 
-CyTask est distribué sous la licence
-[GNU Affero General Public License v3.0](LICENSE), comme CyRevision. Les versions
-modifiées proposées à travers un réseau doivent conserver les mêmes libertés et
-mettre leur code source correspondant à disposition de leurs utilisateurs.
+Le fichier [LICENSE](LICENSE) à la racine de CyTask contient la **GNU Affero General Public License v3**. Les composants tiers conservent leurs propres conditions ; la licence MIT de CyDoc ou d’Electron ne change pas celle de CyTask.
+
+### Principaux composants d’exécution et facultatifs
+
+| Bibliothèque · sources | Licence · texte | Utilisation / périmètre |
+| --- | --- | --- |
+| [React / React DOM](https://github.com/facebook/react) | [MIT](https://github.com/facebook/react/blob/main/LICENSE) | Interfaces Web de l’application et des éditeurs embarqués. |
+| [CodeMirror](https://github.com/codemirror) / [Lezer](https://github.com/lezer-parser) | [MIT](https://github.com/codemirror/view/blob/main/LICENSE) | Édition Markdown et infrastructure syntaxique. |
+| [markdown-it](https://github.com/markdown-it/markdown-it) | [MIT](https://github.com/markdown-it/markdown-it/blob/master/LICENSE) | Rendu Markdown de l’application et de CyMD. |
+| [highlight.js](https://github.com/highlightjs/highlight.js) | [BSD-3-Clause](https://github.com/highlightjs/highlight.js/blob/main/LICENSE) | Coloration du code dans les messages et documents. |
+| [DOMPurify](https://github.com/cure53/DOMPurify) | [Apache-2.0](https://github.com/cure53/DOMPurify/blob/main/LICENSE) OU [MPL-2.0](https://github.com/cure53/DOMPurify/blob/main/LICENSE-MPL) | Nettoyage du contenu enrichi rendu ; choix de double licence conservé. |
+| [node-qrcode](https://github.com/soldair/node-qrcode) | [MIT](https://github.com/soldair/node-qrcode/blob/master/license) | Génération locale des QR codes d’authentification. |
+| [Electron 44.9.3](https://github.com/electron/electron) | [MIT](https://github.com/electron/electron/blob/v44.9.3/LICENSE) et notices des composants embarqués | Runtime desktop, dont les composants Chromium et Node.js. |
+| [.NET / ASP.NET Core 10](https://github.com/dotnet/runtime) | [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) pour les distributions Windows ; [MIT et conditions des composants](https://github.com/dotnet/core/blob/main/license-information.md) pour les sources/Linux/macOS | Serveur et moteur autonome du desktop. |
+| [Npgsql 10.0.3](https://github.com/npgsql/npgsql) / [PostgreSQL](https://www.postgresql.org/) | [PostgreSQL License](https://www.postgresql.org/about/licence/) | Npgsql est une dépendance serveur ; PostgreSQL est la base persistante d’équipe, séparée. |
+| [MailKit / MimeKit 4.18.2](https://github.com/jstedfast/MailKit) | [MIT](https://github.com/jstedfast/MailKit/blob/master/LICENSE) | Envoi SMTP serveur lorsque l’authentification par e-mail est configurée. |
+| [CyMD 0.1.4](plugins/cymd/README.md) | [AGPL-3.0-only](plugins/cymd/LICENSE) | Éditeur Markdown facultatif embarqué ; sa distribution fournit les sources frontend correspondantes. |
+| [Enveloppe ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) | [MIT](https://github.com/ffmpegwasm/ffmpeg.wasm/blob/main/LICENSE) | `@ffmpeg/ffmpeg` dans l’intégration CyAnnota. |
+| [Moteur ffmpeg.wasm 0.12.10](https://github.com/ffmpegwasm/ffmpeg.wasm) | [GPL-2.0-or-later et conditions des bibliothèques externes](https://ffmpegwasm.netlify.app/docs/faq/#what-is-the-license-of-ffmpegwasm) | Moteur média WASM embarqué pour CyAnnota, pas un réencodage automatique des envois de tâches. |
+| [JSZip](https://github.com/Stuk/jszip) / [fflate](https://github.com/101arrowz/fflate) | [MIT OU GPL-3.0-or-later](https://github.com/Stuk/jszip/blob/main/LICENSE.markdown) / [MIT](https://github.com/101arrowz/fflate/blob/master/LICENSE) | Gestion des archives dans les éditeurs embarqués. |
+| [CyDoc 0.1.0](https://github.com/MrMybal/CyDoc) | [MIT](https://github.com/MrMybal/CyDoc/blob/6ddf9a582defb2f11fbb3f992afef6f98dcadc93/LICENSE) | Lecteur documentaire embarqué ; modules image/galerie uniquement. L’accès aux sources peut nécessiter une permission. |
+
+### Compilation et développement
+
+| Bibliothèque · sources | Licence · texte | Utilisation / périmètre |
+| --- | --- | --- |
+| [Node.js](https://github.com/nodejs/node) | [MIT et notices des composants](https://github.com/nodejs/node/blob/v22.17.1/LICENSE) | Scripts de compilation ; également intégré au runtime Electron. |
+| [TypeScript](https://github.com/microsoft/TypeScript) | [Apache-2.0](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt) | Vérification des types et compilation. |
+| [Vite](https://github.com/vitejs/vite) / [esbuild](https://github.com/evanw/esbuild) | [MIT](https://github.com/vitejs/vite/blob/main/LICENSE) / [MIT](https://github.com/evanw/esbuild/blob/main/LICENSE.md) | Construction Web/éditeurs et regroupement documentaire. |
+| [marked](https://github.com/markedjs/marked) / [PrismJS](https://github.com/PrismJS/prism) | [MIT](https://github.com/markedjs/marked/blob/master/LICENSE) / [MIT](https://github.com/PrismJS/prism/blob/master/LICENSE) | Génération documentaire ; pas des dépendances d’exécution du gestionnaire de tâches. |
+| [electron-builder](https://github.com/electron-userland/electron-builder) | [MIT](https://github.com/electron-userland/electron-builder/blob/master/LICENSE) | Packaging des installateurs et de la portable. |
+| [Playwright](https://github.com/microsoft/playwright) | [Apache-2.0](https://github.com/microsoft/playwright/blob/main/LICENSE) | Automatisation des navigateurs en développement/test, non embarquée dans l’application. |
+
+Ce tableau est un index des principaux composants, pas un inventaire transitif exhaustif. Conservez les licences, crédits du navigateur et sources correspondantes fournis avec chaque distribution. Unreal Engine possède ses propres [conditions Epic](https://www.unrealengine.com/en-US/eula/unreal) ; c’est un hôte éditeur facultatif, pas un runtime open source embarqué.
+
+## Références et liens
+
+- [Manuel français](https://mrmybal.github.io/CyTask/Documentation.html#/fr/getting-started) · [English manual](https://mrmybal.github.io/CyTask/Documentation.html#/en/getting-started).
+- [Notes de version et limites](CHANGELOG.fr.md) · [Versions publiées](https://github.com/MrMybal/CyTask/releases).
+- [Dépôt des sources](https://github.com/MrMybal/CyTask) · [Suivi des problèmes](https://github.com/MrMybal/CyTask/issues).
+- [Guide local/Sync](https://mrmybal.github.io/CyTask/Documentation.html#/fr/desktop-local) · [Administration du serveur](https://mrmybal.github.io/CyTask/Documentation.html#/fr/administration).
+- [Contrats des plugins](packages/contracts) · [Connecteur Unreal](integrations/unreal/README.md) · [Contrat des extensions de contenu](docs/content-plugins.md).
+- La [feuille de route produit](docs/04-feuille-de-route.md) et les [décisions d’architecture](docs/decisions) décrivent des travaux de conception, pas des fonctions garanties dans tous les clients publiés.

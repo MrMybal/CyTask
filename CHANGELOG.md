@@ -2,9 +2,15 @@
 
 All notable changes to CyTask are documented in this file.
 
+[Back to README](README.md) · [Français](CHANGELOG.fr.md)
+
 ## [Unreleased]
 
 ## [0.2.3] - 2026-11-06
+
+**Stage: IN DEVELOPMENT · Published client: Windows x64.**
+
+This is a development release for testing and feedback, not a declaration of production maturity. [Downloads and release notes](https://github.com/MrMybal/CyTask/releases/tag/v0.2.3) include the portable executable, installer and SHA-256 checksums.
 
 ### Added
 
@@ -27,6 +33,21 @@ All notable changes to CyTask are documented in this file.
 - Clearer text, status and priority contrast across all six themes, including selected rows and keyboard focus.
 - More readable compact-table labels and controls while preserving the compact layout.
 - Expanded regression coverage for project access, content extensions, calls, authentication, encrypted storage and interface themes.
+
+### Known issues
+
+The published release notes do not provide an itemized confirmed-bug list. Consult the [issue tracker](https://github.com/MrMybal/CyTask/issues) or [report a problem](https://github.com/MrMybal/CyTask/issues/new). The limitations below are documented product boundaries, not invented bug tickets or a claim that no bugs exist.
+
+### Documented limitations
+
+- The published 0.2.3 native packages are Windows x64 only. Linux/macOS packaging targets exist in source but are not supplied as release binaries. No Android client is published.
+- Windows executables are not Authenticode-signed; SmartScreen may display a warning. Close CyTask before updating and keep project folders and encryption-key backups.
+- The Unreal connector is a source plugin, built separately for each engine/platform. Builds are documented for UE 5.2 and 5.8; the 4.27 target still needs validation on a complete engine installation. Compatibility across the entire 4.27–5.8 range is not guaranteed.
+- Automatic task-upload video transcoding and antivirus scanning are not implemented. CyAnnota's separate WASM media engine does not provide those server-wide features. Playback depends on the browser's codecs.
+- Calls use a peer-to-peer mesh, with 8 participants by default and a configurable maximum of 16. Separate networks can need a private TURN relay. No SFU, recording or guaranteed system-audio capture is provided.
+- ClickUp/Jira migration keeps remote attachments as source links; it does not download their binary contents automatically.
+- Sync requires a separately configured external transport and trusted folder participants. It is not a backup and must not replicate a live database directory.
+- Encryption at rest is optional and is not end-to-end encryption. Existing data needs explicit offline conversion; losing the storage key is not recoverable by resetting an account password.
 
 ## [0.2.2] - 2026-10-25
 
@@ -111,6 +132,8 @@ First public Windows client release.
 
 The Windows binaries are not yet Authenticode-signed. Verify the published SHA-256 checksums before launching them.
 
+[Unreleased]: https://github.com/MrMybal/CyTask/compare/v0.2.3...main
+[0.2.3]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.3
 [0.2.2]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.2
 [0.2.1]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.1
 [0.2.0]: https://github.com/MrMybal/CyTask/releases/tag/v0.2.0
